@@ -113,6 +113,92 @@ describe("OuttakeCard", () => {
     render(<OuttakeCard outtake={makeOuttake()} {...defaultProps} />);
     await user.click(screen.getByRole("button", { name: S.copy }));
     expect(writeText).toHaveBeenCalledWith("Hello world");
+    // S4: confirm the copy landed — the signal the silent failure had nothing
+    // to contrast with.
+    expect(await screen.findByRole("status")).toHaveTextContent(S.copied);
+  });
+
+  it("surfaces a failed copy instead of looking like it worked (S4)", async () => {
+    // The shipping configuration IS the failing one: off a secure context
+    // navigator.clipboard is undefined and the property access throws, and
+    // CLAUDE.md's deployment target is plain HTTP on port 3456. The writer then
+    // pastes whatever was already on the clipboard into the manuscript.
+    const user = userEvent.setup();
+    const onError = vi.fn();
+    Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+    render(<OuttakeCard outtake={makeOuttake()} {...defaultProps} onError={onError} />);
+
+    await user.click(screen.getByRole("button", { name: S.copy }));
+
+    await waitFor(() => expect(onError).toHaveBeenCalledWith(S.copyFailed));
+    expect(screen.getByRole("status")).not.toHaveTextContent(S.copied);
+  });
+
+  it("stays retryable after a possibly-committed rename is reconciled (S5)", async () => {
+    // A 2xx BAD_JSON rename leaves the field showing what the writer typed and
+    // asks the panel to refetch. The refetch is authoritative, so the card's row
+    // prop then carries the server's value.
+    //
+    // The last-committed value used to be a ref seeded once at mount, and cards
+    // are keyed by id so the replacement row never remounted to re-seed it.
+    // Putting the label back to its original therefore hit the "nothing to send"
+    // short-circuit against a stale ref: no PATCH, no banner, no way to retry.
+    const user = userEvent.setup();
+    const onPossiblyCommitted = vi.fn();
+    vi.mocked(api.outtakes.updateLabel).mockRejectedValue(
+      new ApiRequestError("bad body", 200, "BAD_JSON"),
+    );
+    const { rerender } = render(
+      <OuttakeCard
+        outtake={makeOuttake({ label: "Original" })}
+        {...defaultProps}
+        onPossiblyCommitted={onPossiblyCommitted}
+      />,
+    );
+
+    const input = screen.getByRole("textbox", { name: S.labelAriaLabel });
+    await user.clear(input);
+    await user.type(input, "Renamed");
+    await user.tab();
+    await waitFor(() => expect(onPossiblyCommitted).toHaveBeenCalled());
+
+    // The panel's recovery refetch: the server did commit "Renamed".
+    rerender(<OuttakeCard outtake={makeOuttake({ label: "Renamed" })} {...defaultProps} />);
+    vi.mocked(api.outtakes.updateLabel).mockResolvedValue(makeOuttake({ label: "Original" }));
+
+    // The writer changes their mind and puts the original back.
+    const input2 = screen.getByRole("textbox", { name: S.labelAriaLabel });
+    await user.clear(input2);
+    await user.type(input2, "Original");
+    await user.tab();
+
+    await waitFor(() =>
+      expect(api.outtakes.updateLabel).toHaveBeenLastCalledWith("ot-1", { label: "Original" }),
+    );
+  });
+
+  it("labels the preview disclosure with its state and target (S13)", async () => {
+    const user = userEvent.setup();
+    const long = makeOuttake({
+      content: {
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: "word ".repeat(60) }] }],
+      },
+    });
+    render(<OuttakeCard outtake={long} {...defaultProps} />);
+
+    const toggle = screen.getByRole("button", { name: S.showMore });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    // The control must name what it expands, not just that it does.
+    const previewId = toggle.getAttribute("aria-controls");
+    expect(previewId).toBeTruthy();
+    expect(document.getElementById(previewId!)).toBeInTheDocument();
+
+    await user.click(toggle);
+    expect(screen.getByRole("button", { name: S.showLess })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
   });
 
   it("does not log when a clipboard write fails", async () => {

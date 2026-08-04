@@ -517,6 +517,12 @@ export const STRINGS = {
     fromChapterPrefix: "From ",
     insert: "Insert into editor",
     copy: "Copy",
+    // S4 (agentic-review 2026-08-04): off a secure context navigator.clipboard
+    // is undefined, so the copy throws — and the deployment target is plain HTTP
+    // on port 3456. The button was dead AND silent, so the writer pasted stale
+    // clipboard content into the manuscript.
+    copied: "Copied",
+    copyFailed: "Couldn't copy — select the text and copy it manually.",
     delete: "Delete",
     confirmDeleteTitle: "Delete this outtake?",
     confirmDeleteBody: "This can't be undone.",

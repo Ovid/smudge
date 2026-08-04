@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { OuttakeRow } from "@smudge/shared";
 import { toPlainText, countWords, truncateUnits, LABEL_MAX_UNITS } from "@smudge/shared";
 import { api } from "../api/client";
@@ -8,6 +8,8 @@ import { ConfirmDialog } from "./ConfirmDialog";
 
 const S = STRINGS.outtakes;
 const PREVIEW_LIMIT = 160;
+/** How long the Copy button holds its "Copied" confirmation (S4). */
+const COPIED_NOTICE_MS = 2000;
 
 interface OuttakeCardProps {
   outtake: OuttakeRow;
@@ -43,10 +45,20 @@ export function OuttakeCard({
   const [labelDraft, setLabelDraft] = useState(outtake.label ?? "");
   const [expanded, setExpanded] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  // Tracks the last COMMITTED value so blur-after-Enter (and blur with no
-  // change) does not fire a redundant rename. Advanced only on confirmed
-  // success (see commitLabel) so a failed PATCH stays retryable.
-  const lastCommittedRef = useRef<string | null>(outtake.label);
+  const [copied, setCopied] = useState(false);
+  const previewId = useId();
+
+  // S5 (agentic-review 2026-08-04): the last committed label is the ROW PROP,
+  // not a ref. It used to be `useRef(outtake.label)` — seeded once at mount and
+  // advanced only on a confirmed rename — and cards are keyed by id, so a row
+  // replacement never remounts to re-seed it. After a 2xx BAD_JSON rename the
+  // panel refetches and the prop carries the server's truth, but the ref still
+  // held the pre-rename value: typing the label back to its original then hit
+  // the "nothing to send" short-circuit, so no PATCH, no banner and no retry
+  // path — the one input where the writer would most want one. The prop tracks
+  // every route the server's value arrives by (success, refetch, prepend), so
+  // reading it directly deletes the divergence rather than papering over it.
+  const lastCommitted = outtake.label;
 
   // I3 (agentic-review 2026-08-04): these mutations carry NO AbortSignal, and
   // that is deliberate. They used to run on per-card useAbortableAsyncOperation
@@ -81,21 +93,23 @@ export function OuttakeCard({
     // typing during the request so neither settle path clobbers newer edits.
     const attempted = labelDraft;
     const next = normalizeLabel(attempted);
-    if (lastCommittedRef.current === next) {
+    if (lastCommitted === next) {
       // S5: no PATCH fires, so normalize the FIELD too. Otherwise a
       // whitespace-only edit ("   " -> null on an untitled card) keeps
       // rendering a value that was never sent and is not on the server, and
       // the success path's re-seed below never runs to correct it.
-      setLabelDraft(lastCommittedRef.current ?? "");
+      setLabelDraft(lastCommitted ?? "");
       return;
     }
     if (updateInFlightRef.current) return;
     updateInFlightRef.current = true;
     try {
       const row = await api.outtakes.updateLabel(outtake.id, { label: next });
-      // Track the SERVER-committed value (server may sanitize) so an identical
-      // retry is suppressed but a failed one stays retryable.
-      lastCommittedRef.current = row.label;
+      // onUpdated below carries the SERVER-committed value (the server may
+      // sanitize) back through the panel and into this card's `outtake` prop,
+      // which is what `lastCommitted` reads — so an identical retry is
+      // suppressed while a failed one stays retryable, with no second copy of
+      // the truth to drift (S5).
       // S3: re-seed the field from the server-sanitized label so stripping is
       // visible — but only if the user hasn't typed since, so we don't discard
       // their in-flight edits (S5).
@@ -108,8 +122,9 @@ export function OuttakeCard({
         // Do NOT revert — that would make the field assert the OLD label as
         // truth while the server holds the new one. Leave what the user typed
         // (the value the server probably has), ask the panel to refetch the
-        // authoritative list, and surface the ambiguity. lastCommittedRef is
-        // deliberately left un-advanced so a retry still fires.
+        // authoritative list, and surface the ambiguity. The refetch is also
+        // what re-syncs `lastCommitted` here, so whichever value the server
+        // actually holds is the one a later edit is compared against (S5).
         onCommitted: () => {
           if (mapped.message !== null) onPossiblyCommitted(mapped.message);
           return STOP;
@@ -118,9 +133,7 @@ export function OuttakeCard({
           // A definite failure: the server still holds the previous label, so
           // revert the visible field to it — but only if untouched since the
           // request, so newer keystrokes typed during the round-trip survive (S5).
-          setLabelDraft((current) =>
-            current === attempted ? (lastCommittedRef.current ?? "") : current,
-          );
+          setLabelDraft((current) => (current === attempted ? (lastCommitted ?? "") : current));
           onError(message);
         },
       });
@@ -157,13 +170,30 @@ export function OuttakeCard({
   }
 
   async function handleCopy() {
+    // S4 (agentic-review 2026-08-04): this used to swallow every failure with no
+    // success signal to contrast against, so the button was indistinguishable
+    // from a working one when it did nothing. That is not hypothetical: off a
+    // secure context `navigator.clipboard` is UNDEFINED, so the property access
+    // itself throws — and CLAUDE.md's deployment target is plain HTTP on port
+    // 3456, i.e. the shipping configuration is the dead one. The writer clicks
+    // Copy, sees nothing change, and pastes whatever was on the clipboard before
+    // into the manuscript.
     try {
       await navigator.clipboard.writeText(plainText);
+      setCopied(true);
     } catch {
-      // Clipboard access can be denied; nothing to recover, and surfacing a
-      // banner for a best-effort copy is more noise than it's worth.
+      setCopied(false);
+      onError(S.copyFailed);
     }
   }
+
+  // Clear the "Copied" confirmation so it reads as a response to THIS click
+  // rather than a permanent badge. Cancelled on unmount and on a re-copy.
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), COPIED_NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [copied]);
 
   return (
     <li className="border border-border/30 rounded p-3 flex flex-col gap-2">
@@ -189,12 +219,21 @@ export function OuttakeCard({
         className="text-sm font-medium text-text-primary font-sans border border-transparent hover:border-border/40 focus:border-accent rounded px-1 py-0.5 bg-transparent focus:outline-none focus:ring-1 focus:ring-accent"
       />
 
-      <p className="text-sm text-text-secondary font-serif whitespace-pre-wrap break-words">
+      <p
+        id={previewId}
+        className="text-sm text-text-secondary font-serif whitespace-pre-wrap break-words"
+      >
         {shownText}
       </p>
       {isLong && (
+        // S13: a real disclosure. Without aria-expanded/aria-controls a screen
+        // reader announced "Show more, button" with no state and no target — on
+        // the panel's primary content-reading affordance, the one control a
+        // non-sighted user needs to reach the rest of the outtake.
         <button
           type="button"
+          aria-expanded={expanded}
+          aria-controls={previewId}
           onClick={() => setExpanded((v) => !v)}
           className="self-start text-xs text-accent hover:text-accent/80 transition-colors font-sans"
         >
@@ -223,6 +262,11 @@ export function OuttakeCard({
         >
           {S.copy}
         </button>
+        {/* S4: the success signal the silent failure had nothing to contrast
+            with. role="status" so it is announced, not just seen. */}
+        <span role="status" className="text-accent">
+          {copied ? S.copied : ""}
+        </span>
         <button
           type="button"
           onClick={() => setConfirmingDelete(true)}
