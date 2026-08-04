@@ -65,10 +65,14 @@ export function ReferencePanel({
       default:
         return;
     }
+    // `current >= 0` above means the list is non-empty, so every branch lands
+    // in range — but read it optionally rather than asserting.
+    const target = tabs[next];
+    if (!target) return;
     // Only after a key we handle: Escape and Ctrl+. must still reach the
     // listeners that close the panel.
     event.preventDefault();
-    onSelectTab(tabs[next]!.id);
+    onSelectTab(target.id);
     tabRefs.current[next]?.focus();
   }
 

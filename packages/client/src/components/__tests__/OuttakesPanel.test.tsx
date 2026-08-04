@@ -215,7 +215,7 @@ describe("OuttakesPanel", () => {
 
     const signal = vi
       .mocked(api.outtakes.create)
-      .mock.calls[0]!.find((a) => a instanceof AbortSignal);
+      .mock.calls[0]!.find((a): a is AbortSignal => a instanceof AbortSignal);
     expect(signal?.aborted ?? false).toBe(false);
   });
 

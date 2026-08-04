@@ -274,8 +274,10 @@ describe("OuttakeCard", () => {
     await waitFor(() => expect(mock).toHaveBeenCalled());
     unmount();
 
-    // Whatever signal the call carries (if any) must survive the unmount.
-    const signal = mock.mock.calls[0]!.find((a) => a instanceof AbortSignal);
+    // Whatever signal the call carries (if any) must survive the unmount. The
+    // two mocks have different arg tuples, so widen before searching.
+    const args = mock.mock.calls[0] as unknown[];
+    const signal = args.find((a): a is AbortSignal => a instanceof AbortSignal);
     expect(signal?.aborted ?? false).toBe(false);
   });
 

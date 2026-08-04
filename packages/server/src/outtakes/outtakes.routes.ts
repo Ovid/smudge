@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { asyncHandler } from "../asyncHandler";
 import { CreateOuttakeSchema, UpdateOuttakeSchema, OUTTAKE_ERROR_CODES } from "@smudge/shared";
-import type { ZodError } from "zod";
 import { BadRequestError, NotFoundError } from "../errors/appError";
 import { validateUuidParam } from "../validateUuidParam";
 import * as OuttakeService from "./outtakes.service";
@@ -22,8 +21,12 @@ import * as OuttakeService from "./outtakes.service";
  * a non-string label (an `invalid_type` on the same path) does NOT get "too
  * long" copy.
  */
-function badRequestFromSchema(error: ZodError): BadRequestError {
-  const issue = error.issues[0];
+function badRequestFromSchema(
+  // Structural, not `ZodError<T>`: the generic is invariant, so a shared helper
+  // cannot take errors from two different schemas through one annotation.
+  issues: ReadonlyArray<{ code: string; path: PropertyKey[]; message: string }>,
+): BadRequestError {
+  const issue = issues[0];
   const labelTooLong = issue?.code === "too_big" && issue.path[0] === "label";
   return new BadRequestError(
     issue?.message ?? "Invalid request body.",
@@ -41,7 +44,7 @@ export function projectOuttakesRouter(): Router {
       const projectId = validateUuidParam(req, "project");
       const parsed = CreateOuttakeSchema.safeParse(req.body ?? {});
       if (!parsed.success) {
-        throw badRequestFromSchema(parsed.error);
+        throw badRequestFromSchema(parsed.error.issues);
       }
       const outtake = await OuttakeService.createOuttake(
         projectId,
@@ -81,7 +84,7 @@ export function outtakeDirectRouter(): Router {
       const id = validateUuidParam(req, "outtake");
       const parsed = UpdateOuttakeSchema.safeParse(req.body ?? {});
       if (!parsed.success) {
-        throw badRequestFromSchema(parsed.error);
+        throw badRequestFromSchema(parsed.error.issues);
       }
       const outtake = await OuttakeService.updateOuttakeLabel(id, parsed.data.label);
       if (outtake === null) {
