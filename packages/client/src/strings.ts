@@ -514,6 +514,11 @@ export const STRINGS = {
     // Delete -> Confirm during the in-flight DELETE is an ordinary gesture. Its
     // twin (EditorPage's captureInFlightRef) has always announced.
     deleteInFlight: "Still deleting that outtake — please wait.",
+    // I2 (agentic-review 2026-08-04): the rename latch's twin. It returned bare,
+    // so a second blur during an in-flight PATCH dropped the edit with no banner
+    // and no retry path, leaving the field asserting a label the server never
+    // received.
+    renameInFlight: "Still renaming that outtake — wait, then click away again to save.",
     newBlank: "New outtake",
     createdElsewhere:
       "Saved to the project you were in when you clicked Save — it isn't in this project's outtakes. Your text is still below.",

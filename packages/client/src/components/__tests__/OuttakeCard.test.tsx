@@ -475,6 +475,67 @@ describe("OuttakeCard", () => {
     await waitFor(() => expect(onError).toHaveBeenCalledWith(expected));
   });
 
+  // I2 (agentic-review 2026-08-04): both arms of the rename latch assumed the
+  // `outtake.label` prop already held what the server will hold — true once a
+  // rename has settled, false across an in-flight PATCH, where the prop still
+  // carries the pre-rename value.
+  it("names the refusal when a second rename lands mid-PATCH, and stays retryable (I2)", async () => {
+    const user = userEvent.setup();
+    const onError = vi.fn();
+    let resolveUpdate!: (row: OuttakeRow) => void;
+    vi.mocked(api.outtakes.updateLabel).mockReturnValue(
+      new Promise<OuttakeRow>((res) => {
+        resolveUpdate = res;
+      }),
+    );
+    render(<OuttakeCard outtake={makeOuttake()} {...defaultProps} onError={onError} />);
+    const input = screen.getByDisplayValue("A cut scene");
+    await user.clear(input);
+    await user.type(input, "First");
+    await user.tab();
+    await waitFor(() => expect(api.outtakes.updateLabel).toHaveBeenCalledTimes(1));
+
+    // Second edit while the first PATCH is still out. The latch used to return
+    // bare: no PATCH, no banner, and the field kept asserting a label the
+    // server never received.
+    await user.click(input);
+    await user.clear(input);
+    await user.type(input, "Second");
+    await user.tab();
+    expect(api.outtakes.updateLabel).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith(S.renameInFlight);
+
+    resolveUpdate(makeOuttake({ label: "First" }));
+    await waitFor(() => expect(defaultProps.onUpdated).toHaveBeenCalled());
+
+    // Retryable: the refusal named a wait, so blurring again must commit.
+    await user.click(input);
+    await user.tab();
+    await waitFor(() => expect(api.outtakes.updateLabel).toHaveBeenCalledTimes(2));
+    expect(api.outtakes.updateLabel).toHaveBeenLastCalledWith("ot-1", { label: "Second" });
+  });
+
+  it("does not treat a revert to the pre-rename label as a no-op mid-PATCH (I2)", async () => {
+    const user = userEvent.setup();
+    const onError = vi.fn();
+    vi.mocked(api.outtakes.updateLabel).mockReturnValue(new Promise<OuttakeRow>(() => {}));
+    render(<OuttakeCard outtake={makeOuttake()} {...defaultProps} onError={onError} />);
+    const input = screen.getByDisplayValue("A cut scene");
+    await user.clear(input);
+    await user.type(input, "Renamed");
+    await user.tab();
+    await waitFor(() => expect(api.outtakes.updateLabel).toHaveBeenCalledTimes(1));
+
+    // Typing back to the ORIGINAL while the rename to "Renamed" is in flight.
+    // Comparing against the prop said "nothing to send" — but the server is
+    // about to hold "Renamed", so this is a real divergence, not a no-op.
+    await user.click(input);
+    await user.clear(input);
+    await user.type(input, "A cut scene");
+    await user.tab();
+    expect(onError).toHaveBeenCalledWith(S.renameInFlight);
+  });
+
   it("expands a long preview when Show more is clicked", async () => {
     const user = userEvent.setup();
     const long = "word ".repeat(80).trim();

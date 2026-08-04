@@ -58,6 +58,10 @@ export function OuttakeCard({
   // path — the one input where the writer would most want one. The prop tracks
   // every route the server's value arrives by (success, refetch, prepend), so
   // reading it directly deletes the divergence rather than papering over it.
+  //
+  // I2 (agentic-review 2026-08-04): true for SETTLED state only. Across an
+  // in-flight PATCH the prop still holds the pre-rename label, so commitLabel
+  // compares against inFlightLabelRef instead — see below.
   const lastCommitted = outtake.label;
 
   // I3 (agentic-review 2026-08-04): these mutations carry NO AbortSignal, and
@@ -83,6 +87,12 @@ export function OuttakeCard({
   // The same for rename: blur-after-Enter and a stray blur can both land, and a
   // second PATCH racing the first has no defined winner.
   const updateInFlightRef = useRef(false);
+  // I2 (agentic-review 2026-08-04): the normalized label the in-flight PATCH is
+  // sending, or null when idle. `lastCommitted` (the prop) only advances when
+  // onUpdated propagates back, so across the round-trip it names the value the
+  // server is about to STOP holding — comparing a fresh edit against it made
+  // "type it back to the original mid-rename" look like a no-op.
+  const inFlightLabelRef = useRef<string | null>(null);
 
   const isLong = plainText.length > PREVIEW_LIMIT;
   const shownText =
@@ -93,16 +103,29 @@ export function OuttakeCard({
     // typing during the request so neither settle path clobbers newer edits.
     const attempted = labelDraft;
     const next = normalizeLabel(attempted);
-    if (lastCommitted === next) {
+    // I2: what the server will hold once the current round-trip settles — the
+    // in-flight target while a PATCH is out, the prop otherwise.
+    const pending = updateInFlightRef.current ? inFlightLabelRef.current : lastCommitted;
+    if (pending === next) {
       // S5: no PATCH fires, so normalize the FIELD too. Otherwise a
       // whitespace-only edit ("   " -> null on an untitled card) keeps
       // rendering a value that was never sent and is not on the server, and
       // the success path's re-seed below never runs to correct it.
-      setLabelDraft(lastCommitted ?? "");
+      setLabelDraft(pending ?? "");
       return;
     }
-    if (updateInFlightRef.current) return;
+    if (updateInFlightRef.current) {
+      // I2: name the refusal, as the delete latch below does. Dropping the edit
+      // in silence left the field showing a label the server never received,
+      // with no banner and no retry path — the writer's only recovery was to
+      // happen to blur the field a third time, and switching tabs unmounts the
+      // card and loses it. A second PATCH racing the first has no defined
+      // winner, so refusing is still right; refusing quietly was not.
+      onError(S.renameInFlight);
+      return;
+    }
     updateInFlightRef.current = true;
+    inFlightLabelRef.current = next;
     try {
       const row = await api.outtakes.updateLabel(outtake.id, { label: next });
       // onUpdated below carries the SERVER-committed value (the server may
@@ -139,6 +162,7 @@ export function OuttakeCard({
       });
     } finally {
       updateInFlightRef.current = false;
+      inFlightLabelRef.current = null;
     }
   }
 
