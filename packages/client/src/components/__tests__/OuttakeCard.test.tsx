@@ -380,6 +380,59 @@ describe("OuttakeCard", () => {
     expect(onError).toHaveBeenCalledTimes(1);
   });
 
+  // S5 (agentic-review 2026-08-04): a 404 means the row is already gone, so
+  // reverting or leaving the card in place gave the writer a control that fails
+  // identically on every retry — the only escape was closing and reopening the
+  // reference panel. SnapshotPanel's delete already reconciles on isNotFound.
+  it("reconciles a delete against an already-gone outtake instead of erroring (S5)", async () => {
+    const user = userEvent.setup();
+    const onDeleted = vi.fn();
+    const onError = vi.fn();
+    vi.mocked(api.outtakes.delete).mockRejectedValue(
+      new ApiRequestError("gone", 404, "NOT_FOUND"),
+    );
+    render(
+      <OuttakeCard
+        outtake={makeOuttake()}
+        {...defaultProps}
+        onDeleted={onDeleted}
+        onError={onError}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: S.delete }));
+    await user.click(screen.getByRole("button", { name: STRINGS.delete.confirmButton }));
+
+    await waitFor(() => expect(onDeleted).toHaveBeenCalledWith("ot-1"));
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("drops the card when a rename 404s rather than reverting to a dead label (S5)", async () => {
+    const user = userEvent.setup();
+    const onDeleted = vi.fn();
+    const onError = vi.fn();
+    vi.mocked(api.outtakes.updateLabel).mockRejectedValue(
+      new ApiRequestError("gone", 404, "NOT_FOUND"),
+    );
+    render(
+      <OuttakeCard
+        outtake={makeOuttake()}
+        {...defaultProps}
+        onDeleted={onDeleted}
+        onError={onError}
+      />,
+    );
+
+    const input = screen.getByDisplayValue("A cut scene");
+    await user.clear(input);
+    await user.type(input, "Renamed");
+    await user.tab();
+
+    await waitFor(() => expect(onDeleted).toHaveBeenCalledWith("ot-1"));
+    expect(onError).toHaveBeenCalledWith(S.alreadyGone);
+    expect(defaultProps.onUpdated).not.toHaveBeenCalled();
+  });
+
   it("does not delete when the confirm dialog is cancelled", async () => {
     const user = userEvent.setup();
     const onDeleted = vi.fn();

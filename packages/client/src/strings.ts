@@ -560,6 +560,10 @@ export const STRINGS = {
     // Insert was a silent no-op and Copy wrote "" over the writer's clipboard
     // while announcing success.
     corruptNoText: "This outtake's saved text couldn't be read, so there's nothing to insert or copy.",
+    // S5 (agentic-review 2026-08-04): a rename against a row the server no
+    // longer has. Reverting the field to a label that does not exist left a card
+    // whose every retry 404s; the card goes instead, and this says why.
+    alreadyGone: "That outtake is no longer there — it's been removed from the list.",
     showMore: "Show more",
     showLess: "Show less",
     wordCount: (count: number) => `${count.toLocaleString()} words`,

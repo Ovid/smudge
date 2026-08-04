@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { OuttakeRow } from "@smudge/shared";
 import { toPlainText, countWords, truncateUnits, LABEL_MAX_UNITS } from "@smudge/shared";
 import { api } from "../api/client";
-import { mapApiError, applyMappedError, STOP } from "../errors";
+import { mapApiError, applyMappedError, isNotFound, STOP } from "../errors";
 import { STRINGS } from "../strings";
 import { ConfirmDialog } from "./ConfirmDialog";
 
@@ -139,6 +139,15 @@ export function OuttakeCard({
       setLabelDraft((current) => (current === attempted ? (row.label ?? "") : current));
       onUpdated(row);
     } catch (err) {
+      // S5: the row is gone server-side (deleted in another tab, or its project
+      // was). Reverting the field to a label that no longer exists leaves a card
+      // whose every retry 404s, escapable only by closing the reference panel —
+      // so drop the card and say so, mirroring SnapshotPanel's isNotFound arm.
+      if (isNotFound(err)) {
+        onError(S.alreadyGone);
+        onDeleted(outtake.id);
+        return;
+      }
       const mapped = mapApiError(err, "outtake.update");
       applyMappedError(mapped, {
         // S3: on a 2xx BAD_JSON the server most likely committed the rename.
@@ -178,6 +187,13 @@ export function OuttakeCard({
       await api.outtakes.delete(outtake.id);
       onDeleted(outtake.id);
     } catch (err) {
+      // S5: 404 means the server already agrees with the intent — the row is
+      // gone. Reporting "failed to delete" under a card that stays put invites a
+      // retry that 404s identically, forever.
+      if (isNotFound(err)) {
+        onDeleted(outtake.id);
+        return;
+      }
       const mapped = mapApiError(err, "outtake.delete");
       applyMappedError(mapped, {
         // S3: on a 2xx BAD_JSON the row is probably gone server-side; a refetch
