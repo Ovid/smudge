@@ -3,7 +3,6 @@ import type { OuttakeRow } from "@smudge/shared";
 import { toPlainText, countWords, truncateUnits, LABEL_MAX_UNITS } from "@smudge/shared";
 import { api } from "../api/client";
 import { mapApiError, applyMappedError, STOP } from "../errors";
-import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
 import { STRINGS } from "../strings";
 import { ConfirmDialog } from "./ConfirmDialog";
 
@@ -49,21 +48,29 @@ export function OuttakeCard({
   // success (see commitLabel) so a failed PATCH stays retryable.
   const lastCommittedRef = useRef<string | null>(outtake.label);
 
-  // Per-card ops: a delete/rename on ANOTHER card runs on that card's own op
-  // instance, so it can never abort this card's in-flight request. A single
-  // shared per-type op would (run() aborts the prior controller) — the
-  // same-type sibling-abort lost-update. Both auto-abort when this card
-  // unmounts (e.g. after its own delete removes it from the list).
-  const deleteOp = useAbortableAsyncOperation();
-  const updateOp = useAbortableAsyncOperation();
-
-  // S4: deleteOp.run() aborts the prior controller, so a second confirm cancels
-  // a DELETE that may already have committed — the row goes server-side, the
-  // first settle returns silently on signal.aborted, and the retry's 404 paints
-  // a banner saying the delete failed. Aborting a mutation that may have landed
-  // is the wrong cancellation semantic; the same latch guards the identical
-  // case in EditorPage's capture handler (captureInFlightRef).
+  // I3 (agentic-review 2026-08-04): these mutations carry NO AbortSignal, and
+  // that is deliberate. They used to run on per-card useAbortableAsyncOperation
+  // instances, whose unmount cleanup aborts — and this card unmounts on an
+  // ORDINARY click, not on leaving the app: ReferencePanel renders
+  // `{activeTab?.panel ?? null}` and the panel renders only while open, so the
+  // Images tab or Ctrl+. takes every card down, and a filter keystroke takes one
+  // card down mid-rename (`visible` matches the row's OLD label). The cancelled
+  // write may already have committed, and the post-await `if (signal.aborted)
+  // return` swallowed it in silence. That is the exact semantic the S4 latch
+  // below and EditorPage's captureInFlightRef exist to refuse.
+  //
+  // Nothing is lost by dropping the ops: the two latches serialise this card's
+  // own repeats, and a per-card op could never abort a sibling anyway. Post-await
+  // state updates on an unmounted card are React no-ops; onUpdated/onDeleted
+  // still reconcile a panel that outlived the card (the filter case).
+  //
+  // S4: a second confirm during an in-flight DELETE is an ordinary gesture —
+  // onConfirm closes the dialog but the card stays until onDeleted. The latch
+  // makes it a no-op instead of a duplicate request.
   const deleteInFlightRef = useRef(false);
+  // The same for rename: blur-after-Enter and a stray blur can both land, and a
+  // second PATCH racing the first has no defined winner.
+  const updateInFlightRef = useRef(false);
 
   const isLong = plainText.length > PREVIEW_LIMIT;
   const shownText =
@@ -82,12 +89,10 @@ export function OuttakeCard({
       setLabelDraft(lastCommittedRef.current ?? "");
       return;
     }
-    const { promise, signal } = updateOp.run((s) =>
-      api.outtakes.updateLabel(outtake.id, { label: next }, s),
-    );
+    if (updateInFlightRef.current) return;
+    updateInFlightRef.current = true;
     try {
-      const row = await promise;
-      if (signal.aborted) return;
+      const row = await api.outtakes.updateLabel(outtake.id, { label: next });
       // Track the SERVER-committed value (server may sanitize) so an identical
       // retry is suppressed but a failed one stays retryable.
       lastCommittedRef.current = row.label;
@@ -97,7 +102,6 @@ export function OuttakeCard({
       setLabelDraft((current) => (current === attempted ? (row.label ?? "") : current));
       onUpdated(row);
     } catch (err) {
-      if (signal.aborted) return;
       const mapped = mapApiError(err, "outtake.update");
       applyMappedError(mapped, {
         // S3: on a 2xx BAD_JSON the server most likely committed the rename.
@@ -120,19 +124,18 @@ export function OuttakeCard({
           onError(message);
         },
       });
+    } finally {
+      updateInFlightRef.current = false;
     }
   }
 
   async function handleDelete() {
     if (deleteInFlightRef.current) return;
     deleteInFlightRef.current = true;
-    const { promise, signal } = deleteOp.run((s) => api.outtakes.delete(outtake.id, s));
     try {
-      await promise;
-      if (signal.aborted) return;
+      await api.outtakes.delete(outtake.id);
       onDeleted(outtake.id);
     } catch (err) {
-      if (signal.aborted) return;
       const mapped = mapApiError(err, "outtake.delete");
       applyMappedError(mapped, {
         // S3: on a 2xx BAD_JSON the row is probably gone server-side; a refetch

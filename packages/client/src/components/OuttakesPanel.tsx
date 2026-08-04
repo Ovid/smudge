@@ -64,11 +64,19 @@ export function OuttakesPanel({
   const draftRef = useRef(draft);
   draftRef.current = draft;
 
+  // The LIST GET only. Unmount-abort is right for a read: nothing is lost by
+  // discarding rows nobody is looking at, and the next mount refetches.
+  //
+  // I3 (agentic-review 2026-08-04): the blank-note POST deliberately does NOT
+  // run on an op. This panel unmounts on an ordinary click (ReferencePanel
+  // renders `{activeTab?.panel ?? null}`, and the panel renders only while
+  // open), so "Save a blank note, then switch to Images" aborted the POST *and*
+  // took the `draft` state down with the component — unrecoverable text, from
+  // the one panel whose stated job is not losing the writer's text (see the S3
+  // note in the catch below). Un-aborted, the row lands and the next mount's
+  // load surfaces it. Per-row delete/rename mutations dropped their ops for the
+  // same reason; see OuttakeCard.
   const loadOp = useAbortableAsyncOperation();
-  // Create owns its op here (blank-note flow). Per-row delete/rename ops live in
-  // OuttakeCard so a mutation on one row cannot abort another's in-flight
-  // request; the card calls back into the reconcilers below on success.
-  const createOp = useAbortableAsyncOperation();
   // Arbitrates reload-vs-mutation staleness (invariant 4). Reloads replace the
   // whole list, so a reload that started BEFORE an optimistic mutation landed
   // would resurrect a deleted row / revert a rename. Each mutation bumps the
@@ -215,12 +223,11 @@ export function OuttakesPanel({
     // the writer's text as the thing it exists to protect.
     const attempted = draft;
     setCreating(true);
-    const { promise, signal } = createOp.run((s) =>
-      api.outtakes.create(projectId, { content: textToDoc(attempted), label: null }, s),
-    );
     try {
-      const row = await promise;
-      if (signal.aborted) return;
+      const row = await api.outtakes.create(projectId, {
+        content: textToDoc(attempted),
+        label: null,
+      });
       // S2: the ordinary refusal here is a project switch mid-POST — the row
       // committed, but in the project the writer just left. Tearing the form
       // down would close it, show no card and say nothing, losing the text from
@@ -236,7 +243,6 @@ export function OuttakesPanel({
         setShowNew(false);
       }
     } catch (err) {
-      if (signal.aborted) return;
       const mapped = mapApiError(err, "outtake.create");
       applyMappedError(mapped, {
         onMessage: setError,
@@ -254,7 +260,7 @@ export function OuttakesPanel({
         },
       });
     } finally {
-      if (!signal.aborted) setCreating(false);
+      setCreating(false);
     }
   }
 

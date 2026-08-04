@@ -127,6 +127,52 @@ describe("OuttakeCard", () => {
     expectConsole("error").silent();
   });
 
+  // I3 (agentic-review 2026-08-04): every outtake mutation used to be owned by
+  // an op that aborts on unmount — and this card unmounts on an ORDINARY click.
+  // ReferencePanel renders `{activeTab?.panel ?? null}` and the panel renders
+  // only while open, so clicking the Images tab or pressing Ctrl+. unmounts the
+  // whole list; typing in the filter box unmounts a single card mid-rename
+  // (`visible` filters on the row's OLD label). A blur->PATCH started in the same
+  // gesture (mousedown -> focusout -> mouseup -> click) was cancelled, and the
+  // post-await `if (signal.aborted) return` returned SILENTLY: no banner, no
+  // retry path, lastCommittedRef un-advanced. The write may already have
+  // committed — the same reasoning this file's own S4 comment and EditorPage's
+  // captureInFlightRef latch are built on.
+  it.each([
+    [
+      "a rename",
+      async (user: ReturnType<typeof userEvent.setup>) => {
+        const input = screen.getByRole("textbox", { name: S.labelAriaLabel });
+        await user.clear(input);
+        await user.type(input, "Renamed");
+        await user.tab();
+        return vi.mocked(api.outtakes.updateLabel);
+      },
+    ],
+    [
+      "a delete",
+      async (user: ReturnType<typeof userEvent.setup>) => {
+        await user.click(screen.getByRole("button", { name: S.delete }));
+        await user.click(screen.getByRole("button", { name: STRINGS.delete.confirmButton }));
+        return vi.mocked(api.outtakes.delete);
+      },
+    ],
+  ])("unmounting the card does not cancel %s already in flight (I3)", async (_label, act) => {
+    const user = userEvent.setup();
+    // Never settles: the request is still out when the card goes away.
+    vi.mocked(api.outtakes.updateLabel).mockReturnValue(new Promise(() => {}));
+    vi.mocked(api.outtakes.delete).mockReturnValue(new Promise(() => {}));
+    const { unmount } = render(<OuttakeCard outtake={makeOuttake()} {...defaultProps} />);
+
+    const mock = await act(user);
+    await waitFor(() => expect(mock).toHaveBeenCalled());
+    unmount();
+
+    // Whatever signal the call carries (if any) must survive the unmount.
+    const signal = mock.mock.calls[0]!.find((a) => a instanceof AbortSignal);
+    expect(signal?.aborted ?? false).toBe(false);
+  });
+
   it("opens a confirm dialog and deletes via the API, then reconciles on confirm", async () => {
     const user = userEvent.setup();
     const onDeleted = vi.fn();
@@ -135,7 +181,7 @@ describe("OuttakeCard", () => {
     // Dialog is shown
     expect(screen.getByText(S.confirmDeleteTitle)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: STRINGS.delete.confirmButton }));
-    expect(api.outtakes.delete).toHaveBeenCalledWith("ot-1", expect.anything());
+    expect(api.outtakes.delete).toHaveBeenCalledWith("ot-1");
     await waitFor(() => expect(onDeleted).toHaveBeenCalledWith("ot-1"));
   });
 
@@ -214,11 +260,7 @@ describe("OuttakeCard", () => {
     await user.clear(input);
     await user.type(input, "New label");
     await user.tab();
-    expect(api.outtakes.updateLabel).toHaveBeenCalledWith(
-      "ot-1",
-      { label: "New label" },
-      expect.anything(),
-    );
+    expect(api.outtakes.updateLabel).toHaveBeenCalledWith("ot-1", { label: "New label" });
   });
 
   it("commits the label on Enter", async () => {
@@ -227,11 +269,7 @@ describe("OuttakeCard", () => {
     const input = screen.getByDisplayValue("A cut scene");
     await user.clear(input);
     await user.type(input, "Renamed{Enter}");
-    expect(api.outtakes.updateLabel).toHaveBeenCalledWith(
-      "ot-1",
-      { label: "Renamed" },
-      expect.anything(),
-    );
+    expect(api.outtakes.updateLabel).toHaveBeenCalledWith("ot-1", { label: "Renamed" });
   });
 
   it("passes null when the label is cleared to empty", async () => {
@@ -240,11 +278,7 @@ describe("OuttakeCard", () => {
     const input = screen.getByDisplayValue("A cut scene");
     await user.clear(input);
     await user.tab();
-    expect(api.outtakes.updateLabel).toHaveBeenCalledWith(
-      "ot-1",
-      { label: null },
-      expect.anything(),
-    );
+    expect(api.outtakes.updateLabel).toHaveBeenCalledWith("ot-1", { label: null });
   });
 
   it("does not rename when the label is unchanged", async () => {

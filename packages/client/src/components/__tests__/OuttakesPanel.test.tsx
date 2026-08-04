@@ -172,6 +172,32 @@ describe("OuttakesPanel", () => {
     expect(labelValues).toEqual(["", "Old"]); // new row prepended before Old
   });
 
+  // I3 (agentic-review 2026-08-04): the worst of the three unmount-abort cases.
+  // ReferencePanel renders `{activeTab?.panel ?? null}` and the panel renders
+  // only while open, so "Save a blank note, then click Images (or Ctrl+.)"
+  // unmounted this panel mid-POST: the request was aborted AND the `draft` state
+  // died with the component. Unrecoverable text, from the one panel whose stated
+  // job is not losing the writer's text. Un-aborted, the row lands and the next
+  // mount's load surfaces it.
+  it("unmounting the panel does not cancel an in-flight blank-note create (I3)", async () => {
+    vi.mocked(api.outtakes.create).mockReturnValue(new Promise(() => {}));
+    const user = userEvent.setup();
+    const { unmount } = render(<OuttakesPanel {...defaultProps} />);
+    await waitFor(() => expect(api.outtakes.list).toHaveBeenCalled());
+
+    await user.click(screen.getByRole("button", { name: S.newBlank }));
+    await user.type(screen.getByRole("textbox", { name: S.newPlaceholder }), "Only copy");
+    await user.click(screen.getByRole("button", { name: S.save }));
+    await waitFor(() => expect(api.outtakes.create).toHaveBeenCalled());
+
+    unmount();
+
+    const signal = vi
+      .mocked(api.outtakes.create)
+      .mock.calls[0]!.find((a) => a instanceof AbortSignal);
+    expect(signal?.aborted ?? false).toBe(false);
+  });
+
   it("does not create an outtake from an empty textarea", async () => {
     const user = userEvent.setup();
     render(<OuttakesPanel {...defaultProps} />);
@@ -413,7 +439,7 @@ describe("OuttakesPanel", () => {
     await user.click(screen.getByRole("button", { name: S.delete }));
     await user.click(screen.getByRole("button", { name: STRINGS.delete.confirmButton }));
 
-    await waitFor(() => expect(api.outtakes.delete).toHaveBeenCalledWith("a", expect.anything()));
+    await waitFor(() => expect(api.outtakes.delete).toHaveBeenCalledWith("a"));
     await waitFor(() => expect(screen.queryByDisplayValue("Doomed")).not.toBeInTheDocument());
   });
 
@@ -437,11 +463,7 @@ describe("OuttakesPanel", () => {
     await user.tab();
 
     await waitFor(() =>
-      expect(api.outtakes.updateLabel).toHaveBeenCalledWith(
-        "a",
-        { label: "After" },
-        expect.anything(),
-      ),
+      expect(api.outtakes.updateLabel).toHaveBeenCalledWith("a", { label: "After" }),
     );
     await waitFor(() => expect(screen.getByText("Server body")).toBeInTheDocument());
     expect(screen.queryByText("Original body")).not.toBeInTheDocument();
@@ -776,10 +798,10 @@ describe("OuttakesPanel", () => {
     // per-type op, B's run() would abort A's controller and A would never leave.
     await user.click(screen.getAllByRole("button", { name: S.delete })[0]!);
     await user.click(screen.getByRole("button", { name: STRINGS.delete.confirmButton }));
-    await waitFor(() => expect(api.outtakes.delete).toHaveBeenCalledWith("a", expect.anything()));
+    await waitFor(() => expect(api.outtakes.delete).toHaveBeenCalledWith("a"));
     await user.click(screen.getAllByRole("button", { name: S.delete })[1]!);
     await user.click(screen.getByRole("button", { name: STRINGS.delete.confirmButton }));
-    await waitFor(() => expect(api.outtakes.delete).toHaveBeenCalledWith("b", expect.anything()));
+    await waitFor(() => expect(api.outtakes.delete).toHaveBeenCalledWith("b"));
 
     resolveA();
     resolveB();
