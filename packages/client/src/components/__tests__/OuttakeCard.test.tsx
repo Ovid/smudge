@@ -2,9 +2,10 @@ import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { OuttakeCard } from "../OuttakeCard";
-import { api } from "../../api/client";
+import { api, ApiRequestError } from "../../api/client";
 import { STRINGS } from "../../strings";
 import { expectConsole } from "../../__tests__/expectConsole";
+import { LABEL_MAX_UNITS } from "@smudge/shared";
 import type { OuttakeRow } from "@smudge/shared";
 
 vi.mock("../../api/client", () => {
@@ -157,6 +158,44 @@ describe("OuttakeCard", () => {
     expect(onDeleted).not.toHaveBeenCalled();
   });
 
+  it("ignores a second delete confirm instead of aborting the first (S4)", async () => {
+    // deleteOp.run() ABORTS the prior controller, so a second confirm cancels a
+    // DELETE that may already have committed: the first settle returns silently
+    // on signal.aborted, the second 404s against a row that is gone, and the
+    // card stays rendered under a banner claiming the delete failed. EditorPage
+    // latches the identical case with captureInFlightRef.
+    const user = userEvent.setup();
+    const onDeleted = vi.fn();
+    const onError = vi.fn();
+    let resolveDelete!: () => void;
+    vi.mocked(api.outtakes.delete).mockReturnValue(
+      new Promise<void>((res) => {
+        resolveDelete = res;
+      }),
+    );
+    render(
+      <OuttakeCard
+        outtake={makeOuttake()}
+        {...defaultProps}
+        onDeleted={onDeleted}
+        onError={onError}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: S.delete }));
+    await user.click(screen.getByRole("button", { name: STRINGS.delete.confirmButton }));
+    await waitFor(() => expect(api.outtakes.delete).toHaveBeenCalledTimes(1));
+
+    // Second pass through the dialog while the first DELETE is still out.
+    await user.click(screen.getByRole("button", { name: S.delete }));
+    await user.click(screen.getByRole("button", { name: STRINGS.delete.confirmButton }));
+    expect(api.outtakes.delete).toHaveBeenCalledTimes(1);
+
+    resolveDelete();
+    await waitFor(() => expect(onDeleted).toHaveBeenCalledWith("ot-1"));
+    expect(onError).not.toHaveBeenCalled();
+  });
+
   it("does not delete when the confirm dialog is cancelled", async () => {
     const user = userEvent.setup();
     const onDeleted = vi.fn();
@@ -256,6 +295,32 @@ describe("OuttakeCard", () => {
       expect(defaultProps.onError).toHaveBeenCalledWith(STRINGS.error.updateOuttakeFailed),
     );
     expect(screen.getByDisplayValue("First-edited")).toBeInTheDocument();
+  });
+
+  it("caps the label field at the schema's limit and names the cause on a 400 (S5)", async () => {
+    // Two halves of the same failure: nothing stopped an over-long label being
+    // typed, and the resulting 400 mapped to generic copy WHILE commitLabel
+    // reverted the field — so the writer's text vanished with no cause named
+    // and an identical retry reproduced it.
+    const user = userEvent.setup();
+    const onError = vi.fn();
+    vi.mocked(api.outtakes.updateLabel).mockRejectedValue(
+      new ApiRequestError("too long", 400, "VALIDATION_ERROR"),
+    );
+    render(<OuttakeCard outtake={makeOuttake()} {...defaultProps} onError={onError} />);
+
+    const input = screen.getByDisplayValue("A cut scene");
+    expect(input).toHaveAttribute("maxLength", String(LABEL_MAX_UNITS));
+
+    await user.clear(input);
+    await user.type(input, "Renamed");
+    await user.tab();
+
+    await waitFor(() =>
+      expect(onError).toHaveBeenCalledWith(
+        STRINGS.error.updateOuttakeLabelRejected(LABEL_MAX_UNITS),
+      ),
+    );
   });
 
   it("expands a long preview when Show more is clicked", async () => {

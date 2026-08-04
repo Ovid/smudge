@@ -485,6 +485,11 @@ export function EditorPage() {
   // prepends it optimistically (I1) rather than reloading — a reload could be
   // staled by a concurrent card delete/rename, silently dropping the capture.
   const [capturedOuttake, setCapturedOuttake] = useState<OuttakeRow | null>(null);
+  // S1: a 2xx BAD_JSON capture leaves no row to hand the panel, but the server
+  // most likely committed it. Bumping this is the only way an open panel learns
+  // to refetch — and without it a re-capture mints a duplicate of a row the
+  // writer cannot see.
+  const [outtakesExternalRefreshKey, setOuttakesExternalRefreshKey] = useState(0);
 
   // S3 + S4 (review 2026-07-26): ONE guard for the two insert-at-cursor entry
   // points. I2 established that inserting an image and inserting an outtake are
@@ -980,11 +985,16 @@ export function EditorPage() {
   const captureInFlightRef = useRef(false);
 
   // Send the current selection to outtakes (non-destructive copy). Reads the
-  // selection, strips images, POSTs a new outtake, then bumps the refresh
-  // nonce so the panel reloads. It never writes editor content, so
-  // save-pipeline invariants 1-4 do NOT apply and NO busy/lock guard is
-  // needed (guard axis: none — non-destructive read + POST). A toolbar click
-  // is safe on a blurred editor because ProseMirror keeps state.selection.
+  // selection, strips images, POSTs a new outtake, then hands the created row
+  // to the panel to prepend (S14: the refresh nonce this comment used to
+  // describe was replaced by that prepend mid-implementation; the nonce that
+  // remains — outtakesExternalRefreshKey — fires only on the possibly-committed
+  // failure arm). It never writes editor content, so save-pipeline invariants
+  // 1-4 do NOT apply and NO busy/lock guard is needed. It is not unguarded,
+  // though: a re-entrancy latch (captureInFlightRef), a collapsed-caret refusal
+  // and an image-only refusal all gate it — see the surface test's annotation.
+  // A toolbar click is safe on a blurred editor because ProseMirror keeps
+  // state.selection.
   const handleSendSelectionToOuttakes = useCallback(async () => {
     if (!toolbarEditor || !project) return;
     if (captureInFlightRef.current) {
@@ -1029,7 +1039,14 @@ export function EditorPage() {
       setCapturedOuttake(row);
     } catch (err) {
       if (signal.aborted || isStaleProject()) return;
-      applyMappedError(mapApiError(err, "outtake.create"), { onMessage: setActionError });
+      applyMappedError(mapApiError(err, "outtake.create"), {
+        // S1: no STOP — the ambiguity copy still belongs on the banner. The
+        // refetch is what makes a committed-but-unreturned row visible, exactly
+        // as notePossiblyCommitted does for the three write paths the panel
+        // owns itself.
+        onCommitted: () => setOuttakesExternalRefreshKey((k) => k + 1),
+        onMessage: setActionError,
+      });
     } finally {
       captureInFlightRef.current = false;
     }
@@ -1247,6 +1264,7 @@ export function EditorPage() {
         onInsertImage={handleInsertImage}
         onInsertOuttake={handleInsertOuttake}
         capturedOuttake={capturedOuttake}
+        outtakesExternalRefreshKey={outtakesExternalRefreshKey}
         snapshotPanelOpen={snapshotPanelOpen}
         onCloseSnapshotPanel={() => setSnapshotPanelOpen(false)}
         snapshotPanelRef={snapshotPanelRef}

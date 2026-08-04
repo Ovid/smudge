@@ -105,8 +105,14 @@ const EDITOR_HEADER_PROPS = [
   "onToggleSnapshots",
   "onToggleFindReplace",
   // Phase 4c.2: non-destructive read + POST (copy selection to outtakes).
-  // Guard axis: NONE — it writes no editor content, so save-pipeline
-  // invariants 1-4 do not apply and no busy/lock gate is needed.
+  // Guard axis: RE-ENTRANCY LATCH (captureInFlightRef) plus two input
+  // refusals (collapsed caret, image-only selection). NOT the busy/lock axis:
+  // it writes no editor content, so save-pipeline invariants 1-4 do not apply.
+  // S15 (agentic-review 2026-08-04): this said "Guard axis: NONE", which is
+  // the one kind of inaccuracy this file cannot afford — an author adding a
+  // sibling entry point reads it as licence to ship no latch, and a second
+  // capture click aborting a POST that may have committed is precisely what
+  // the latch exists to stop.
   "onSendSelectionToOuttakes",
   "snapshotsTriggerRef",
   "findReplaceTriggerRef",
@@ -185,6 +191,11 @@ const EDITOR_MAIN_CONTENT_PROPS = [
   "onInsertOuttake",
   // Phase 4c.2: pure data — the panel prepends this captured row (I1). No guard.
   "capturedOuttake",
+  // S1: a monotonic nonce, bumped only on the capture's possibly-committed
+  // failure arm, that asks the panel to refetch. Guard axis: NONE and correctly
+  // so — it writes no editor content and triggers only a GET the panel already
+  // issues on its own; the capture POST it follows is latched upstream.
+  "outtakesExternalRefreshKey",
   "snapshotPanelOpen",
   "onCloseSnapshotPanel",
   "snapshotPanelRef",

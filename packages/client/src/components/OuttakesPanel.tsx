@@ -20,6 +20,14 @@ interface OuttakesPanelProps {
    * could stale. Null before the first capture.
    */
   capturedOuttake: OuttakeRow | null;
+  /**
+   * S1: bumped by EditorPage when a toolbar capture came back 2xx BAD_JSON —
+   * the server most likely committed the row but there is no body to prepend,
+   * so only an authoritative refetch can surface it. The three write paths the
+   * panel owns itself route this through `requestReload`; this is the same
+   * signal reaching in from the one that lives outside it.
+   */
+  externalRefreshKey: number;
 }
 
 /** Wrap a textarea's plain string into a TipTap doc, one paragraph per line. */
@@ -36,7 +44,12 @@ function textToDoc(text: string): Record<string, unknown> {
   };
 }
 
-export function OuttakesPanel({ projectId, onInsert, capturedOuttake }: OuttakesPanelProps) {
+export function OuttakesPanel({
+  projectId,
+  onInsert,
+  capturedOuttake,
+  externalRefreshKey,
+}: OuttakesPanelProps) {
   const [outtakes, setOuttakes] = useState<OuttakeRow[]>([]);
   const [filter, setFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -108,7 +121,7 @@ export function OuttakesPanel({ projectId, onInsert, capturedOuttake }: Outtakes
       .finally(() => {
         loadsInFlightRef.current -= 1;
       });
-  }, [projectId, reloadKey, loadOp, seq]);
+  }, [projectId, reloadKey, externalRefreshKey, loadOp, seq]);
 
   // Shared prologue for every optimistic reconciliation: stale any in-flight
   // reload so it can't clobber the change, and — since staling discards rows we

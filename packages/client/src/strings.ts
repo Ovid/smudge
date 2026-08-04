@@ -138,6 +138,11 @@ export const STRINGS = {
     createOuttakeFailed: "Failed to save outtake",
     createOuttakeTooLarge: "Outtake is too large to save. Capture a smaller selection.",
     updateOuttakeFailed: "Failed to update outtake",
+    // S5: the only 400 the rename endpoint emits is the label cap. The generic
+    // fallback names no cause, and the field reverts on a definite failure — so
+    // the writer watched their text vanish and an identical retry reproduce it.
+    updateOuttakeLabelRejected: (max: number) =>
+      `That outtake label is too long — keep it under ${max.toLocaleString()} characters.`,
     deleteOuttakeFailed: "Failed to delete outtake",
   },
   editor: {

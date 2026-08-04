@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import type { OuttakeRow } from "@smudge/shared";
-import { toPlainText, countWords, truncateUnits } from "@smudge/shared";
+import { toPlainText, countWords, truncateUnits, LABEL_MAX_UNITS } from "@smudge/shared";
 import { api } from "../api/client";
 import { mapApiError, applyMappedError, STOP } from "../errors";
 import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
@@ -56,6 +56,14 @@ export function OuttakeCard({
   // unmounts (e.g. after its own delete removes it from the list).
   const deleteOp = useAbortableAsyncOperation();
   const updateOp = useAbortableAsyncOperation();
+
+  // S4: deleteOp.run() aborts the prior controller, so a second confirm cancels
+  // a DELETE that may already have committed — the row goes server-side, the
+  // first settle returns silently on signal.aborted, and the retry's 404 paints
+  // a banner saying the delete failed. Aborting a mutation that may have landed
+  // is the wrong cancellation semantic; the same latch guards the identical
+  // case in EditorPage's capture handler (captureInFlightRef).
+  const deleteInFlightRef = useRef(false);
 
   const isLong = plainText.length > PREVIEW_LIMIT;
   const shownText =
@@ -116,6 +124,8 @@ export function OuttakeCard({
   }
 
   async function handleDelete() {
+    if (deleteInFlightRef.current) return;
+    deleteInFlightRef.current = true;
     const { promise, signal } = deleteOp.run((s) => api.outtakes.delete(outtake.id, s));
     try {
       await promise;
@@ -133,6 +143,8 @@ export function OuttakeCard({
         },
         onMessage: onError,
       });
+    } finally {
+      deleteInFlightRef.current = false;
     }
   }
 
@@ -151,6 +163,10 @@ export function OuttakeCard({
         type="text"
         aria-label={S.labelAriaLabel}
         placeholder={S.untitled}
+        // S5: the schema's cap, enforced where the writer can see it. Never
+        // stricter than the server, which trims before measuring, so this
+        // cannot reject a label the API would have accepted.
+        maxLength={LABEL_MAX_UNITS}
         value={labelDraft}
         onChange={(e) => setLabelDraft(e.target.value)}
         onBlur={commitLabel}

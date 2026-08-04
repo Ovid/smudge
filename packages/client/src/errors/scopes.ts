@@ -1,6 +1,6 @@
 import type { ApiRequestError } from "../api/client";
 import { STRINGS } from "../strings";
-import { SEARCH_ERROR_CODES, SNAPSHOT_ERROR_CODES } from "@smudge/shared";
+import { SEARCH_ERROR_CODES, SNAPSHOT_ERROR_CODES, LABEL_MAX_UNITS } from "@smudge/shared";
 
 // F-13: ScopeEntry lives here (with the SCOPES registry it types) rather
 // than in apiErrorMapper.ts, so scopes.ts no longer type-imports from
@@ -500,9 +500,19 @@ export const SCOPES = {
   "outtake.update": {
     fallback: STRINGS.error.updateOuttakeFailed,
     committed: STRINGS.error.possiblyCommitted,
+    // S5: the label cap is the only 400 this endpoint emits, and commitLabel
+    // REVERTS the field on a definite failure — so generic copy meant the
+    // writer's text vanished with no cause named and retry reproduced it.
+    byStatus: { 400: STRINGS.error.updateOuttakeLabelRejected(LABEL_MAX_UNITS) },
   },
   "outtake.delete": {
     fallback: STRINGS.error.deleteOuttakeFailed,
+    // S10: DELETE answers 204, and apiFetch short-circuits before reading a
+    // body, so the 2xx-BAD_JSON path that sets possiblyCommitted cannot fire
+    // here. Kept deliberately, mirroring snapshot.delete: it is the scope's
+    // declaration of what SHOULD happen if the endpoint ever stops being
+    // body-less, not a live path. OuttakeCard's onCommitted arm is defensive
+    // for the same reason.
     committed: STRINGS.error.possiblyCommitted,
   },
   "findReplace.search": {

@@ -115,6 +115,7 @@ interface EditorMainContentProps {
   onInsertImage: (url: string, alt: string) => void;
   onInsertOuttake: (outtake: OuttakeRow) => void;
   capturedOuttake: OuttakeRow | null;
+  outtakesExternalRefreshKey: number;
 
   // Snapshot panel.
   snapshotPanelOpen: boolean;
@@ -190,6 +191,7 @@ export function EditorMainContent({
   onInsertImage,
   onInsertOuttake,
   capturedOuttake,
+  outtakesExternalRefreshKey,
   snapshotPanelOpen,
   onCloseSnapshotPanel,
   snapshotPanelRef,
@@ -407,6 +409,7 @@ export function EditorMainContent({
                   projectId={project.id}
                   onInsert={onInsertOuttake}
                   capturedOuttake={capturedOuttake}
+                  externalRefreshKey={outtakesExternalRefreshKey}
                 />
               ),
             },

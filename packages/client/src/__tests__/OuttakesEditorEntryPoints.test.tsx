@@ -3,7 +3,7 @@ import { render, screen, waitFor, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { EditorPage } from "../pages/EditorPage";
-import { api } from "../api/client";
+import { api, ApiRequestError } from "../api/client";
 import { STRINGS } from "../strings";
 
 // Shared controls for the mocked editor. vi.hoisted makes them available to
@@ -483,6 +483,33 @@ describe("F2: send selection to outtakes (non-destructive)", () => {
     );
 
     expect(await screen.findByText(STRINGS.error.createOuttakeFailed)).toBeInTheDocument();
+  });
+
+  it("refetches the open panel when the capture response was unreadable (S1)", async () => {
+    // A 2xx BAD_JSON means the server most likely committed the outtake but the
+    // body could not be read, so there is no row to prepend. The three sibling
+    // outtake write paths all route this through the panel's requestReload; this
+    // one did not, leaving a committed row invisible in the OPEN panel until the
+    // drawer is closed and reopened — and a re-capture mints a duplicate.
+    const user = userEvent.setup();
+    mockControls.selection = { from: 1, to: 5 };
+    mockControls.sliceJson = [{ type: "paragraph", content: [{ type: "text", text: "x" }] }];
+    vi.mocked(api.outtakes.create).mockRejectedValue(
+      new ApiRequestError("bad body", 200, "BAD_JSON"),
+    );
+    const committed = outtake({ id: "ot-new", label: "Landed anyway" });
+    vi.mocked(api.outtakes.list).mockResolvedValueOnce([]).mockResolvedValue([committed]);
+
+    renderEditorPage();
+    await openOuttakesTab(user);
+    expect(await screen.findByText(STRINGS.outtakes.empty)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: STRINGS.outtakes.newFromSelection }));
+
+    // The ambiguity is still announced...
+    expect(await screen.findByText(STRINGS.error.possiblyCommitted)).toBeInTheDocument();
+    // ...and the refetch surfaces the row that did land.
+    expect(await screen.findByDisplayValue("Landed anyway")).toBeInTheDocument();
   });
 
   it("does not paint project A's capture failure over project B (I1)", async () => {
