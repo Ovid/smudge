@@ -1056,6 +1056,11 @@ export function EditorPage() {
       // independently refuses a row whose project_id is not its own — belt and
       // braces, since this guard cannot see the pre-load window's far side.
       setCapturedOuttake(row);
+      // S3: the prepend is the only feedback a capture produces, and its sole
+      // consumer is the panel — which is closed by default, and whose toolbar
+      // button lives outside it. Announce into the live region the four refusal
+      // arms above already use, so the success case is not the silent one.
+      setActionInfo(STRINGS.outtakes.captured);
     } catch (err) {
       if (signal.aborted || isStaleProject()) return;
       applyMappedError(mapApiError(err, "outtake.create"), {

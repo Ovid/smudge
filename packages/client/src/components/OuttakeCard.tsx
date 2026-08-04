@@ -130,7 +130,12 @@ export function OuttakeCard({
   }
 
   async function handleDelete() {
-    if (deleteInFlightRef.current) return;
+    // S14: name the refusal. The dialog has closed and the card is still here,
+    // so a silent no-op looks like the Confirm button did nothing.
+    if (deleteInFlightRef.current) {
+      onError(S.deleteInFlight);
+      return;
+    }
     deleteInFlightRef.current = true;
     try {
       await api.outtakes.delete(outtake.id);

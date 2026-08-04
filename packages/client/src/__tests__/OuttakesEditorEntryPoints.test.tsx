@@ -434,6 +434,26 @@ describe("F2: send selection to outtakes (non-destructive)", () => {
     expect(body.label!.startsWith(STRINGS.outtakes.fromChapterPrefix)).toBe(true);
   });
 
+  it("announces a successful capture with the panel closed (S3)", async () => {
+    // The toolbar button lives OUTSIDE the reference panel, so capturing with
+    // the panel shut is the ordinary case — and there the prepended row (the
+    // capture's only feedback) has no mounted consumer. All four refusal arms
+    // announce; success must not be the silent one. No openOuttakesTab here:
+    // the closed panel IS the scenario.
+    const user = userEvent.setup();
+    mockControls.selection = { from: 1, to: 8 };
+    mockControls.sliceJson = [{ type: "paragraph", content: [{ type: "text", text: "grabbed" }] }];
+    vi.mocked(api.outtakes.create).mockResolvedValue(outtake({ id: "ot-new" }));
+
+    renderEditorPage();
+    await user.click(
+      await screen.findByRole("button", { name: STRINGS.outtakes.newFromSelection }),
+    );
+
+    await waitFor(() => expect(api.outtakes.create).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(STRINGS.outtakes.captured)).toBeInTheDocument();
+  });
+
   it("no-ops on an empty selection (from === to)", async () => {
     const user = userEvent.setup();
     mockControls.selection = { from: 3, to: 3 };

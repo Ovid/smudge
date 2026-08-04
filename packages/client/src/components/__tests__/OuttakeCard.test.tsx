@@ -210,12 +210,16 @@ describe("OuttakeCard", () => {
     expect(onDeleted).not.toHaveBeenCalled();
   });
 
-  it("ignores a second delete confirm instead of aborting the first (S4)", async () => {
-    // deleteOp.run() ABORTS the prior controller, so a second confirm cancels a
-    // DELETE that may already have committed: the first settle returns silently
-    // on signal.aborted, the second 404s against a row that is gone, and the
-    // card stays rendered under a banner claiming the delete failed. EditorPage
-    // latches the identical case with captureInFlightRef.
+  it("refuses a second delete confirm, and says so (S4, S14)", async () => {
+    // Without the latch a second confirm fires a second DELETE against a row the
+    // first may already have removed, 404ing under a banner claiming the delete
+    // failed. EditorPage latches the identical case with captureInFlightRef.
+    //
+    // S14 (agentic-review 2026-08-04): the latch used to refuse in SILENCE, and
+    // this test asserted that silence as correct. onConfirm closes the dialog
+    // but the card stays until onDeleted, so a second Delete -> Confirm is an
+    // ordinary gesture on a destructive control that appeared to do nothing.
+    // The captureInFlightRef twin this comment cites has always announced.
     const user = userEvent.setup();
     const onDeleted = vi.fn();
     const onError = vi.fn();
@@ -242,10 +246,12 @@ describe("OuttakeCard", () => {
     await user.click(screen.getByRole("button", { name: S.delete }));
     await user.click(screen.getByRole("button", { name: STRINGS.delete.confirmButton }));
     expect(api.outtakes.delete).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith(S.deleteInFlight);
 
     resolveDelete();
     await waitFor(() => expect(onDeleted).toHaveBeenCalledWith("ot-1"));
-    expect(onError).not.toHaveBeenCalled();
+    // The refusal notice is the ONLY thing on the banner — no failure copy.
+    expect(onError).toHaveBeenCalledTimes(1);
   });
 
   it("does not delete when the confirm dialog is cancelled", async () => {

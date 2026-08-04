@@ -498,6 +498,17 @@ export const STRINGS = {
     newFromSelection: "Send selection to outtakes",
     selectionRequired: "Select some text first, then send it to outtakes.",
     selectionHasNoText: "That selection has no text to stash — images aren't kept in outtakes.",
+    // S3 (agentic-review 2026-08-04): the toolbar button lives OUTSIDE the
+    // reference panel, so the ordinary case is capturing with the panel closed —
+    // where the prepended row is the only feedback and its consumer is
+    // unmounted. All four refusal arms announce; the success arm said nothing,
+    // which reads as a broken button.
+    captured: "Sent to outtakes. Open the reference panel to see it.",
+    // S14: the delete re-entrancy latch used to refuse in silence. onConfirm
+    // closes the dialog but the card stays until onDeleted, so a second
+    // Delete -> Confirm during the in-flight DELETE is an ordinary gesture. Its
+    // twin (EditorPage's captureInFlightRef) has always announced.
+    deleteInFlight: "Still deleting that outtake — please wait.",
     newBlank: "New outtake",
     createdElsewhere:
       "Saved to the project you were in when you clicked Save — it isn't in this project's outtakes. Your text is still below.",
