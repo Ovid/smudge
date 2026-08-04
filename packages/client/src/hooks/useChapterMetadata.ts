@@ -138,9 +138,25 @@ export function useChapterMetadata(deps: ChapterMetadataDeps) {
           try {
             const refreshed = await api.projects.get(slug, recoveryController.signal);
             if (recoveryController.signal.aborted) return undefined;
-            // Merge only if still on the same project (id stable across
-            // rename, changes on cross-project navigation).
-            if (projectRef.current?.id === projectId) {
+            // OOSI1 (agentic-review 2026-08-04): the full guard, not the id-only
+            // check this used to carry. The id is stable across a rename and
+            // changes on cross-project navigation only AFTER the new project
+            // finishes loading — so in the PRE-LOAD window (URL already on B,
+            // loadProject(B) not yet resolved) `projectRef` still holds A's id
+            // and the id check passed. This arm then rewound
+            // `projectSlugRef.current` to A's slug while the user was editing B.
+            //
+            // That rewind is session-permanent: useProjectEditor's render-time
+            // sync consumes its prevSlugArgRef sentinel exactly once per slug
+            // transition, so it never re-advances. makeStaleProjectGuard cannot
+            // catch the aftermath either (check 1 sees B===B, check 2 evaluates
+            // "alpha" !== "alpha"), and from there handleCreateChapter POSTs
+            // chapters into project A and handleReorderChapters reorders A's —
+            // silent cross-project writes for the rest of the session.
+            //
+            // This was the last surviving weak copy that WRITES BACK to
+            // projectSlugRef, which is what makes it worse than the other nine.
+            if (!isStaleProject()) {
               setProject(refreshed);
               projectSlugRef.current = refreshed.slug;
             }

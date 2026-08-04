@@ -1387,6 +1387,69 @@ describe("useProjectEditor", () => {
     warn.calledWith("handleCreateChapter recovery GET failed:", expect.any(Error));
   });
 
+  it("OOSI1 (agentic-review 2026-08-04): the rename recovery arm does not rewind projectSlugRef in the PRE-LOAD window", async () => {
+    // handleUpdateProjectTitle's possibly-committed recovery arm guarded only
+    // `projectRef.current?.id === projectId` before BOTH setProject(refreshed)
+    // and `projectSlugRef.current = refreshed.slug`. The id is stable across a
+    // rename and changes on cross-project nav only AFTER the new project loads,
+    // so in the pre-load window (URL on B, loadProject(B) unsettled) the id
+    // check passed and the arm rewound projectSlugRef to A's slug.
+    //
+    // The rewind is session-PERMANENT: the render-time sync consumes its
+    // prevSlugArgRef sentinel exactly once per slug transition, so it never
+    // re-advances, and makeStaleProjectGuard cannot catch the aftermath (check 1
+    // sees B === B; check 2 evaluates "test-project" !== "test-project"). Every
+    // later slug-keyed write then targets project A. handleCreateChapter is the
+    // observable one: it POSTs a chapter into the project the writer left.
+    const warn = expectConsole("warn");
+    vi.mocked(api.projects.update).mockRejectedValue(
+      new ApiRequestError("body parse error", 200, "BAD_JSON"),
+    );
+    let resolveRecovery!: (p: ProjectWithChapters) => void;
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject) // initial load for slug A
+      .mockReturnValueOnce(
+        new Promise((res) => {
+          resolveRecovery = res;
+        }),
+      ) // the recovery GET, held open
+      .mockReturnValue(new Promise(() => {})); // slug B's load: never settles
+
+    const { result, rerender } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug),
+      {
+        initialProps: { slug: "test-project" },
+      },
+    );
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    let renamePromise!: Promise<string | undefined>;
+    act(() => {
+      renamePromise = result.current.handleUpdateProjectTitle("Renamed");
+    });
+    await waitFor(() => expect(api.projects.get).toHaveBeenCalledTimes(2));
+
+    // Only the URL moves — project B's GET never settles, so `project` stays A
+    // and an id-only comparison sees no drift at all.
+    rerender({ slug: "project-b" });
+
+    await act(async () => {
+      resolveRecovery({ ...mockProject, slug: "test-project" });
+      await renamePromise;
+    });
+
+    // The proof the ref was not rewound: the next slug-keyed write targets B.
+    vi.mocked(api.chapters.create).mockResolvedValue(mockChapter1);
+    await act(async () => {
+      await result.current.handleCreateChapter();
+    });
+    expect(api.chapters.create).toHaveBeenCalledWith("project-b", expect.anything());
+    // The rename's own failure warn — the recovery arm adds none of its own.
+    warn.calledTimes(1);
+    warn.calledWith("Failed to update project title:", expect.any(Error));
+  });
+
   it("when the handleCreateChapter recovery GET is aborted, no console.warn fires (stable across S10 4b.3c.2 fix)", async () => {
     // Abort-silence invariant mirror — unmount cleanup at
     // useProjectEditor.ts:273-280 fires createRecoveryAbortRef.abort()
