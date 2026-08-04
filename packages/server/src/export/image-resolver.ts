@@ -135,7 +135,11 @@ async function resolveImageSrcs(
   for (const id of uniqueIds) {
     const result = await resolve(id);
     if (result) {
-      images.set(id, result.image);
+      // S6: keyed by the CANONICAL lowercase id, matching srcById below and the
+      // `data-image-id` the rewrite emits. Keying by the id as matched let two
+      // differently-cased references to one image become two map entries whose
+      // "g"-only caption regexes each missed the other's tag.
+      images.set(id.toLowerCase(), result.image);
       srcById.set(id.toLowerCase(), result.src);
     }
   }
@@ -151,16 +155,26 @@ async function resolveImageSrcs(
   // strips it, so the fail-closed behaviour is unchanged.
   let resolvedHtml = html.replace(IMAGE_SRC_REGEX, (whole, id: string) => {
     const src = srcById.get(id.toLowerCase());
-    return src ? `data-image-id="${id}" src="${src}"` : whole;
+    // S6: emit the canonical lowercase id, so the caption pass below (and the
+    // plaintext renderer's own `data-image-id` matcher) sees one spelling.
+    return src ? `data-image-id="${id.toLowerCase()}" src="${src}"` : whole;
   });
 
   // Add figure/figcaption for images with captions or attribution
   for (const [id, img] of images) {
     const fullCaption = buildCaptionText(img);
     if (fullCaption) {
+      // OOSI1: a FUNCTION replacer, matching the sibling rewrite above. As a
+      // string, every `$` token in the caption is interpolated by the engine —
+      // and escapeHtml manufactures the hazard rather than closing it, since it
+      // rewrites `&` to `&amp;` and leaves the `$&` match token intact. `$\``
+      // splices the whole preceding rendered document into a figcaption meant
+      // to hold escaped text; ordinary prose ("Sold for US$1,200") is enough to
+      // trigger it. Captions are user-settable via PATCH /api/images/:id.
+      const caption = escapeHtml(fullCaption);
       resolvedHtml = resolvedHtml.replace(
         new RegExp(`(<img[^>]*data-image-id="${id}"[^>]*>)`, "g"),
-        `<figure>$1<figcaption>${escapeHtml(fullCaption)}</figcaption></figure>`,
+        (tag) => `<figure>${tag}<figcaption>${caption}</figcaption></figure>`,
       );
     }
   }

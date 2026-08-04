@@ -209,6 +209,50 @@ describe("resolveImagesInHtml", () => {
     expect(result.html).toContain("</figure>");
   });
 
+  it("treats $-sequences in a caption as literal text, not replacement tokens (OOSI1)", async () => {
+    // The figcaption pass is a STRING replacement, so every `$` token in the
+    // second argument is interpolated by the engine. escapeHtml neutralises
+    // `& < > " '` but not `$` — and it manufactures the hazard, rewriting `&`
+    // to `&amp;` so a `$&` survives escaping intact. `$\`` splices the ENTIRE
+    // preceding rendered document (title, TOC, prior chapters, the <style>
+    // block — resolveImagesInHtml runs over the whole document) into a
+    // figcaption meant to hold escaped text, multiplicatively within one
+    // .replace() and compounding across images. Ordinary prose reaches this:
+    // "Sold for US$1,200" splices the <img> tag back into its own caption.
+    const dollarId = uuidv4();
+    await imagesRepo.insert(testDb, {
+      id: dollarId,
+      project_id: projectId,
+      filename: "dollar.png",
+      mime_type: "image/png",
+      size_bytes: TEST_PNG.length,
+      created_at: new Date().toISOString(),
+    });
+    await imagesRepo.update(testDb, dollarId, { caption: "Sold for US$1,200 -- $& $` $' $1" });
+    await writeFile(path.join(tmpDataDir, "images", projectId, `${dollarId}.png`), TEST_PNG);
+
+    const html = `<h1>Doc title</h1><img src="/api/images/${dollarId}" alt="A">`;
+    const result = await resolveImagesInHtml(html, imageSrc);
+
+    expect(result.html).toContain("<figcaption>Sold for US$1,200 -- $&amp; $` $&#39; $1</figcaption>");
+    // The document did not splice itself into its own caption.
+    expect(result.html.match(/Doc title/g)).toHaveLength(1);
+  });
+
+  it("captions a mixed-case duplicate reference to the same image (S6)", async () => {
+    // The C1 one-pass rewrite emits data-image-id AS MATCHED while the caption
+    // regex below is "g"-only (the replaced code used "gi" and emitted the
+    // resolved lowercase id). A second reference in different case therefore
+    // resolved its bytes but silently lost caption/source/license. No shipped
+    // path mints mixed-case UUIDs today — this pins the invariant, not a bug
+    // report.
+    const upper = imageIdWithCaption.toUpperCase();
+    const html = `<img src="/api/images/${imageIdWithCaption}" alt="A"><img src="/api/images/${upper}" alt="B">`;
+    const result = await resolveImagesInHtml(html, imageSrc);
+
+    expect(result.html.match(/<figcaption>A lovely caption<\/figcaption>/g)).toHaveLength(2);
+  });
+
   it("leaves HTML unchanged when no image URLs are present", async () => {
     const html = "<p>No images here</p>";
     const result = await resolveImagesInHtml(html, imageSrc);

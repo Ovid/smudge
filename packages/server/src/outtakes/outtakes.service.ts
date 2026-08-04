@@ -53,9 +53,15 @@ export async function createOuttake(
 
 export async function listOuttakes(projectId: string): Promise<OuttakeRow[] | null> {
   const store = getProjectStore();
-  const project = await store.findProjectById(projectId);
-  if (!project) return null;
-  return store.listOuttakesByProject(projectId);
+  // S8: the liveness check and the read are ONE transaction, like the three
+  // siblings. Split across two round trips, a project soft-delete landing
+  // between them answered 200-with-data where this file's own header says 404 —
+  // the endpoint handing back rows for a project the writer has just trashed.
+  return store.transaction(async (txStore) => {
+    const project = await txStore.findProjectById(projectId);
+    if (!project) return null;
+    return txStore.listOuttakesByProject(projectId);
+  });
 }
 
 export async function updateOuttakeLabel(

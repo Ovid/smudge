@@ -366,7 +366,15 @@ async function blockToParagraphs(
         // TipTapDocSchema is .passthrough() and DB reads bypass Zod entirely.
         const idMatch = ALLOWED_IMAGE_SRC.exec(src);
         if (!idMatch?.[1]) {
-          logger.warn({ src }, "Image src not a recognized /api/images/ URL in docx export");
+          // S7: truncated. `src` is unvalidated user content (TipTapDocSchema is
+          // .passthrough(), DB reads bypass Zod) and the C1 anchoring above is
+          // what widened the set of srcs that reach this line — one per rejected
+          // image node, unbounded, straight into the log. 200 chars is past any
+          // legitimate /api/images/<uuid> src.
+          logger.warn(
+            { src: src.slice(0, 200) },
+            "Image src not a recognized /api/images/ URL in docx export",
+          );
           return [];
         }
 

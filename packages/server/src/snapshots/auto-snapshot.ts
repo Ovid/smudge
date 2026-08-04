@@ -23,6 +23,15 @@ import { canonicalContentHash } from "./content-hash";
  * meant the same mistake had to be made twice and fixed twice. Four
  * parameters, no strategy flags; `SnapshotsStore` is the exact store slice
  * needed, so the transaction-scoped store satisfies it structurally.
+ *
+ * S9 (agentic-review 2026-08-04): that structural satisfaction cuts both ways —
+ * the ROOT store satisfies `SnapshotsStore` just as well, so nothing in the type
+ * system stops a future in-transaction caller passing `getProjectStore()` here
+ * by mistake. Knex's sqlite pool is `{ max: 1 }`, so the root store's two calls
+ * below would then queue behind the caller's own open transaction and block
+ * until `acquireConnectionTimeout` (60s). The parameter is named `txStore`
+ * because it MUST be one: call this only from inside `store.transaction(...)`,
+ * with the `txStore` that transaction handed you.
  */
 export async function insertAutoSnapshotIfChanged(
   txStore: SnapshotsStore,
