@@ -5,7 +5,7 @@ import { OuttakeCard } from "../OuttakeCard";
 import { api, ApiRequestError } from "../../api/client";
 import { STRINGS } from "../../strings";
 import { expectConsole } from "../../__tests__/expectConsole";
-import { LABEL_MAX_UNITS } from "@smudge/shared";
+import { LABEL_MAX_UNITS, OUTTAKE_ERROR_CODES } from "@smudge/shared";
 import type { OuttakeRow } from "@smudge/shared";
 
 vi.mock("../../api/client", () => {
@@ -443,16 +443,24 @@ describe("OuttakeCard", () => {
     expect(screen.getByDisplayValue("First-edited")).toBeInTheDocument();
   });
 
-  it("caps the label field at the schema's limit and names the cause on a 400 (S5)", async () => {
-    // Two halves of the same failure: nothing stopped an over-long label being
-    // typed, and the resulting 400 mapped to generic copy WHILE commitLabel
-    // reverted the field — so the writer's text vanished with no cause named
-    // and an identical retry reproduced it.
+  // Two halves of the same failure (S5): nothing stopped an over-long label
+  // being typed, and the resulting 400 mapped to generic copy WHILE commitLabel
+  // reverted the field — so the writer's text vanished with no cause named and
+  // an identical retry reproduced it.
+  //
+  // S8 (agentic-review 2026-08-04): the fix keyed on the STATUS, and this test
+  // pinned that — a bare VALIDATION_ERROR 400 asserting label-cap copy. But the
+  // cap is not the only 400 the PATCH emits (validateUuidParam throws one before
+  // the schema runs, and .strict() is a second producer), so the copy named a
+  // cause that was not the cause while still wiping the field. Only the
+  // server's discriminating code may claim the cap.
+  it.each([
+    [OUTTAKE_ERROR_CODES.LABEL_TOO_LONG, STRINGS.error.updateOuttakeLabelRejected(LABEL_MAX_UNITS)],
+    ["VALIDATION_ERROR", STRINGS.error.updateOuttakeFailed],
+  ])("names the cause of a 400 with code %s", async (code, expected) => {
     const user = userEvent.setup();
     const onError = vi.fn();
-    vi.mocked(api.outtakes.updateLabel).mockRejectedValue(
-      new ApiRequestError("too long", 400, "VALIDATION_ERROR"),
-    );
+    vi.mocked(api.outtakes.updateLabel).mockRejectedValue(new ApiRequestError("nope", 400, code));
     render(<OuttakeCard outtake={makeOuttake()} {...defaultProps} onError={onError} />);
 
     const input = screen.getByDisplayValue("A cut scene");
@@ -462,11 +470,7 @@ describe("OuttakeCard", () => {
     await user.type(input, "Renamed");
     await user.tab();
 
-    await waitFor(() =>
-      expect(onError).toHaveBeenCalledWith(
-        STRINGS.error.updateOuttakeLabelRejected(LABEL_MAX_UNITS),
-      ),
-    );
+    await waitFor(() => expect(onError).toHaveBeenCalledWith(expected));
   });
 
   it("expands a long preview when Show more is clicked", async () => {

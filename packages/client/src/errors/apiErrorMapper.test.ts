@@ -14,7 +14,12 @@ import {
 import { ApiRequestError } from "../api/client";
 import { SCOPES, type ApiErrorScope } from "./scopes";
 import { STRINGS } from "../strings";
-import { SNAPSHOT_ERROR_CODES, SEARCH_ERROR_CODES } from "@smudge/shared";
+import {
+  SNAPSHOT_ERROR_CODES,
+  SEARCH_ERROR_CODES,
+  OUTTAKE_ERROR_CODES,
+  LABEL_MAX_UNITS,
+} from "@smudge/shared";
 import * as errorsBarrel from "./index";
 
 // Smoke-test the barrel so its re-exports have coverage and any typo in
@@ -990,6 +995,30 @@ describe("SCOPES — outtake.* scopes", () => {
     const err = new ApiRequestError("offline", 0, "NETWORK");
     expect(mapApiError(err, scope).transient).toBe(true);
   });
+});
+
+// S8 (agentic-review 2026-08-04): this scope used to map EVERY 400 to
+// label-length copy, on the premise that the cap is the only 400 the PATCH
+// emits. It is not — validateUuidParam throws 400 before the schema runs and
+// UpdateOuttakeSchema.strict() is a second producer. It matters more here than
+// in a read scope because the consumer (OuttakeCard.commitLabel) REVERTS the
+// visible label field on a definite failure: a non-cap 400 made the writer's
+// typed label vanish under copy naming a cause that was not the cause.
+describe("outtake.update discriminates the label cap from other 400s", () => {
+  it("uses the cap copy for OUTTAKE_LABEL_TOO_LONG", () => {
+    const err = new ApiRequestError("Label is too long", 400, OUTTAKE_ERROR_CODES.LABEL_TOO_LONG);
+    expect(mapApiError(err, "outtake.update").message).toBe(
+      STRINGS.error.updateOuttakeLabelRejected(LABEL_MAX_UNITS),
+    );
+  });
+
+  it.each([["VALIDATION_ERROR"], ["INVALID_UUID"], [undefined]])(
+    "falls back to the generic message for a 400 with code %s",
+    (code) => {
+      const err = new ApiRequestError("nope", 400, code);
+      expect(mapApiError(err, "outtake.update").message).toBe(STRINGS.error.updateOuttakeFailed);
+    },
+  );
 });
 
 describe("SCOPES — snapshot.restore", () => {

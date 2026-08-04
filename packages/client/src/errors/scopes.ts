@@ -1,6 +1,11 @@
 import type { ApiRequestError } from "../api/client";
 import { STRINGS } from "../strings";
-import { SEARCH_ERROR_CODES, SNAPSHOT_ERROR_CODES, LABEL_MAX_UNITS } from "@smudge/shared";
+import {
+  SEARCH_ERROR_CODES,
+  SNAPSHOT_ERROR_CODES,
+  OUTTAKE_ERROR_CODES,
+  LABEL_MAX_UNITS,
+} from "@smudge/shared";
 
 // F-13: ScopeEntry lives here (with the SCOPES registry it types) rather
 // than in apiErrorMapper.ts, so scopes.ts no longer type-imports from
@@ -500,10 +505,19 @@ export const SCOPES = {
   "outtake.update": {
     fallback: STRINGS.error.updateOuttakeFailed,
     committed: STRINGS.error.possiblyCommitted,
-    // S5: the label cap is the only 400 this endpoint emits, and commitLabel
-    // REVERTS the field on a definite failure — so generic copy meant the
-    // writer's text vanished with no cause named and retry reproduced it.
-    byStatus: { 400: STRINGS.error.updateOuttakeLabelRejected(LABEL_MAX_UNITS) },
+    // S5: commitLabel REVERTS the field on a definite failure, so generic copy
+    // meant the writer's text vanished with no cause named and a retry
+    // reproduced it.
+    //
+    // S8 (agentic-review 2026-08-04): by CODE, not by status. The premise for
+    // byStatus[400] was "the label cap is the only 400 this endpoint emits",
+    // and it was wrong twice over — validateUuidParam throws 400 before the
+    // schema runs, and UpdateOuttakeSchema.strict() is a second producer. Those
+    // reverted the field under copy naming a cause that was not the cause.
+    byCode: {
+      [OUTTAKE_ERROR_CODES.LABEL_TOO_LONG]:
+        STRINGS.error.updateOuttakeLabelRejected(LABEL_MAX_UNITS),
+    },
   },
   "outtake.delete": {
     fallback: STRINGS.error.deleteOuttakeFailed,

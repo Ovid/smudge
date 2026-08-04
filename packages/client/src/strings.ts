@@ -141,8 +141,13 @@ export const STRINGS = {
     // S5: the only 400 the rename endpoint emits is the label cap. The generic
     // fallback names no cause, and the field reverts on a definite failure — so
     // the writer watched their text vanish and an identical retry reproduce it.
+    // S9 (agentic-review 2026-08-04): "under N" states an EXCLUSIVE bound for a
+    // cap Zod enforces INCLUSIVELY (.max(LABEL_MAX_UNITS)), so a label of
+    // exactly N was accepted while the copy said it would not be. "characters"
+    // also names a different unit than the cap measures (UTF-16 code units) —
+    // a distinction a prior grapheme-vs-unit mix-up already burned.
     updateOuttakeLabelRejected: (max: number) =>
-      `That outtake label is too long — keep it under ${max.toLocaleString()} characters.`,
+      `That outtake label is too long — keep it to ${max.toLocaleString()} characters or fewer.`,
     deleteOuttakeFailed: "Failed to delete outtake",
   },
   editor: {

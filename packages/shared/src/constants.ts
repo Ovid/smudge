@@ -71,6 +71,22 @@ export const SEARCH_ERROR_CODES = {
 export type SearchErrorCode = (typeof SEARCH_ERROR_CODES)[keyof typeof SEARCH_ERROR_CODES];
 
 /**
+ * Error codes emitted by the outtake endpoints inside the 400 envelope.
+ *
+ * S8 (agentic-review 2026-08-04): the client's `outtake.update` scope mapped
+ * EVERY 400 to label-length copy, on the premise that the cap is the only 400
+ * the PATCH emits. It is not — `validateUuidParam` throws 400 before the schema
+ * runs, and `UpdateOuttakeSchema.strict()` is a second producer. That matters
+ * more here than in a read scope because the consumer REVERTS the visible label
+ * field on a definite failure, so a non-cap 400 made the writer's typed label
+ * vanish under copy naming a cause that was not the cause.
+ */
+export const OUTTAKE_ERROR_CODES = {
+  LABEL_TOO_LONG: "OUTTAKE_LABEL_TOO_LONG",
+} as const;
+export type OuttakeErrorCode = (typeof OUTTAKE_ERROR_CODES)[keyof typeof OUTTAKE_ERROR_CODES];
+
+/**
  * Error codes emitted by the server for 400/404 responses from snapshot
  * endpoints (restoreSnapshot in particular). Shared so the client can
  * discriminate without string-literal drift.

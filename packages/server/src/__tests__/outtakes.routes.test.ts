@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import request from "supertest";
 import { setupTestDb } from "./test-helpers";
 import { logger } from "../logger";
+import { LABEL_MAX_UNITS, OUTTAKE_ERROR_CODES } from "@smudge/shared";
 
 const t = setupTestDb();
 
@@ -177,6 +178,59 @@ describe("outtakes routes", () => {
     it("returns 400 for a bad-uuid outtake param", async () => {
       const res = await request(t.app).patch(`/api/outtakes/${BAD_UUID}`).send({ label: "x" });
       expect(res.status).toBe(400);
+    });
+
+    // S8 (agentic-review 2026-08-04): the client's outtake.update scope mapped
+    // EVERY 400 to label-length copy on the premise that the cap is the only
+    // 400 this endpoint emits. It is not, and the consumer REVERTS the visible
+    // label field on a definite failure — so a non-cap 400 made the writer's
+    // typed label vanish under a cause that was not the cause. Only the cap
+    // failure may carry the discriminating code.
+    describe("400 codes discriminate the label cap from every other failure (S8)", () => {
+      it("labels an over-cap label with OUTTAKE_LABEL_TOO_LONG", async () => {
+        const projectId = await createProject();
+        const created = await request(t.app)
+          .post(`/api/projects/${projectId}/outtakes`)
+          .send({ content: DOC });
+        const res = await request(t.app)
+          .patch(`/api/outtakes/${created.body.id}`)
+          .send({ label: "x".repeat(LABEL_MAX_UNITS + 1) });
+        expect(res.status).toBe(400);
+        expect(res.body.error.code).toBe(OUTTAKE_ERROR_CODES.LABEL_TOO_LONG);
+      });
+
+      it.each([
+        [
+          "a bad uuid param",
+          () => request(t.app).patch(`/api/outtakes/${BAD_UUID}`).send({ label: "x" }),
+        ],
+        [
+          "an unknown key rejected by .strict()",
+          async () => {
+            const projectId = await createProject();
+            const created = await request(t.app)
+              .post(`/api/projects/${projectId}/outtakes`)
+              .send({ content: DOC });
+            return request(t.app)
+              .patch(`/api/outtakes/${created.body.id}`)
+              .send({ label: "x", nope: 1 });
+          },
+        ],
+        [
+          "a non-string label",
+          async () => {
+            const projectId = await createProject();
+            const created = await request(t.app)
+              .post(`/api/projects/${projectId}/outtakes`)
+              .send({ content: DOC });
+            return request(t.app).patch(`/api/outtakes/${created.body.id}`).send({ label: 42 });
+          },
+        ],
+      ])("does NOT label %s as a cap failure", async (_name, send) => {
+        const res = await send();
+        expect(res.status).toBe(400);
+        expect(res.body.error.code).not.toBe(OUTTAKE_ERROR_CODES.LABEL_TOO_LONG);
+      });
     });
   });
 

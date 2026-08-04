@@ -60,12 +60,13 @@ export {
   DEFAULT_SERVER_PORT,
   SEARCH_ERROR_CODES,
   SNAPSHOT_ERROR_CODES,
+  OUTTAKE_ERROR_CODES,
   MAX_QUERY_LENGTH,
   MAX_REPLACE_LENGTH,
   MAX_IMAGE_UPLOAD_BYTES,
   MAX_IMAGE_UPLOAD_LABEL,
 } from "./constants";
-export type { SearchErrorCode, SnapshotErrorCode } from "./constants";
+export type { SearchErrorCode, SnapshotErrorCode, OuttakeErrorCode } from "./constants";
 export type {
   Project,
   Chapter,
