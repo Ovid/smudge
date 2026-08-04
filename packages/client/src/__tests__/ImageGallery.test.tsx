@@ -111,6 +111,26 @@ describe("ImageGallery", () => {
     expect(screen.queryByText(S.noImages)).not.toBeInTheDocument();
   });
 
+  it("keeps the loaded thumbnails on screen while a refresh is in flight (I1)", async () => {
+    // The S6 loading gate was hoisted one arm too high in the ternary chain, so
+    // `loading` blanked the whole <ul>, not just the empty state. Every image
+    // mutation bumps a refresh key, which flips `loading` true in the same
+    // render — so deleting one image made every remaining thumbnail vanish
+    // until the GET settled.
+    const image = makeImage();
+    vi.mocked(api.images.list).mockResolvedValue([image]);
+    const { rerender } = render(<ImageGallery {...defaultProps} externalRefreshKey={0} />);
+    await waitFor(() => expect(screen.getByRole("list")).toBeInTheDocument());
+
+    vi.mocked(api.images.list).mockReturnValue(new Promise(() => {}));
+    rerender(<ImageGallery {...defaultProps} externalRefreshKey={1} />);
+
+    expect(screen.getByRole("list")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: imageButtonName(image) }),
+    ).toBeInTheDocument();
+  });
+
   it("renders upload button", () => {
     render(<ImageGallery {...defaultProps} />);
     expect(screen.getByText(S.uploadButton)).toBeInTheDocument();

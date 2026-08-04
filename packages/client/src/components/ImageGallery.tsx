@@ -437,8 +437,16 @@ export function ImageGallery({
               {S.retryButton}
             </button>
           </div>
-        ) : loading ? null : images.length === 0 ? (
-          <p className="p-4 text-sm text-text-secondary">{S.noImages}</p>
+        ) : images.length === 0 ? (
+          // I1 (agentic-review 2026-08-04): `loading` gates ONLY this arm, as
+          // in OuttakesPanel and SnapshotPanel. Placed one arm higher it read
+          // as `loading ? null : (empty ? … : list)`, making the <ul>
+          // unreachable during a load — and `loading` flips true in the same
+          // render as any refresh-key bump, so every image mutation blanked the
+          // whole grid until the GET settled.
+          loading ? null : (
+            <p className="p-4 text-sm text-text-secondary">{S.noImages}</p>
+          )
         ) : (
           <ul role="list" className="grid grid-cols-2 gap-2 p-4 overflow-y-auto">
             {images.map((image) => (
