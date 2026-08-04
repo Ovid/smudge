@@ -522,6 +522,12 @@ export const STRINGS = {
     newBlank: "New outtake",
     createdElsewhere:
       "Saved to the project you were in when you clicked Save — it isn't in this project's outtakes. Your text is still below.",
+    // I3 (agentic-review 2026-08-04): the same mid-POST project switch on the
+    // failure arms. Covers both the definite failure and the possibly-committed
+    // one: either way the note is not in THIS project, the other project is
+    // where to look, and the retained draft now targets the project on screen.
+    createFailedElsewhere:
+      "That note didn't land in this project — it was aimed at the project you were in when you clicked Save. Check there before retrying; saving now files your text under this project.",
     filterPlaceholder: "Filter outtakes…",
     untitled: "Untitled outtake",
     fromChapterPrefix: "From ",

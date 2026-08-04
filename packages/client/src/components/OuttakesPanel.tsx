@@ -233,6 +233,12 @@ export function OuttakesPanel({
     // OuttakeCard.commitLabel; see the S3 note below for why this panel treats
     // the writer's text as the thing it exists to protect.
     const attempted = draft;
+    // I3 (agentic-review 2026-08-04): the project this POST is aimed at. The
+    // success arm already refuses a row whose project drifted mid-flight; the
+    // failure arms wrote to the panel unconditionally, so project A's banner
+    // painted project B — after the projectId clearing effect had run, so
+    // nothing removed it for the rest of the session.
+    const startedForProject = projectId;
     setCreating(true);
     try {
       const row = await api.outtakes.create(projectId, {
@@ -254,6 +260,14 @@ export function OuttakesPanel({
         setShowNew(false);
       }
     } catch (err) {
+      // I3: the drifted case gets ONE notice covering both failure shapes —
+      // definite and possibly-committed. The distinction is A's business and
+      // the writer has to go look there either way; what B's panel must say is
+      // that the note is not here and that Save now targets B.
+      if (startedForProject !== projectIdRef.current) {
+        setCommittedNotice(S.createFailedElsewhere);
+        return;
+      }
       const mapped = mapApiError(err, "outtake.create");
       applyMappedError(mapped, {
         onMessage: setError,

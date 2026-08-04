@@ -421,6 +421,37 @@ describe("OuttakesPanel", () => {
     expect(screen.getByText(S.createdElsewhere)).toBeInTheDocument();
   });
 
+  it("does not paint project A's create failure onto project B (I3)", async () => {
+    // The success arm guards the mid-POST project switch; the catch arm did not,
+    // so A's failure banner landed on B AFTER the projectId clearing effect had
+    // run — nothing removes it for the rest of the session. Worse, the draft is
+    // deliberately retained, so the writer sees A's prose in B's panel under an
+    // unattributed banner, and clicking Save files it under B.
+    const user = userEvent.setup();
+    let rejectCreate!: (err: unknown) => void;
+    vi.mocked(api.outtakes.create).mockReturnValue(
+      new Promise<OuttakeRow>((_res, rej) => {
+        rejectCreate = rej;
+      }),
+    );
+    vi.mocked(api.outtakes.list).mockResolvedValue([]);
+    const { rerender } = render(<OuttakesPanel {...defaultProps} projectId="proj-A" />);
+    await waitFor(() => expect(screen.getByText(S.empty)).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: S.newBlank }));
+    await user.type(screen.getByLabelText(S.newPlaceholder), "A's private text");
+    await user.click(screen.getByRole("button", { name: S.save }));
+    await waitFor(() => expect(api.outtakes.create).toHaveBeenCalled());
+
+    rerender(<OuttakesPanel {...defaultProps} projectId="proj-B" />);
+    rejectCreate(new Error("boom"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(screen.queryByText(STRINGS.error.createOuttakeFailed)).not.toBeInTheDocument();
+    expect(screen.getByText(S.createFailedElsewhere)).toBeInTheDocument();
+    expect(screen.getByLabelText(S.newPlaceholder)).toHaveValue("A's private text");
+  });
+
   it("a project switch clears the previous project's rows and sticky notice (I3)", async () => {
     // The panel is not keyed on project, so a switch only changes the prop. If
     // the reload for B fails, A's rows stay rendered — and every one of them is
