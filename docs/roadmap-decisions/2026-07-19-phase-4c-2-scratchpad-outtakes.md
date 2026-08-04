@@ -145,3 +145,78 @@ rationale.
 - Net: the design and plan are now internally consistent, scope-clean (the
   destructive cut is correctly fenced into 4c.2a), and the roadmap no longer
   describes a feature the code will not build.
+
+---
+
+## One-Feature-Rule Exception (recorded 2026-08-04)
+
+**Decision: granted.** Phase 4c.2 lands with ten out-of-scope clusters bundled
+alongside the Outtakes drawer.
+
+This reverses design §12, which stated "No exception to the one-feature rule is
+needed." That was true when written and stopped being true as the branch grew.
+CLAUDE.md §Pull Request Scope requires the exception to be explicit and recorded
+in this log rather than inferred from the diff, so it is recorded here — with
+the argument against it, because a decision log that only records the winning
+side is not a record.
+
+Raised as **[I3]** by `paad/code-reviews/scratchpad-outtakes-2026-08-04-08-13-06-4138b47.md`.
+
+### What is carried, and why
+
+Seven clusters fix real defects the feature work surfaced. Reverting them means
+knowingly re-shipping bugs that are now understood:
+
+- **OOSA4** — body-parser's 415 escaped the unclamped global error handler on
+  *every* body-accepting endpoint, mislabelled `VALIDATION_ERROR` and mapped by
+  no client scope. Also amends the CLAUDE.md §API Design contract.
+- **OOSA5** — `validateUuidParam` rollout; malformed ids 404'd instead of 400'ing.
+  **Client-observable contract change** on `GET/PATCH/DELETE /api/chapters/:id`
+  and `POST /api/chapters/:id/restore`.
+- **OOSA6** — a reachable `MAX_TIPTAP_DEPTH` bypass via nested `content: [[…]]`
+  through `PATCH /api/chapters/:id`, and a note-mark leak through array children.
+- **OOSA7** — cross-project image bytes embedded into exports; DOCX honouring an
+  unanchored src match, so `https://evil.example/api/images/<uuid>` embedded
+  local bytes into a file handed to a beta reader.
+- **OOSA8** — the upload cap's user-facing figure could drift from the constant.
+- **OOSA9** — grapheme-vs-code-unit truncation, auto-snapshot extraction.
+- **OOSA10** — nine independent cleanups.
+
+Five clusters are load-bearing for the feature and cannot be split mechanically:
+
+- **OOSA6** — `toPlainText` IS a 4c.2 walker; the `isTipTapNode` consolidation
+  exists because outtakes added the seventh hand-written copy of the predicate.
+- **OOSA9** — `truncateUnits` / `LABEL_MAX_UNITS` are what `OuttakeCard`'s
+  preview and `buildOuttakeLabel` are built on.
+- **OOSA1** — `OuttakesPanel` lives inside the `ReferencePanel` frame the
+  `ResizeSeparator` extraction touched.
+- **OOSA2** — the capture handler needs the stale-project guard.
+- **OOSA3** — `e2e/outtakes.spec.ts` needs the shared project fixture.
+
+### The argument against granting it
+
+Recorded because it is strong and was not dismissed.
+
+This is the rationalization the rule was written to defeat. By the time anyone
+asks, every bundled branch feels load-bearing and already-reviewed. The
+"already reviewed five times" defence is partly circular — the branch needed
+five rounds *because* it is bundled, which is the failure mode the rule names
+(`ovid/snapshots-find-and-replace`: 17,000 insertions, 16 rounds). Two clusters
+in particular deserved their own scrutiny: **OOSA4** amends a steering-file
+contract governing the whole server, and **OOSA5** changes a client-observable
+contract on autosave-adjacent endpoints — and a prior review round on this very
+branch already labelled OOSA5 out-of-scope, after which it was applied anyway.
+
+The alternative considered and declined was splitting OOSA4 and OOSA5 into their
+own PRs. Declined because neither is a clean cherry-pick (OOSA5's extraction
+must stay for the outtakes routes, so only the chapter rollout moves — a
+partial-commit split), and both would reset to zero review while delaying 4c.2.
+
+### Precedent scope — read this before citing it
+
+This exception is granted on the specific finding that the out-of-scope work is
+**overwhelmingly bug fixes and feature prerequisites, not additional features**.
+The one-feature rule remains at its default of enforcement. This entry is NOT
+precedent for bundling a second *feature*, and it is not precedent for
+discovering an exception after the fact as a matter of routine — the next branch
+that grows this way should split while splitting is still cheap.

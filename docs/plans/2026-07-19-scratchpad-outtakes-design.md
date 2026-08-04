@@ -356,7 +356,20 @@ involvement).
 
 Single feature (the non-destructive Outtakes drawer) → one PR, referencing
 roadmap Phase 4c.2. The destructive "cut selection to outtakes" is Phase 4c.2a,
-a separate PR. No exception to the one-feature rule is needed.
+a separate PR. ~~No exception to the one-feature rule is needed.~~
+
+> **Superseded 2026-08-04 — an exception WAS needed, and was granted.** That
+> sentence was true when written and stopped being true as the branch grew: ten
+> out-of-scope clusters landed alongside the feature, most of them fixes to real
+> defects the work surfaced and five of them load-bearing for the drawer itself.
+> Raised as **[I3]** by
+> `paad/code-reviews/scratchpad-outtakes-2026-08-04-08-13-06-4138b47.md`.
+>
+> The exception — what is carried, why, the argument AGAINST granting it, and an
+> explicit limit on what it may be cited as precedent for — is recorded in
+> `docs/roadmap-decisions/2026-07-19-phase-4c-2-scratchpad-outtakes.md`
+> §One-Feature-Rule Exception. Read that section, not this line, before treating
+> this phase as precedent.
 
 ## 13. Dependencies
 
