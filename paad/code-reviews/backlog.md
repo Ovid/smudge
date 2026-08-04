@@ -330,7 +330,7 @@
 - **Confidence:** High
 - **Found by:** Error Handling & Edge Cases (`general-purpose (claude-opus-5[1m])`)
 - **First seen:** 2026-07-26 on branch `scratchpad-outtakes` at `35c9730`
-- **Last seen:** 2026-07-26 on branch `scratchpad-outtakes` at `35c9730`
+- **Last seen:** 2026-08-04 on branch `scratchpad-outtakes` at `4138b47f`
 - **Severity:** Important
 
 ## `c9fce6ab` — Resize drag listeners survive a lost `mouseup`, and a second drag orphans the first
@@ -342,5 +342,5 @@
 - **Confidence:** Medium
 - **Found by:** Concurrency & State (`general-purpose (claude-opus-5[1m])`)
 - **First seen:** 2026-07-26 on branch `scratchpad-outtakes` at `35c9730`
-- **Last seen:** 2026-07-26 on branch `scratchpad-outtakes` at `35c9730`
+- **Last seen:** 2026-08-04 on branch `scratchpad-outtakes` at `4138b47f`
 - **Severity:** Suggestion

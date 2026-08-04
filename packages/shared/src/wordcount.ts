@@ -28,7 +28,14 @@ type TipTapNode = {
 function extractText(node: TipTapNode, depth: number = 0): string {
   if (depth > MAX_TIPTAP_DEPTH) return "";
   if (node.text) return node.text;
-  if (!node.content) return "";
+  // Array.isArray, not a truthiness check: `content` is unvalidated in exactly
+  // the same way its children are (TipTapDocSchema types top-level elements
+  // only; DB reads bypass Zod), so `{"type":"paragraph","content":5}` reaches
+  // here and `for…of` a truthy non-iterable throws. countWords runs before the
+  // transaction on `PATCH /api/chapters/:id` — a throw there is a 500 where the
+  // contract says 400 — and inside OuttakeCard's render, where a persisted row
+  // of that shape made the drawer unrenderable and therefore undeletable.
+  if (!Array.isArray(node.content)) return "";
   const parts: string[] = [];
   let endsWithWhitespace = true;
   for (const child of node.content) {

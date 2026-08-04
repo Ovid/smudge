@@ -39,7 +39,12 @@ function walk(node: Node, depth: number, out: string[]): void {
   }
   const isBlock = node.type ? BLOCK_TYPES.has(node.type) : false;
   if (isBlock && needsNewline(out)) out.push("\n");
-  for (const child of node.content ?? []) walk(child, depth + 1, out);
+  // `?? []` guards an ABSENT content, not a malformed one — see the matching
+  // note in wordcount.ts's extractText. A truthy non-array container survives
+  // the coalesce and throws on iteration.
+  if (Array.isArray(node.content)) {
+    for (const child of node.content) walk(child, depth + 1, out);
+  }
   if (isBlock && needsNewline(out)) out.push("\n");
 }
 /** TipTap JSON → plain text, blocks separated by "\n". Empty/null → "". */

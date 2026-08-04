@@ -273,7 +273,10 @@ describe("TipTap depth-guard contract (MAX_TIPTAP_DEPTH walkers)", () => {
 });
 
 /**
- * Cross-cutting CHILD-SHAPE contract for the same six walkers.
+ * Cross-cutting SHAPE contract for the same walkers — both the shape of a
+ * child and the shape of the `content` container holding it. (No count in the
+ * prose: see the I5 note above on why enrollment, not a number, is the
+ * mechanism.)
  *
  * TipTapDocSchema constrains TOP-LEVEL elements only
  * (`content: z.array(z.record(z.unknown()))`), and DB reads bypass Zod
@@ -366,9 +369,44 @@ describe("TipTap child-shape contract (fail closed on a non-descendable child)",
     expect(() => stripNoteMarks(doc)).not.toThrow();
     expect(() => stripImageNodes(doc)).not.toThrow();
     expect(countWords(doc)).toBe(0);
+    expect(toPlainText(doc)).toBe("");
     expect(extractImageIds(doc)).toEqual([]);
     expect(searchInDoc(doc, "x")).toEqual([]);
     expect(extractNotes(doc)).toEqual([]);
     expect(validateTipTapDepth(doc)).toBe(true); // shallow: no depth violation
   });
+
+  /**
+   * I2 (agentic-review 2026-08-04): the table above pins the shape of a
+   * CHILD; this one pins the shape of the `content` CONTAINER holding it.
+   * `TipTapDocSchema` types top-level elements only and validateTipTapDepth
+   * ends with `if (!Array.isArray(content)) return true`, so
+   * `{"type":"paragraph","content":5}` is accepted by `PATCH /api/chapters/:id`.
+   * `toPlainText` and countWords' extractText were the two walkers iterating
+   * `node.content` without an Array.isArray guard — `?? []` and `if
+   * (!node.content)` both let a truthy non-iterable through, and `for…of 5`
+   * throws. countWords runs BEFORE the transaction on the chapter PATCH (500
+   * where the contract says 400), and both run inside OuttakeCard's render, so
+   * a persisted outtake row made the drawer throw on every render — and the
+   * drawer is what renders its own delete button.
+   */
+  it.each([
+    ["a number", 42],
+    ["a string", "text"],
+    ["an object", { type: "text", text: "smuggled" }],
+    ["true", true],
+  ])(
+    "every walker also fails closed on %s as a nested `content` container",
+    (_label, content) => {
+      const doc = { type: "doc", content: [{ type: "paragraph", content }] };
+      expect(() => stripNoteMarks(doc)).not.toThrow();
+      expect(() => stripImageNodes(doc)).not.toThrow();
+      expect(countWords(doc)).toBe(0);
+      expect(toPlainText(doc)).toBe("");
+      expect(extractImageIds(doc)).toEqual([]);
+      expect(searchInDoc(doc, "x")).toEqual([]);
+      expect(extractNotes(doc)).toEqual([]);
+      expect(validateTipTapDepth(doc)).toBe(true); // shallow: no depth violation
+    },
+  );
 });
