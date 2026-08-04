@@ -57,6 +57,13 @@ export function OuttakesPanel({
   const [showNew, setShowNew] = useState(false);
   const [draft, setDraft] = useState("");
   const [creating, setCreating] = useState(false);
+  // S6 (agentic-review 2026-08-04): the empty state used to render for the FULL
+  // duration of every load — there was no loading flag, and the projectId effect
+  // empties the list before the new load even starts. A writer with fifty
+  // outtakes was told "No outtakes yet. Stash cut text here to find it later."
+  // and invited to stash a duplicate. Seeded true so the first paint, which
+  // happens before the load effect runs, doesn't flash it either.
+  const [loading, setLoading] = useState(true);
 
   // I2: read the LIVE draft from inside handleCreate's post-await tail, whose
   // closure captured the value as of the click. Mirrors the projectRef pattern
@@ -115,6 +122,7 @@ export function OuttakesPanel({
   useEffect(() => {
     const token = seq.start();
     loadsInFlightRef.current += 1;
+    setLoading(true);
     const { promise, signal } = loadOp.run((s) => api.outtakes.list(projectId, s));
     promise
       .then((rows) => {
@@ -128,6 +136,9 @@ export function OuttakesPanel({
       })
       .finally(() => {
         loadsInFlightRef.current -= 1;
+        // Overlapping loads: only the last one out clears the flag (S6), the
+        // same reason loadsInFlightRef is a count rather than a boolean.
+        if (loadsInFlightRef.current === 0) setLoading(false);
       });
   }, [projectId, reloadKey, externalRefreshKey, loadOp, seq]);
 
@@ -355,7 +366,7 @@ export function OuttakesPanel({
           </p>
         )}
 
-        {outtakes.length === 0 && !error && (
+        {outtakes.length === 0 && !error && !loading && (
           <p className="text-sm text-text-secondary text-center py-6 font-sans">{S.empty}</p>
         )}
 

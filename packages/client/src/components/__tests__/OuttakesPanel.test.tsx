@@ -96,6 +96,27 @@ describe("OuttakesPanel", () => {
     });
   });
 
+  it("does not claim the project has no outtakes while the list is loading (S6)", async () => {
+    // There was no loading flag, and the projectId effect empties the list
+    // before the new load starts — so the empty state rendered for the full
+    // duration of every load. A writer with fifty outtakes was told there were
+    // none and invited to stash a duplicate.
+    let settle!: (rows: OuttakeRow[]) => void;
+    vi.mocked(api.outtakes.list).mockReturnValue(
+      new Promise((res) => {
+        settle = res;
+      }),
+    );
+    render(<OuttakesPanel {...defaultProps} />);
+    await waitFor(() => expect(api.outtakes.list).toHaveBeenCalled());
+
+    expect(screen.queryByText(S.empty)).not.toBeInTheDocument();
+
+    settle([makeOuttake({ id: "a", label: "Fifty of these" })]);
+    await waitFor(() => expect(screen.getByDisplayValue("Fifty of these")).toBeInTheDocument());
+    expect(screen.queryByText(S.empty)).not.toBeInTheDocument();
+  });
+
   it("filters the list case-insensitively", async () => {
     vi.mocked(api.outtakes.list).mockResolvedValue([
       makeOuttake({ id: "a", label: "Alpha" }),
