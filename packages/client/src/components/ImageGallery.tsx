@@ -48,6 +48,7 @@ export function ImageGallery({
   const [referencesLoaded, setReferencesLoaded] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [settledLoadKey, setSettledLoadKey] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const announcementTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -92,6 +93,21 @@ export function ImageGallery({
   // Counter to trigger re-fetch from event handlers without calling setState in useEffect
   const [refreshKey, incrementRefreshKey] = useReducer((c: number) => c + 1, 0);
 
+  // S6 (agentic-review 2026-08-04, extended from OuttakesPanel): the "no images
+  // yet" state used to render for the full duration of every load, so a project
+  // with a full gallery was told it had none and invited to re-upload something
+  // it already has.
+  //
+  // DERIVED, not a `setLoading(true)` in the load effect: the effect's trigger
+  // IS this key, so "which key last settled" is the whole state. The true
+  // direction then needs no write at all — it holds before the first paint
+  // without seeding, and flips back the instant any dep changes, with no window
+  // where a stale `false` and a new key coexist. (The synchronous-write form is
+  // also what react-hooks/set-state-in-effect rejects here, rightly: it
+  // cascades a render.)
+  const loadKey = `${projectId} ${refreshKey} ${externalRefreshKey}`;
+  const loading = settledLoadKey !== loadKey;
+
   useEffect(() => {
     // I9 (review 2026-04-24): migrate from `let cancelled = false` to
     // AbortController. The previous flag stopped the .then/.catch from
@@ -117,11 +133,19 @@ export function ImageGallery({
         const { message } = mapApiError(err, "image.list");
         if (message === null) return;
         setLoadError(message);
+      })
+      // One place for every settle arm, including the ABORTED early return
+      // above. Skipped when aborted: this key's load never finished, and a newer
+      // one is already in flight under a different key (S6).
+      .finally(() => {
+        if (!controller.signal.aborted) setSettledLoadKey(loadKey);
       });
     return () => {
       controller.abort();
     };
-  }, [projectId, refreshKey, externalRefreshKey]);
+    // loadKey is derived from the other three, so listing it adds no re-runs —
+    // it changes exactly when they do (S6).
+  }, [projectId, refreshKey, externalRefreshKey, loadKey]);
 
   useEffect(() => {
     return () => {
@@ -413,7 +437,7 @@ export function ImageGallery({
               {S.retryButton}
             </button>
           </div>
-        ) : images.length === 0 ? (
+        ) : loading ? null : images.length === 0 ? (
           <p className="p-4 text-sm text-text-secondary">{S.noImages}</p>
         ) : (
           <ul role="list" className="grid grid-cols-2 gap-2 p-4 overflow-y-auto">

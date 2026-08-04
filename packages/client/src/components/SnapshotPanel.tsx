@@ -94,6 +94,13 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
     const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
     const [deleteError, setDeleteError] = useState<string | null>(null);
     const [listError, setListError] = useState<string | null>(null);
+    // S6 (agentic-review 2026-08-04, extended from OuttakesPanel): the empty
+    // state used to render for the full duration of every load, telling a
+    // chapter with a shelf of snapshots that it has none — on the panel whose
+    // own listError arm exists because "a network blip makes the user think a
+    // chapter with snapshots has none" (see fetchSnapshots). Seeded true
+    // because the mount effect runs after the first paint.
+    const [listLoading, setListLoading] = useState(true);
     const [viewError, setViewError] = useState<string | null>(null);
     const panelRef = useRef<HTMLElement>(null);
     // Seed to `false` (not `isOpen`): the panel is conditionally mounted
@@ -139,15 +146,21 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
       // chapter-switch invalidation semantics.
       chapterSeq.abort();
       const token = chapterSeq.capture();
+      setListLoading(true);
       const { promise } = fetchOp.run((s) => api.snapshots.list(chapterId, s));
       try {
         const data = await promise;
+        // A stale token means a newer fetch is already in flight and has set the
+        // flag back to true — leave it, exactly as the state writes below are
+        // left to that newer fetch (S6).
         if (token.isStale()) return;
+        setListLoading(false);
         setSnapshots(data);
         setListError(null);
         onSnapshotsChange?.(data.length);
       } catch (err) {
         if (token.isStale()) return;
+        setListLoading(false);
         // Surface the failure instead of silently showing an empty panel;
         // otherwise a network blip makes the user think a chapter with
         // snapshots has none.
@@ -458,7 +471,7 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
           )}
 
           {/* Empty state */}
-          {snapshots.length === 0 && !listError && (
+          {snapshots.length === 0 && !listError && !listLoading && (
             <p className="text-sm text-text-secondary text-center py-6 font-sans">{S.emptyState}</p>
           )}
 

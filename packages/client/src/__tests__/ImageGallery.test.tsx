@@ -88,6 +88,29 @@ describe("ImageGallery", () => {
     });
   });
 
+  it("does not claim the project has no images while the list is loading (S6)", async () => {
+    // There was no loading flag, so the empty state rendered for the full
+    // duration of every load: a project with a full gallery was told it had
+    // none and invited to re-upload something it already has.
+    let settle!: (rows: ImageRow[]) => void;
+    vi.mocked(api.images.list).mockReturnValue(
+      new Promise((res) => {
+        settle = res;
+      }),
+    );
+    render(<ImageGallery {...defaultProps} />);
+    await waitFor(() => expect(api.images.list).toHaveBeenCalled());
+
+    expect(screen.queryByText(S.noImages)).not.toBeInTheDocument();
+
+    const image = makeImage();
+    settle([image]);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: imageButtonName(image) })).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(S.noImages)).not.toBeInTheDocument();
+  });
+
   it("renders upload button", () => {
     render(<ImageGallery {...defaultProps} />);
     expect(screen.getByText(S.uploadButton)).toBeInTheDocument();
