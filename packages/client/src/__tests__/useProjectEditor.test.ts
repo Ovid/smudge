@@ -704,6 +704,47 @@ describe("useProjectEditor", () => {
     expect(result.current.project?.title).toBe("New Title");
   });
 
+  it("a chapter rename settling across a project rename still lands (S3)", async () => {
+    // makeStaleProjectGuard's check 2 compares projectSlugRef (which the rename
+    // advances SYNCHRONOUSLY) against projectRef.slug. A rename that advanced
+    // only the first presents the exact signature of pre-load cross-project
+    // navigation — same id, URL slug ahead of the project's slug — so a guarded
+    // operation settling before React commits bails on a project the user never
+    // left. useChapterMetadata now advances both in lock-step.
+    //
+    // HONEST LIMIT: this pins the ordinary interleave, not the sub-commit
+    // window itself — act() flushes React's commit at every await, so the gap
+    // the fix closes is not reachable from a test. It was green before the fix.
+    const { chapters: _drop, ...projectWithoutChapters } = mockProject;
+    vi.mocked(api.projects.update).mockResolvedValue({
+      ...projectWithoutChapters,
+      title: "New Title",
+      slug: "new-title",
+    });
+    let resolveChapterUpdate!: (c: typeof mockChapter1) => void;
+    vi.mocked(api.chapters.update).mockReturnValue(
+      new Promise((res) => {
+        resolveChapterUpdate = res;
+      }),
+    );
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+    const chapterId = result.current.project!.chapters[0]!.id;
+
+    // One act(): React commits at the end, so the chapter rename settles while
+    // projectRef still holds the pre-rename slug — the real window.
+    await act(async () => {
+      const pending = result.current.handleRenameChapter(chapterId, "Renamed");
+      await result.current.handleUpdateProjectTitle("New Title");
+      resolveChapterUpdate({ ...mockChapter1, title: "Renamed" });
+      await pending;
+    });
+
+    expect(result.current.project?.title).toBe("New Title");
+    expect(result.current.project?.chapters[0]!.title).toBe("Renamed");
+  });
+
   it("updates the active chapter title", async () => {
     vi.mocked(api.chapters.update).mockResolvedValue({
       ...mockChapter1,

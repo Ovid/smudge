@@ -331,6 +331,29 @@ describe("F1: insert outtake at cursor", () => {
     expect(screen.queryByText(STRINGS.editor.mutationBusy)).not.toBeInTheDocument();
   });
 
+  it("refuses to insert an outtake whose content fails the doc schema (S11)", async () => {
+    // useSnapshotState gained exactly this gate on this branch; the outtake
+    // insert path did not. Not an XSS vector — but over-depth content from a
+    // hand-edited row or a restored backup gets written into a REAL chapter and
+    // then fails that chapter's auto-save Zod validation permanently: the
+    // terminal "Unable to save" lock, on text the writer just inserted.
+    const user = userEvent.setup();
+    let deep: Record<string, unknown> = { type: "text", text: "x" };
+    for (let i = 0; i < 100; i++) deep = { type: "blockquote", content: [deep] };
+    vi.mocked(api.outtakes.list).mockResolvedValue([
+      outtake({ id: "ot-deep", content: { type: "doc", content: [deep] } }),
+    ]);
+
+    renderEditorPage();
+    await openOuttakesTab(user);
+    await user.click(await screen.findByRole("button", { name: STRINGS.outtakes.insert }));
+
+    expect(insertContentSpy).not.toHaveBeenCalled();
+    expect(
+      await screen.findByText(STRINGS.outtakes.insertFailedCorrupt),
+    ).toBeInTheDocument();
+  });
+
   it("no-ops when the outtake has no blocks (empty doc)", async () => {
     const user = userEvent.setup();
     vi.mocked(api.outtakes.list).mockResolvedValue([

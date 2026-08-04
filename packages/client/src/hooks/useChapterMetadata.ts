@@ -101,6 +101,19 @@ export function useChapterMetadata(deps: ChapterMetadataDeps) {
         // any future direct caller.
         if (isStaleProject()) return undefined;
         projectSlugRef.current = updated.slug;
+        // S3 (agentic-review 2026-08-04): advance projectRef in LOCK-STEP, not
+        // just projectSlugRef. makeStaleProjectGuard's check 2 compares the two,
+        // and projectRef only catches up when React commits the setProject
+        // below — so in between, a rename presents the exact signature of
+        // pre-load cross-project navigation (same id, URL slug ahead of the
+        // project's slug) and every guarded operation settling in that window
+        // bails on a project the user never left. The worst site is the trash
+        // restore success arm: the bail leaves the chapter out of the sidebar
+        // AND still in trash with no banner, and the retry 409s. The render body
+        // re-syncs this ref from state, so this only closes the gap early.
+        if (projectRef.current) {
+          projectRef.current = { ...projectRef.current, title: updated.title, slug: updated.slug };
+        }
         setProject((prev) => (prev ? { ...prev, title: updated.title, slug: updated.slug } : prev));
         return updated.slug;
       } catch (err) {

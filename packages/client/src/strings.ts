@@ -513,6 +513,8 @@ export const STRINGS = {
     newPlaceholder: "Paste or type text to stash here…",
     save: "Save",
     cancel: "Cancel",
+    insertFailedCorrupt:
+      "This outtake's content is corrupt and can't be inserted. Copy the text instead.",
     showMore: "Show more",
     showLess: "Show less",
     wordCount: (count: number) => `${count.toLocaleString()} words`,

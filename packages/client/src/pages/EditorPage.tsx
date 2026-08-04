@@ -1,7 +1,12 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import type { Chapter, ChapterStatusRow, ChapterStatusValue, OuttakeRow } from "@smudge/shared";
-import { stripImageNodes, truncateUnits, LABEL_MAX_UNITS } from "@smudge/shared";
+import {
+  stripImageNodes,
+  truncateUnits,
+  LABEL_MAX_UNITS,
+  TipTapDocSchema,
+} from "@smudge/shared";
 import type { EditorHandle } from "../components/Editor";
 import type { Editor as TipTapEditor } from "@tiptap/react";
 import { STRINGS } from "../strings";
@@ -546,6 +551,16 @@ export function EditorPage() {
     (outtake: OuttakeRow) => {
       const editor = guardInsertAtCursor();
       if (!editor) return;
+      // S11: agree with the gate useSnapshotState applies to the other stored
+      // TipTap surface. Not an XSS concern — but an over-depth or malformed row
+      // (hand-edited DB, restored backup) inserted into a REAL chapter then
+      // fails that chapter's auto-save Zod validation on every attempt: the
+      // terminal "Unable to save" lock, on text the writer just pasted in.
+      const parsed = TipTapDocSchema.safeParse(outtake.content);
+      if (!parsed.success) {
+        setActionInfo(STRINGS.outtakes.insertFailedCorrupt);
+        return;
+      }
       const docContent = outtake.content.content;
       const blocks = Array.isArray(docContent) ? docContent : [];
       // An empty outtake is a card-level oddity, not a refused action — there
@@ -554,7 +569,7 @@ export function EditorPage() {
       if (blocks.length === 0) return;
       editor.chain().focus().insertContent(blocks).run();
     },
-    [guardInsertAtCursor],
+    [guardInsertAtCursor, setActionInfo],
   );
 
   // Insert an image at the cursor. Same operation as handleInsertOuttake, so
