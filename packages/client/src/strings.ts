@@ -137,6 +137,11 @@ export const STRINGS = {
     loadOuttakesFailed: "Failed to load outtakes",
     createOuttakeFailed: "Failed to save outtake",
     createOuttakeTooLarge: "Outtake is too large to save. Capture a smaller selection.",
+    // S3 (agentic-review 2026-08-05): the create endpoint's only 404 producer is
+    // "Project not found." — the project was soft-deleted while the editor was
+    // open. Shared by the panel's blank-note form and the toolbar capture, so
+    // the copy cannot promise the writer their text is still in a textarea.
+    createOuttakeProjectGone: "This project is no longer available, so the outtake wasn't saved.",
     updateOuttakeFailed: "Failed to update outtake",
     // S5: the only 400 the rename endpoint emits is the label cap. The generic
     // fallback names no cause, and the field reverts on a definite failure — so

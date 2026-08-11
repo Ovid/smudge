@@ -500,7 +500,14 @@ export const SCOPES = {
     // 413s; the generic fallback invites a doomed retry, so give the same
     // "too large" hint the sibling write scopes carry. Near-unreachable (a
     // captured selection is a subset of a chapter that already fit).
-    byStatus: { 413: STRINGS.error.createOuttakeTooLarge },
+    // S3: 404 has exactly one producer on this route (the project was
+    // soft-deleted while the editor was open), so a status-keyed arm is safe
+    // here — unlike the 400 case that S8 had to move to byCode. The fallback
+    // read as transient and invited a retry that 404s identically, forever.
+    byStatus: {
+      404: STRINGS.error.createOuttakeProjectGone,
+      413: STRINGS.error.createOuttakeTooLarge,
+    },
   },
   "outtake.update": {
     fallback: STRINGS.error.updateOuttakeFailed,

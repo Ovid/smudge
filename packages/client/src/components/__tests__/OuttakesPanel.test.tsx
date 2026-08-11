@@ -548,6 +548,32 @@ describe("OuttakesPanel", () => {
     expect(screen.getByText(STRINGS.error.deleteOuttakeFailed)).toBeInTheDocument();
   });
 
+  // S3 (agentic-review 2026-08-05): outtake.create was the one write scope with
+  // no 404 arm, though outtakes.routes throws NotFoundError("Project not found.")
+  // when the project was soft-deleted while the editor was open. The generic
+  // fallback reads as transient and invites a retry that 404s identically,
+  // forever, with the writer's text sitting in the textarea. db36f8a2 fixed the
+  // sibling defect for update and delete only.
+  it("names the cause when a create 404s because the project is gone (S3)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.outtakes.list).mockResolvedValue([]);
+    vi.mocked(api.outtakes.create).mockRejectedValue(
+      new ApiRequestError("Project not found.", 404, "NOT_FOUND"),
+    );
+    render(<OuttakesPanel {...defaultProps} />);
+    await waitFor(() => expect(screen.getByText(S.empty)).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: S.newBlank }));
+    await user.type(screen.getByLabelText(S.newPlaceholder), "Rescued prose");
+    await user.click(screen.getByRole("button", { name: S.save }));
+
+    await waitFor(() =>
+      expect(screen.getByText(STRINGS.error.createOuttakeProjectGone)).toBeInTheDocument(),
+    );
+    // The text stays put — this panel exists to not lose it.
+    expect(screen.getByLabelText(S.newPlaceholder)).toHaveValue("Rescued prose");
+  });
+
   it("a project switch clears the previous project's rows and sticky notice (I3)", async () => {
     // The panel is not keyed on project, so a switch only changes the prop. If
     // the reload for B fails, A's rows stay rendered — and every one of them is
