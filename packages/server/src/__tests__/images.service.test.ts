@@ -381,6 +381,43 @@ describe("images.service", () => {
       expect(image).toBeDefined();
     });
 
+    // OOSI2 (agentic-review 2026-08-05): deleteImage decides between 409-blocked
+    // and 204-deleted by parsing every chapter. A chapter whose content does not
+    // parse was skipped by an empty catch — no log, no counter — so the scan
+    // could not tell "nothing references this image" from "one chapter was never
+    // read". The image row AND its bytes then went permanently, while the
+    // corrupt chapter is itself repairable (chapters.repository flags it
+    // content_corrupt and there is a designed CORRUPT_CONTENT route) — so the
+    // repair yields a chapter with a permanently broken image. This is the one
+    // place in the image lifecycle where a read failure produces an
+    // irreversible write.
+    it.each([
+      ["unparseable JSON", "not json {"],
+      ["JSON that is not an object", "42"],
+    ])("blocks the delete when a chapter's content is %s (OOSI2)", async (_label, stored) => {
+      const projectId = await createTestProject();
+      const uploadResult = await imagesService.uploadImage(projectId, {
+        buffer: TEST_PNG,
+        originalname: "test.png",
+        mimetype: "image/png",
+        size: TEST_PNG.length,
+      });
+      const imageId = (uploadResult as { image: { id: string } }).image.id;
+
+      const projectRes = await request(t.app).get("/api/projects");
+      const projectDetail = await request(t.app).get(`/api/projects/${projectRes.body[0].slug}`);
+      const chapterId = projectDetail.body.chapters[0].id;
+      // Bypass the API so the row really is unreadable.
+      await t.db("chapters").where({ id: chapterId }).update({ content: stored });
+
+      const result = await imagesService.deleteImage(imageId);
+
+      expect(result).toHaveProperty("referenced");
+      const referenced = (result as { referenced: Array<{ id: string }> }).referenced;
+      expect(referenced.map((c) => c.id)).toEqual([chapterId]);
+      expect(await t.db("images").where({ id: imageId }).first()).toBeDefined();
+    });
+
     it("includes trashed flag for soft-deleted chapters in referenced response", async () => {
       const projectId = await createTestProject();
       const uploadResult = await imagesService.uploadImage(projectId, {

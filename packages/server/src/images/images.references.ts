@@ -188,8 +188,46 @@ export async function applyImageRefDiff(
 }
 
 /**
+ * Does one chapter's STORED content reference `imageId`?
+ *
+ * OOSI2 (agentic-review 2026-08-05): the third answer is the point. Both
+ * scanners used to fold "this chapter could not be read" into "this chapter
+ * does not reference the image" — an empty `catch` for a parse throw, and
+ * nothing at all for content that parses to a non-object (`"null"`, `"42"`,
+ * `"[]"`), which extractImageIds walks to `[]`. Callers gate an IRREVERSIBLE
+ * delete on that answer, so a chapter whose row is unreadable but whose text
+ * still holds `<img src="/api/images/X">` produced 204-and-unlinked instead of
+ * 409. The chapter itself is repairable — chapters.repository flags it
+ * `content_corrupt` and there is a designed CORRUPT_CONTENT route — so the
+ * repair then yields a chapter with a permanently broken image.
+ *
+ * Blocking on unreadable is the same conservative posture this file already
+ * argues for above IMAGE_SRC_RE: when the scan is uncertain, refuse the delete.
+ */
+export type ImageScanResult = "references" | "no-reference" | "unreadable";
+
+export function scanChapterContentForImage(
+  content: string | null | undefined,
+  imageId: string,
+): ImageScanResult {
+  if (!content) return "no-reference";
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return "unreadable";
+  }
+  if (!isTipTapNode(parsed)) return "unreadable";
+  return extractImageIds(parsed).includes(imageId.toLowerCase()) ? "references" : "no-reference";
+}
+
+/**
  * Scans all non-deleted chapters in a project for references to a specific image.
  * Pure read — does NOT update reference_count in the database.
+ *
+ * OOSI2: an unreadable chapter counts as a reference, matching deleteImage —
+ * the two must agree or the UI's "which chapters block this?" list contradicts
+ * the 409 the delete actually returns.
  */
 export async function scanImageReferences(
   imageId: string,
@@ -201,16 +239,15 @@ export async function scanImageReferences(
   const referencingChapters: Array<{ id: string; title: string }> = [];
 
   for (const ch of chapters) {
-    if (ch.content) {
-      try {
-        const parsed = JSON.parse(ch.content) as Record<string, unknown>;
-        const ids = extractImageIds(parsed);
-        if (ids.includes(imageId.toLowerCase())) {
-          referencingChapters.push({ id: ch.id, title: ch.title });
-        }
-      } catch {
-        // Corrupt JSON — skip this chapter
-      }
+    const scan = scanChapterContentForImage(ch.content, imageId);
+    if (scan === "unreadable") {
+      logger.warn(
+        { chapter_id: ch.id, image_id: imageId, project_id: projectId },
+        "Chapter content unreadable during image reference scan; counting as a reference",
+      );
+    }
+    if (scan !== "no-reference") {
+      referencingChapters.push({ id: ch.id, title: ch.title });
     }
   }
 
