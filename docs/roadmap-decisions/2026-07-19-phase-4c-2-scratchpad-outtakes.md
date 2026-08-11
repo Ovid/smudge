@@ -25,6 +25,7 @@ rationale.
 ## Pushback Findings
 
 ### 1 Roadmap 4c.2 spec still describes the old design
+
 - **Severity:** Important
 - **Category:** Contradiction
 - **Summary:** The roadmap's 4c.2 detail still specified `deleted_at`, a
@@ -36,6 +37,7 @@ rationale.
   DELETE bullet, qualified the image line) in commit `5da4c9b`.
 
 ### 2 Hard-delete posture is inherited by 4c.2a where the outtake is the sole copy
+
 - **Severity:** Important
 - **Category:** Omission (forward-risk)
 - **Summary:** The "an outtake is its own recovery mechanism" rationale holds only
@@ -48,6 +50,7 @@ rationale.
   trivial nullable migration.
 
 ### 3 Plain-text extraction for Copy + filter was unspecified
+
 - **Severity:** Minor
 - **Category:** Omission
 - **Summary:** Copy and the filter both need TipTap-JSON → plain text, but the
@@ -56,6 +59,7 @@ rationale.
   `toPlainText(doc)` with defined newline inter-block separation, used by both.
 
 ### 4 "Insert into editor" inserted a whole `doc` node with undefined edges
+
 - **Severity:** Minor
 - **Category:** Feasibility / Ambiguity
 - **Summary:** Inserting a `{type:"doc"}` node mid-paragraph is ill-defined and
@@ -64,6 +68,7 @@ rationale.
   behavior specified and tested (§8, §10).
 
 ### 5 Persisted `word_count` column was redundant
+
 - **Severity:** Minor
 - **Category:** Scope (over-engineering)
 - **Summary:** The list returns full `content` and the client ships `countWords()`,
@@ -73,6 +78,7 @@ rationale.
   client-side from loaded content.
 
 ### 6 List endpoint returns full content with no bound
+
 - **Severity:** Minor
 - **Category:** Scope / Omission
 - **Summary:** The list returns full content per row ("dozens × up to 5 MB") with
@@ -84,6 +90,7 @@ rationale.
 ## Alignment Findings
 
 ### 1 No REFACTOR step in any task
+
 - **Severity:** Important
 - **Category:** tdd-format
 - **Summary:** Every code task was RED → GREEN → commit with no explicit REFACTOR
@@ -93,6 +100,7 @@ rationale.
   type-only/doc tasks as the accepted TDD exemptions.
 
 ### 2 Capture → panel-refresh wiring left as a TODO across three tasks
+
 - **Severity:** Important
 - **Category:** design-gap
 - **Summary:** F2/D2/E1 each deferred the "new capture appears in the panel"
@@ -106,6 +114,7 @@ rationale.
   the capture. Still a single mechanism, which is what this finding asked for.
 
 ### 3 "New outtake" textarea → TipTap-doc wrapping unspecified
+
 - **Severity:** Minor
 - **Category:** design-gap
 - **Summary:** A `<textarea>` yields a string, but `CreateOuttakeSchema.content`
@@ -115,6 +124,7 @@ rationale.
   step and a test asserting the POSTed body is a valid doc.
 
 ### 4 Find-and-replace exclusion test from §9 was dropped
+
 - **Severity:** Minor
 - **Category:** missing-coverage
 - **Summary:** The design promised a test that replace-all does not touch outtake
@@ -123,6 +133,7 @@ rationale.
   B7 (create outtake with a marker, run replace-all, assert the row is untouched).
 
 ### 5 `toPlainText` forks a second walker vs. the design's "consolidate" wording
+
 - **Severity:** Minor
 - **Category:** design-gap
 - **Summary:** Design §5 said to consolidate the private `extractText`, but the
@@ -165,11 +176,11 @@ bundled alongside the Outtakes drawer, and a tenth site on cluster OOSA2.
 
 > **Amended 2026-08-04 (round 7).** Fourteen clusters became sixteen. Round 7
 > (`scratchpad-outtakes-2026-08-04-11-44-09-8d0b5f7.md`) found two additions
-> that landed *after* the round-6 amendment closed the list — recorded below as
+> that landed _after_ the round-6 amendment closed the list — recorded below as
 > OOSA15 and OOSA16 — and the review response added a third, OOSA17, on an
 > explicit decision by the maintainer. The decision on all three is **keep**, on
 > the same ground as before. Note what the growth pattern itself says: the list
-> has now been reopened at every round that looked for it, twice *after* being
+> has now been reopened at every round that looked for it, twice _after_ being
 > declared final. §The argument against granting it is the part of this record
 > that predicted that, and it should be read as the live half of the decision,
 > not the archived dissent.
@@ -189,7 +200,7 @@ Seven clusters fix real defects the feature work surfaced. Reverting them means
 knowingly re-shipping bugs that are now understood:
 
 - **OOSA4** — body-parser's 415 escaped the unclamped global error handler on
-  *every* body-accepting endpoint, mislabelled `VALIDATION_ERROR` and mapped by
+  _every_ body-accepting endpoint, mislabelled `VALIDATION_ERROR` and mapped by
   no client scope. Also amends the CLAUDE.md §API Design contract.
 - **OOSA5** — `validateUuidParam` rollout; malformed ids 404'd instead of 400'ing.
   **Client-observable contract change** on `GET/PATCH/DELETE /api/chapters/:id`
@@ -231,9 +242,9 @@ a feature. Each is carried on the same ground as the seven above.
   commit `0e3ffc95`). A behaviour change to pointer resizing in both the Sidebar
   and the ReferencePanel: a drag self-terminates when no button is held, and a
   second mousedown reclaims the previous drag's document listeners. **This is
-  distinct from cluster OOSA1 above**, which covers the *extraction*
+  distinct from cluster OOSA1 above**, which covers the _extraction_
   (`c7bba0ab`) and whose source report states that the extraction gives
-  `c9fce6ab` a single owner *without* fixing it. Carried because the bug is
+  `c9fce6ab` a single owner _without_ fixing it. Carried because the bug is
   real — a mouseup delivered outside the document (release over an iframe, a
   native menu, off-window) leaves the panel following the bare pointer and
   writing to localStorage on every mousemove, and an orphaned listener resizes
@@ -267,7 +278,7 @@ clusters; OOSA16 is a tenth site on the existing cluster OOSA2.
   The branch's own commit `d25a8dc4` names both files as out of scope verbatim
   and defers the widening to the maintainer, and it widened before the answer
   arrived. Carried because the defect is real and now tested — and because
-  round 7's highest-severity finding (I1) was a regression *inside* this
+  round 7's highest-severity finding (I1) was a regression _inside_ this
   addition: `ImageGallery` gated one ternary arm too high, blanking the whole
   thumbnail grid on every post-mutation refresh. That fix and its regression
   test are part of this cluster. Reverting the cluster now would take the fix
@@ -290,6 +301,39 @@ clusters; OOSA16 is a tenth site on the existing cluster OOSA2.
   approved for this branch rather than a follow-up. Both entries removed from
   `paad/code-reviews/backlog.md`.
 
+### Added by the round-8 amendment
+
+One addition round 7 already had on the branch and did not name, plus the
+out-of-scope backlog fixes taken during the round-8 review response.
+
+- **OOSA18** — the same-timestamp tie-break rewritten `id DESC` → `rowid DESC`
+  in `snapshots.repository.ts:54` and `:80` (commit `9e64c57b`). Round 7's S8
+  was an in-scope finding against the _outtakes_ list ordering; the fix commit
+  changed that site **and** extended the identical rewrite into the two
+  chapter-snapshot dedup lookups — a different table and a different feature
+  that outtakes never touch. The commit message states the widening openly, but
+  `de286c34` ("record the three out-of-scope entries round 7 found") landed
+  after it and still did not name it. Same shape as OOSA15.
+
+  It is a runtime behaviour change: when two snapshots for a chapter share a
+  millisecond `created_at`, the row a new snapshot's content hash is compared
+  against moves from arbitrary UUID order to last-inserted, deciding whether the
+  writer's manual marker is accepted or refused as a duplicate. **Kept on an
+  explicit maintainer decision (2026-08-11).** The lookup's own comment already
+  said the tie-break existed to keep dedup deterministic; `id DESC` over v4
+  UUIDs did not achieve that, so this completes a stated invariant rather than
+  adding behaviour. Covered by `snapshots.repository.test.ts` (+38).
+
+- **OOSA19** — three out-of-scope backlog fixes taken during the round-8 review
+  response, per the standing rule that a valid defect is fixed regardless of
+  scope: `validateTipTapDepth` rejecting a primitive child of a nested
+  `content[]` (backlog `e66fe50c`), `deleteImage` / `scanImageReferences`
+  treating an unreadable chapter as a blocking reference rather than a
+  non-reference (backlog `89368329`), and `handleCreateChapter`'s
+  create-recovery merge arm upgraded to the full `isStaleProject()` guard
+  (backlog `ddfa2117` — an **eleventh site of cluster OOSA2**, not a cluster of
+  its own). All three entries removed from `paad/code-reviews/backlog.md`.
+
 ### Attribution corrections
 
 The original cluster list credited two files to clusters they do not
@@ -297,7 +341,8 @@ participate in, and one cluster's site count has since gone stale. Verified at
 HEAD:
 
 - Cluster **OOSA2** ("`makeStaleProjectGuard` extraction and strength upgrade at
-  nine sites") is now **ten sites**: `useChapterMetadata.ts`'s project-rename
+  nine sites") is now **eleven sites** — ten as recorded below, plus
+  `useChapterCrud.ts`'s create-recovery merge arm (OOSA19). `useChapterMetadata.ts`'s project-rename
   recovery arm joined it as OOSA16 above, after the cluster description was
   written. The recorded count was factually wrong about its own scope from
   commit `4cecc06d` until this amendment.
@@ -317,7 +362,7 @@ Recorded because it is strong and was not dismissed.
 This is the rationalization the rule was written to defeat. By the time anyone
 asks, every bundled branch feels load-bearing and already-reviewed. The
 "already reviewed five times" defence is partly circular — the branch needed
-five rounds *because* it is bundled, which is the failure mode the rule names
+five rounds _because_ it is bundled, which is the failure mode the rule names
 (`ovid/snapshots-find-and-replace`: 17,000 insertions, 16 rounds). Two clusters
 in particular deserved their own scrutiny: **OOSA4** amends a steering-file
 contract governing the whole server, and **OOSA5** changes a client-observable
@@ -334,7 +379,7 @@ partial-commit split), and both would reset to zero review while delaying 4c.2.
 This exception is granted on the specific finding that the out-of-scope work is
 **overwhelmingly bug fixes and feature prerequisites, not additional features**.
 The one-feature rule remains at its default of enforcement. This entry is NOT
-precedent for bundling a second *feature*, and it is not precedent for
+precedent for bundling a second _feature_, and it is not precedent for
 discovering an exception after the fact as a matter of routine — the next branch
 that grows this way should split while splitting is still cheap.
 
