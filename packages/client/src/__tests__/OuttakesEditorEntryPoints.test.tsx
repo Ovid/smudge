@@ -497,7 +497,25 @@ describe("F2: send selection to outtakes (non-destructive)", () => {
     );
 
     await waitFor(() => expect(api.outtakes.create).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(STRINGS.outtakes.capturedHidden)).toBeInTheDocument();
+  });
+
+  it("drops the open-the-tab hint when the drawer is already showing", async () => {
+    // The hint is instruction, not decoration: told to open a tab they are
+    // looking at, the writer reads the announcement as a failure and hunts for
+    // a panel that is already in front of them.
+    const user = userEvent.setup();
+    mockControls.selection = { from: 1, to: 8 };
+    mockControls.sliceJson = [{ type: "paragraph", content: [{ type: "text", text: "grabbed" }] }];
+    vi.mocked(api.outtakes.create).mockResolvedValue(outtake({ id: "ot-new" }));
+
+    renderEditorPage();
+    await openOuttakesTab(user);
+    await user.click(screen.getByRole("button", { name: STRINGS.outtakes.newFromSelection }));
+
+    await waitFor(() => expect(api.outtakes.create).toHaveBeenCalledTimes(1));
     expect(await screen.findByText(STRINGS.outtakes.captured)).toBeInTheDocument();
+    expect(screen.queryByText(STRINGS.outtakes.capturedHidden)).not.toBeInTheDocument();
   });
 
   it("no-ops on an empty selection (from === to)", async () => {

@@ -1081,7 +1081,11 @@ export function EditorPage() {
       // consumer is the panel — which is closed by default, and whose toolbar
       // button lives outside it. Announce into the live region the four refusal
       // arms above already use, so the success case is not the silent one.
-      setActionInfo(STRINGS.outtakes.captured);
+      setActionInfo(
+        panelOpen && activeTabId === "outtakes"
+          ? STRINGS.outtakes.captured
+          : STRINGS.outtakes.capturedHidden,
+      );
     } catch (err) {
       if (signal.aborted || isStaleProject()) return;
       applyMappedError(mapApiError(err, "outtake.create"), {
@@ -1104,6 +1108,8 @@ export function EditorPage() {
     setActionInfo,
     projectRef,
     projectSlugRef,
+    panelOpen,
+    activeTabId,
   ]);
 
   useKeyboardShortcuts({

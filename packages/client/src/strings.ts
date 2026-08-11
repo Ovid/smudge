@@ -513,7 +513,12 @@ export const STRINGS = {
     // where the prepended row is the only feedback and its consumer is
     // unmounted. All four refusal arms announce; the success arm said nothing,
     // which reads as a broken button.
-    captured: "Sent to outtakes. Open the reference panel to see it.",
+    captured: "Sent to outtakes.",
+    // The hint is only true when the drawer is NOT on screen. Announced over an
+    // open Outtakes tab it instructs the writer to open what they are already
+    // looking at, which reads as a failure. Panel open on another tab still
+    // takes the hint — "Outtakes tab" is the accurate instruction either way.
+    capturedHidden: "Sent to outtakes. Open the Outtakes tab to see it.",
     // S14: the delete re-entrancy latch used to refuse in silence. onConfirm
     // closes the dialog but the card stays until onDeleted, so a second
     // Delete -> Confirm during the in-flight DELETE is an ordinary gesture. Its
