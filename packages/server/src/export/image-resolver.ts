@@ -61,7 +61,15 @@ export async function resolveImage(
   imageId: string,
   source: ImageSource,
 ): Promise<ResolvedImage | null> {
-  const row = await source.findImageById(imageId);
+  // I1 (agentic-review 2026-08-05): canonicalize HERE, not only in
+  // resolveImageSrcs — DOCX is the documented exception that never goes through
+  // that pipeline (it walks TipTap JSON straight into Word paragraphs), so
+  // OOSS1's fix reached four export formats and not the fifth. Both allowlist
+  // regexes carry the "i" flag while `findImageById` ends at `where({ id })`
+  // under SQLite's BINARY collation, and ids are minted lowercase
+  // (randomUUID) — so lowercase IS the canonical spelling. At the lookup, every
+  // renderer inherits it, including one that does not exist yet.
+  const row = await source.findImageById(imageId.toLowerCase());
   if (!row) return null;
 
   const ext = mimeToExt(row.mime_type);

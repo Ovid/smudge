@@ -471,6 +471,31 @@ describe("renderDocx with images", () => {
     expect(mediaFiles).toEqual([]);
   });
 
+  // I1 (agentic-review 2026-08-05): OOSS1's canonicalization landed in
+  // resolveImageSrcs, which DOCX is the documented exception to — it walks
+  // TipTap JSON straight into Word paragraphs and never renders HTML. So the
+  // uppercase reference that HTML/Markdown/plaintext/EPUB now resolve was still
+  // hitting `where({ id })` under SQLite's BINARY collation here, and DOCX
+  // became the ONLY format silently dropping the image and its caption — the
+  // writer's natural cross-check (preview the HTML export) no longer catches it.
+  it("resolves an image referenced only in uppercase (I1)", async () => {
+    const chapters: ExportChapter[] = [
+      {
+        id: "ch-1",
+        title: "Uppercase Image",
+        content: makeChapterWithImage(imageIdWithCaption.toUpperCase()),
+        sort_order: 0,
+      },
+    ];
+    const buf = await renderDocx(projectInfo, chapters, { includeToc: false }, imageSrc);
+    const zip = await JSZip.loadAsync(buf);
+    expect(Object.keys(zip.files).filter((f) => f.startsWith("word/media/")).length).toBeGreaterThan(
+      0,
+    );
+    const docXml = await zip.file("word/document.xml")!.async("string");
+    expect(docXml).toContain("A lovely caption");
+  });
+
   it("renders a caption paragraph beneath a captioned image", async () => {
     const chapters: ExportChapter[] = [
       {
