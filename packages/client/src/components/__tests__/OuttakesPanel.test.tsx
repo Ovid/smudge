@@ -511,6 +511,43 @@ describe("OuttakesPanel", () => {
     expect(screen.queryByText(STRINGS.error.deleteOuttakeFailed)).not.toBeInTheDocument();
   });
 
+  // S1 (agentic-review 2026-08-05): one `error` state served two channels. A
+  // card write failure routes through applyMappedError → setError WITHOUT
+  // calling reconcile(), so it never bumps the epoch and an already-in-flight
+  // list GET stays fresh — its success arm then cleared the banner the writer
+  // had not read yet, leaving a card still on screen and indistinguishable from
+  // one whose delete was never clicked. The panel already separates
+  // `committedNotice` for exactly this reason; the reasoning reached one channel.
+  it("a settling list load does not erase an unread write failure (S1)", async () => {
+    const user = userEvent.setup();
+    let resolveReload!: (rows: OuttakeRow[]) => void;
+    const row = makeOuttake({ id: "a", label: "A row" });
+    vi.mocked(api.outtakes.list).mockResolvedValueOnce([row]);
+    vi.mocked(api.outtakes.delete).mockRejectedValue(new Error("boom"));
+    const { rerender } = render(<OuttakesPanel {...defaultProps} />);
+    await screen.findByDisplayValue("A row");
+
+    // A capture came back 2xx BAD_JSON: EditorPage bumps the refresh key, so a
+    // list GET is now outstanding.
+    vi.mocked(api.outtakes.list).mockReturnValueOnce(
+      new Promise<OuttakeRow[]>((res) => {
+        resolveReload = res;
+      }),
+    );
+    rerender(<OuttakesPanel {...defaultProps} externalRefreshKey={1} />);
+    await waitFor(() => expect(api.outtakes.list).toHaveBeenCalledTimes(2));
+
+    await user.click(screen.getByRole("button", { name: S.delete }));
+    await user.click(screen.getByRole("button", { name: STRINGS.delete.confirmButton }));
+    await waitFor(() =>
+      expect(screen.getByText(STRINGS.error.deleteOuttakeFailed)).toBeInTheDocument(),
+    );
+
+    resolveReload([row]);
+    await waitFor(() => expect(screen.getByDisplayValue("A row")).toBeInTheDocument());
+    expect(screen.getByText(STRINGS.error.deleteOuttakeFailed)).toBeInTheDocument();
+  });
+
   it("a project switch clears the previous project's rows and sticky notice (I3)", async () => {
     // The panel is not keyed on project, so a switch only changes the prop. If
     // the reload for B fails, A's rows stay rendered — and every one of them is

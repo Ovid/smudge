@@ -53,6 +53,13 @@ export function OuttakesPanel({
   const [outtakes, setOuttakes] = useState<OuttakeRow[]>([]);
   const [filter, setFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // S1 (agentic-review 2026-08-05): the list load gets its OWN slot, as
+  // SnapshotPanel already does. Sharing `error` with the write channel meant a
+  // concurrent load's success arm cleared a write failure the writer had not
+  // read — and a card write never calls reconcile(), so it cannot stale the
+  // in-flight load that erases it. Same reasoning as committedNotice below,
+  // which was given separate state for exactly this hazard and stopped there.
+  const [listError, setListError] = useState<string | null>(null);
   const [committedNotice, setCommittedNotice] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [draft, setDraft] = useState("");
@@ -114,6 +121,7 @@ export function OuttakesPanel({
     setOuttakes([]);
     setCommittedNotice(null);
     setError(null);
+    setListError(null);
   }, [projectId]);
 
   // Load (on mount, projectId change, and an explicit reload request). ABORTED
@@ -128,11 +136,11 @@ export function OuttakesPanel({
       .then((rows) => {
         if (signal.aborted || token.isStale()) return;
         setOuttakes(rows);
-        setError(null);
+        setListError(null);
       })
       .catch((err: unknown) => {
         if (signal.aborted || token.isStale()) return;
-        applyMappedError(mapApiError(err, "outtake.list"), { onMessage: setError });
+        applyMappedError(mapApiError(err, "outtake.list"), { onMessage: setListError });
       })
       .finally(() => {
         loadsInFlightRef.current -= 1;
@@ -420,7 +428,13 @@ export function OuttakesPanel({
           </p>
         )}
 
-        {outtakes.length === 0 && !error && !loading && (
+        {listError && (
+          <p role="alert" className="text-xs text-red-700 font-sans">
+            {listError}
+          </p>
+        )}
+
+        {outtakes.length === 0 && !listError && !loading && (
           <p className="text-sm text-text-secondary text-center py-6 font-sans">{S.empty}</p>
         )}
 
