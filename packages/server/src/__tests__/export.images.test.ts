@@ -489,9 +489,9 @@ describe("renderDocx with images", () => {
     ];
     const buf = await renderDocx(projectInfo, chapters, { includeToc: false }, imageSrc);
     const zip = await JSZip.loadAsync(buf);
-    expect(Object.keys(zip.files).filter((f) => f.startsWith("word/media/")).length).toBeGreaterThan(
-      0,
-    );
+    expect(
+      Object.keys(zip.files).filter((f) => f.startsWith("word/media/")).length,
+    ).toBeGreaterThan(0);
     const docXml = await zip.file("word/document.xml")!.async("string");
     expect(docXml).toContain("A lovely caption");
   });
