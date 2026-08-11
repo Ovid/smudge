@@ -426,8 +426,11 @@ describe("OuttakeCard", () => {
     await user.type(input, "Renamed");
     await user.tab();
 
-    await waitFor(() => expect(onDeleted).toHaveBeenCalledWith("ot-1"));
-    expect(onError).toHaveBeenCalledWith(S.alreadyGone);
+    // I3: the drop and its explanation are ONE call, so the panel's reconciler
+    // cannot erase the message in the same continuation. Asserted against a
+    // mocked prop here; OuttakesPanel.test.tsx pins that it reaches the DOM.
+    await waitFor(() => expect(onDeleted).toHaveBeenCalledWith("ot-1", S.alreadyGone));
+    expect(onError).not.toHaveBeenCalled();
     expect(defaultProps.onUpdated).not.toHaveBeenCalled();
   });
 

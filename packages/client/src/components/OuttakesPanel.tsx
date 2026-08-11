@@ -296,10 +296,14 @@ export function OuttakesPanel({
   // Reconcile the list by id after a card's own awaited server call succeeds.
   // No api/abort here — the card owns the request (and its per-row op); these
   // only touch local state.
-  function handleDeleted(id: string) {
+  // I3: `message` is how the rename-404 arm says why a card is disappearing.
+  // Taking it here makes the drop and the explanation ONE state transition —
+  // the card used to call onError first and this function's setError(null) then
+  // erased it in the same continuation.
+  function handleDeleted(id: string, message?: string) {
     reconcile();
     setOuttakes((prev) => prev.filter((o) => o.id !== id));
-    setError(null);
+    setError(message ?? null);
   }
 
   function handleUpdated(row: OuttakeRow) {

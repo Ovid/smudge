@@ -14,8 +14,17 @@ const COPIED_NOTICE_MS = 2000;
 interface OuttakeCardProps {
   outtake: OuttakeRow;
   onInsert: (outtake: OuttakeRow) => void;
-  /** Reconcile the panel list after THIS card's own delete succeeds. */
-  onDeleted: (id: string) => void;
+  /**
+   * Reconcile the panel list after THIS card's own delete succeeds — or after a
+   * rename 404 proved the row is already gone, in which case `message` names
+   * why the card is disappearing.
+   *
+   * I3 (agentic-review 2026-08-05): the message is a PARAMETER, not a preceding
+   * `onError` call. The panel's reconciler ends with `setError(null)`, so two
+   * writes to the same state landed in one continuation and the last one won —
+   * the card vanished silently, on a table with no trash and no undo.
+   */
+  onDeleted: (id: string, message?: string) => void;
   /** Reconcile the panel list after THIS card's own rename succeeds. */
   onUpdated: (row: OuttakeRow) => void;
   /** Surface a failure on the panel's shared error banner. */
@@ -144,8 +153,7 @@ export function OuttakeCard({
       // whose every retry 404s, escapable only by closing the reference panel —
       // so drop the card and say so, mirroring SnapshotPanel's isNotFound arm.
       if (isNotFound(err)) {
-        onError(S.alreadyGone);
-        onDeleted(outtake.id);
+        onDeleted(outtake.id, S.alreadyGone);
         return;
       }
       const mapped = mapApiError(err, "outtake.update");

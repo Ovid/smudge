@@ -657,6 +657,28 @@ describe("OuttakesPanel", () => {
     await waitFor(() => expect(screen.getByDisplayValue("After")).toBeInTheDocument());
   });
 
+  // I3 (agentic-review 2026-08-05): the 404 arm called onError then onDeleted,
+  // and handleDeleted ends with setError(null) — two writes to the same state in
+  // one continuation, last one wins. db36f8a2's stated intent was "drop the card
+  // AND say so"; the "say so" half never reached the DOM, so on a hard-delete
+  // table with no trash the card just vanished with nothing explaining why.
+  it("says why the card vanished when a rename 404s (I3)", async () => {
+    vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "a", label: "Before" })]);
+    vi.mocked(api.outtakes.updateLabel).mockRejectedValue(
+      new ApiRequestError("Outtake not found.", 404, "NOT_FOUND"),
+    );
+    const user = userEvent.setup();
+    render(<OuttakesPanel {...defaultProps} />);
+    const input = await screen.findByDisplayValue("Before");
+
+    await user.clear(input);
+    await user.type(input, "After");
+    await user.tab();
+
+    await waitFor(() => expect(screen.getByText(S.alreadyGone)).toBeInTheDocument());
+    expect(screen.queryByDisplayValue("Before")).not.toBeInTheDocument();
+  });
+
   it("discards a stale reload that would resurrect a row deleted after it started (I2)", async () => {
     const a = makeOuttake({ id: "a", label: "Alpha" });
     const b = makeOuttake({ id: "b", label: "Beta" });
