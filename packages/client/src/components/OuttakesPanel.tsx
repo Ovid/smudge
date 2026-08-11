@@ -312,6 +312,38 @@ export function OuttakesPanel({
     setError(null);
   }
 
+  // I5 (agentic-review 2026-08-05): OuttakeCard's mutations deliberately carry
+  // NO AbortSignal (an ordinary tab switch unmounts the card, and cancelling a
+  // committed write is worse than letting it land), so a settle can arrive after
+  // the writer has moved to another project. The list itself is id-keyed over
+  // UUIDs and is emptied on projectId change, so no row aliases — but the two
+  // BANNERS are shared, and they are what leaked: project A's "Couldn't rename
+  // that outtake." painted B's panel with nothing left to clear it (the
+  // projectId effect had already run, and the load-success arm only re-fires on
+  // a mutation or reload), while A's reconcile wiped a legitimate B ambiguity
+  // notice and A's onPossiblyCommitted fired a reload against B.
+  //
+  // One guard at the wiring point rather than five call-site guards inside the
+  // card: the row's own project_id is the authority, exactly as applyServerRow
+  // already uses it, and a new card callback cannot forget to opt in.
+  function callbacksFor(row: OuttakeRow) {
+    const isCurrent = () => row.project_id === projectIdRef.current;
+    return {
+      onDeleted: (id: string, message?: string) => {
+        if (isCurrent()) handleDeleted(id, message);
+      },
+      onUpdated: (updated: OuttakeRow) => {
+        if (isCurrent()) handleUpdated(updated);
+      },
+      onError: (message: string) => {
+        if (isCurrent()) setError(message);
+      },
+      onPossiblyCommitted: (message: string) => {
+        if (isCurrent()) notePossiblyCommitted(message);
+      },
+    };
+  }
+
   const needle = filter.trim().toLowerCase();
   const visible = needle
     ? outtakes.filter((o) =>
@@ -403,10 +435,7 @@ export function OuttakesPanel({
                 key={outtake.id}
                 outtake={outtake}
                 onInsert={onInsert}
-                onDeleted={handleDeleted}
-                onUpdated={handleUpdated}
-                onError={setError}
-                onPossiblyCommitted={notePossiblyCommitted}
+                {...callbacksFor(outtake)}
               />
             ))}
           </ul>

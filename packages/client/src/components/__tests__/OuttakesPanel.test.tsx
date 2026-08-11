@@ -452,6 +452,65 @@ describe("OuttakesPanel", () => {
     expect(screen.getByLabelText(S.newPlaceholder)).toHaveValue("A's private text");
   });
 
+  // I5 (agentic-review 2026-08-05): the sibling of the create-drift guard above,
+  // for the card's two writers. b082975d applied it to handleCreate's catch and
+  // not to commitLabel / handleDelete, which report straight into the panel's
+  // shared banners — and nothing clears them once the projectId effect has run.
+  it("does not paint project A's rename failure onto project B (I5)", async () => {
+    const user = userEvent.setup();
+    let rejectRename!: (err: unknown) => void;
+    vi.mocked(api.outtakes.list).mockResolvedValue([
+      makeOuttake({ id: "a", project_id: "proj-A", label: "Before" }),
+    ]);
+    vi.mocked(api.outtakes.updateLabel).mockReturnValue(
+      new Promise<OuttakeRow>((_res, rej) => {
+        rejectRename = rej;
+      }),
+    );
+    const { rerender } = render(<OuttakesPanel {...defaultProps} projectId="proj-A" />);
+    const input = await screen.findByDisplayValue("Before");
+
+    await user.clear(input);
+    await user.type(input, "After");
+    await user.tab();
+    await waitFor(() => expect(api.outtakes.updateLabel).toHaveBeenCalled());
+
+    vi.mocked(api.outtakes.list).mockResolvedValue([]);
+    rerender(<OuttakesPanel {...defaultProps} projectId="proj-B" />);
+    await waitFor(() => expect(screen.getByText(S.empty)).toBeInTheDocument());
+    rejectRename(new Error("boom"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(screen.queryByText(STRINGS.error.updateOuttakeFailed)).not.toBeInTheDocument();
+  });
+
+  it("does not let project A's delete failure clear project B's ambiguity notice (I5)", async () => {
+    const user = userEvent.setup();
+    let rejectDelete!: (err: unknown) => void;
+    vi.mocked(api.outtakes.list).mockResolvedValue([
+      makeOuttake({ id: "a", project_id: "proj-A", label: "A row" }),
+    ]);
+    vi.mocked(api.outtakes.delete).mockReturnValue(
+      new Promise<void>((_res, rej) => {
+        rejectDelete = rej;
+      }),
+    );
+    const { rerender } = render(<OuttakesPanel {...defaultProps} projectId="proj-A" />);
+    await screen.findByDisplayValue("A row");
+
+    await user.click(screen.getByRole("button", { name: S.delete }));
+    await user.click(screen.getByRole("button", { name: STRINGS.delete.confirmButton }));
+    await waitFor(() => expect(api.outtakes.delete).toHaveBeenCalled());
+
+    vi.mocked(api.outtakes.list).mockResolvedValue([]);
+    rerender(<OuttakesPanel {...defaultProps} projectId="proj-B" />);
+    await waitFor(() => expect(screen.getByText(S.empty)).toBeInTheDocument());
+    rejectDelete(new Error("boom"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(screen.queryByText(STRINGS.error.deleteOuttakeFailed)).not.toBeInTheDocument();
+  });
+
   it("a project switch clears the previous project's rows and sticky notice (I3)", async () => {
     // The panel is not keyed on project, so a switch only changes the prop. If
     // the reload for B fails, A's rows stay rendered — and every one of them is
