@@ -116,6 +116,9 @@ interface EditorMainContentProps {
   onInsertOuttake: (outtake: OuttakeRow) => void;
   capturedOuttake: OuttakeRow | null;
   outtakesExternalRefreshKey: number;
+  /** I6: the panel's unsent blank-note text; null when the form is closed. */
+  outtakeDraft: string | null;
+  onOuttakeDraftChange: (draft: string | null) => void;
 
   // Snapshot panel.
   snapshotPanelOpen: boolean;
@@ -192,6 +195,8 @@ export function EditorMainContent({
   onInsertOuttake,
   capturedOuttake,
   outtakesExternalRefreshKey,
+  outtakeDraft,
+  onOuttakeDraftChange,
   snapshotPanelOpen,
   onCloseSnapshotPanel,
   snapshotPanelRef,
@@ -410,6 +415,8 @@ export function EditorMainContent({
                   onInsert={onInsertOuttake}
                   capturedOuttake={capturedOuttake}
                   externalRefreshKey={outtakesExternalRefreshKey}
+                  draft={outtakeDraft}
+                  onDraftChange={onOuttakeDraftChange}
                 />
               ),
             },

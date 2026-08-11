@@ -28,6 +28,18 @@ interface OuttakesPanelProps {
    * signal reaching in from the one that lives outside it.
    */
   externalRefreshKey: number;
+  /**
+   * I6 (agentic-review 2026-08-05): the unsent blank-note text, OWNED BY
+   * EditorPage. `null` closes the form; `""` opens it empty. This panel
+   * unmounts on an ordinary click — ReferencePanel renders only the active tab
+   * and the panel renders only while open — so holding the draft in local state
+   * meant one Ctrl+. or arrow key destroyed the writer's text with no confirm,
+   * no warning and no server copy (the POST had not fired). The owner outlives
+   * both, which also gives handleCreate's un-abortable POST a live setter to
+   * hand the text back to when it settles after the panel is gone.
+   */
+  draft: string | null;
+  onDraftChange: (draft: string | null) => void;
 }
 
 /** Wrap a textarea's plain string into a TipTap doc, one paragraph per line. */
@@ -49,6 +61,8 @@ export function OuttakesPanel({
   onInsert,
   capturedOuttake,
   externalRefreshKey,
+  draft,
+  onDraftChange,
 }: OuttakesPanelProps) {
   const [outtakes, setOuttakes] = useState<OuttakeRow[]>([]);
   const [filter, setFilter] = useState("");
@@ -61,9 +75,9 @@ export function OuttakesPanel({
   // which was given separate state for exactly this hazard and stopped there.
   const [listError, setListError] = useState<string | null>(null);
   const [committedNotice, setCommittedNotice] = useState<string | null>(null);
-  const [showNew, setShowNew] = useState(false);
-  const [draft, setDraft] = useState("");
   const [creating, setCreating] = useState(false);
+  // The form is open exactly when the owner is holding a draft for us.
+  const showNew = draft !== null;
   // S6 (agentic-review 2026-08-04): the empty state used to render for the FULL
   // duration of every load — there was no loading flag, and the projectId effect
   // empties the list before the new load even starts. A writer with fifty
@@ -228,9 +242,8 @@ export function OuttakesPanel({
   }, [capturedOuttake, applyServerRow]);
 
   async function handleCreate() {
-    if (!draft.trim()) {
-      setShowNew(false);
-      setDraft("");
+    if (!draft?.trim()) {
+      onDraftChange(null);
       return;
     }
     // I2 (review 2026-07-26): the text we are actually sending. Cancel carries
@@ -263,10 +276,7 @@ export function OuttakesPanel({
         return;
       }
       // Only tear down the form when it still holds the text we sent.
-      if (draftRef.current === attempted) {
-        setDraft("");
-        setShowNew(false);
-      }
+      if (draftRef.current === attempted) onDraftChange(null);
     } catch (err) {
       // I3: the drifted case gets ONE notice covering both failure shapes —
       // definite and possibly-committed. The distinction is A's business and
@@ -376,7 +386,7 @@ export function OuttakesPanel({
         {!showNew ? (
           <button
             type="button"
-            onClick={() => setShowNew(true)}
+            onClick={() => onDraftChange("")}
             className="w-full text-sm font-medium text-accent border border-accent/40 rounded px-3 py-1.5 hover:bg-accent/10 transition-colors font-sans"
           >
             {S.newBlank}
@@ -386,8 +396,8 @@ export function OuttakesPanel({
             <textarea
               aria-label={S.newPlaceholder}
               placeholder={S.newPlaceholder}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+              value={draft ?? ""}
+              onChange={(e) => onDraftChange(e.target.value)}
               rows={4}
               className="text-sm border border-border/40 rounded px-2 py-1 bg-white text-text-primary placeholder:text-text-secondary/60 font-serif focus:outline-none focus:ring-1 focus:ring-accent"
             />
@@ -402,10 +412,7 @@ export function OuttakesPanel({
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setShowNew(false);
-                  setDraft("");
-                }}
+                onClick={() => onDraftChange(null)}
                 className="text-sm text-text-secondary hover:text-text-primary transition-colors font-sans"
               >
                 {S.cancel}

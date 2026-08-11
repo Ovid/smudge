@@ -490,6 +490,18 @@ export function EditorPage() {
   // to refetch — and without it a re-capture mints a duplicate of a row the
   // writer cannot see.
   const [outtakesExternalRefreshKey, setOuttakesExternalRefreshKey] = useState(0);
+  // I6 (agentic-review 2026-08-05): the blank-note draft lives HERE, not in
+  // OuttakesPanel. ReferencePanel renders only the active tab and
+  // EditorMainContent renders the panel only while open, so an ordinary Ctrl+.
+  // or one arrow key in the tablist unmounted the panel and took the writer's
+  // unsent text with it — no confirm, no warning, and no server copy, since the
+  // POST never fired. This page outlives both. `null` means the form is closed;
+  // "" means it is open and empty, so one value carries both bits.
+  //
+  // It also fixes the sharper case: handleCreate's POST deliberately carries no
+  // AbortSignal, so a failure settling after the panel unmounted had nowhere to
+  // put the text back. The setter it calls now belongs to a live component.
+  const [outtakeDraft, setOuttakeDraft] = useState<string | null>(null);
 
   // S3 + S4 (review 2026-07-26): ONE guard for the two insert-at-cursor entry
   // points. I2 established that inserting an image and inserting an outtake are
@@ -1298,6 +1310,8 @@ export function EditorPage() {
         onInsertOuttake={handleInsertOuttake}
         capturedOuttake={capturedOuttake}
         outtakesExternalRefreshKey={outtakesExternalRefreshKey}
+        outtakeDraft={outtakeDraft}
+        onOuttakeDraftChange={setOuttakeDraft}
         snapshotPanelOpen={snapshotPanelOpen}
         onCloseSnapshotPanel={() => setSnapshotPanelOpen(false)}
         snapshotPanelRef={snapshotPanelRef}

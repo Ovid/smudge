@@ -1,3 +1,4 @@
+import { useState, type ComponentProps } from "react";
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -31,6 +32,16 @@ vi.mock("../../api/client", () => {
 });
 
 const S = STRINGS.outtakes;
+
+// I6 (agentic-review 2026-08-05): the blank-note draft is owned by EditorPage
+// now, so the panel is a controlled component. This host supplies the state the
+// app supplies; every test below drives it exactly as the real page does.
+// OuttakesEditorEntryPoints.test.tsx covers the reason the state moved (the
+// draft surviving a tab switch), which is untestable from here by construction.
+function Panel(props: Omit<ComponentProps<typeof OuttakesPanel>, "draft" | "onDraftChange">) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return <OuttakesPanel {...props} draft={draft} onDraftChange={setDraft} />;
+}
 
 function docFromLines(...lines: string[]): Record<string, unknown> {
   return {
@@ -81,7 +92,7 @@ describe("OuttakesPanel", () => {
       makeOuttake({ id: "a", label: "Alpha" }),
       makeOuttake({ id: "b", label: "Beta" }),
     ]);
-    render(<OuttakesPanel {...defaultProps} />);
+    render(<Panel {...defaultProps} />);
     await waitFor(() => {
       expect(screen.getByDisplayValue("Alpha")).toBeInTheDocument();
     });
@@ -90,7 +101,7 @@ describe("OuttakesPanel", () => {
 
   it("shows the empty state when there are no outtakes", async () => {
     vi.mocked(api.outtakes.list).mockResolvedValue([]);
-    render(<OuttakesPanel {...defaultProps} />);
+    render(<Panel {...defaultProps} />);
     await waitFor(() => {
       expect(screen.getByText(S.empty)).toBeInTheDocument();
     });
@@ -107,7 +118,7 @@ describe("OuttakesPanel", () => {
         settle = res;
       }),
     );
-    render(<OuttakesPanel {...defaultProps} />);
+    render(<Panel {...defaultProps} />);
     await waitFor(() => expect(api.outtakes.list).toHaveBeenCalled());
 
     expect(screen.queryByText(S.empty)).not.toBeInTheDocument();
@@ -123,7 +134,7 @@ describe("OuttakesPanel", () => {
       makeOuttake({ id: "b", label: "Beta" }),
     ]);
     const user = userEvent.setup();
-    render(<OuttakesPanel {...defaultProps} />);
+    render(<Panel {...defaultProps} />);
     await waitFor(() => expect(screen.getByDisplayValue("Alpha")).toBeInTheDocument());
 
     await user.type(screen.getByRole("textbox", { name: S.filterPlaceholder }), "beta");
@@ -137,7 +148,7 @@ describe("OuttakesPanel", () => {
       makeOuttake({ id: "b", label: "Beta" }),
     ]);
     const user = userEvent.setup();
-    render(<OuttakesPanel {...defaultProps} />);
+    render(<Panel {...defaultProps} />);
     await waitFor(() => expect(screen.getByDisplayValue("Alpha")).toBeInTheDocument());
 
     await user.type(screen.getByRole("textbox", { name: S.filterPlaceholder }), "zzznope");
@@ -151,7 +162,7 @@ describe("OuttakesPanel", () => {
       makeOuttake({ id: "a", label: "Keep", content: docFromLines("Hello", "World") }),
     ]);
     const user = userEvent.setup();
-    render(<OuttakesPanel {...defaultProps} />);
+    render(<Panel {...defaultProps} />);
     await waitFor(() => expect(screen.getByDisplayValue("Keep")).toBeInTheDocument());
 
     // "oW" only appears if "Hello" and "World" are concatenated without a
@@ -170,7 +181,7 @@ describe("OuttakesPanel", () => {
     const created = makeOuttake({ id: "new", label: null, content: docFromLines("Fresh text") });
     vi.mocked(api.outtakes.create).mockResolvedValue(created);
     const user = userEvent.setup();
-    render(<OuttakesPanel {...defaultProps} />);
+    render(<Panel {...defaultProps} />);
     await waitFor(() => expect(screen.getByDisplayValue("Old")).toBeInTheDocument());
 
     await user.click(screen.getByRole("button", { name: S.newBlank }));
@@ -203,7 +214,7 @@ describe("OuttakesPanel", () => {
   it("unmounting the panel does not cancel an in-flight blank-note create (I3)", async () => {
     vi.mocked(api.outtakes.create).mockReturnValue(new Promise(() => {}));
     const user = userEvent.setup();
-    const { unmount } = render(<OuttakesPanel {...defaultProps} />);
+    const { unmount } = render(<Panel {...defaultProps} />);
     await waitFor(() => expect(api.outtakes.list).toHaveBeenCalled());
 
     await user.click(screen.getByRole("button", { name: S.newBlank }));
@@ -221,7 +232,7 @@ describe("OuttakesPanel", () => {
 
   it("does not create an outtake from an empty textarea", async () => {
     const user = userEvent.setup();
-    render(<OuttakesPanel {...defaultProps} />);
+    render(<Panel {...defaultProps} />);
     await waitFor(() => expect(api.outtakes.list).toHaveBeenCalled());
 
     await user.click(screen.getByRole("button", { name: S.newBlank }));
@@ -231,13 +242,13 @@ describe("OuttakesPanel", () => {
 
   it("prepends a captured outtake without a reload (I1)", async () => {
     vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "a", label: "Alpha" })]);
-    const { rerender } = render(<OuttakesPanel {...defaultProps} capturedOuttake={null} />);
+    const { rerender } = render(<Panel {...defaultProps} capturedOuttake={null} />);
     await waitFor(() => expect(screen.getByDisplayValue("Alpha")).toBeInTheDocument());
 
     // A toolbar capture hands the created row down; it appears immediately with
     // no second list() call, so a concurrent card mutation cannot drop it.
     const captured = makeOuttake({ id: "b", label: "Captured" });
-    rerender(<OuttakesPanel {...defaultProps} capturedOuttake={captured} />);
+    rerender(<Panel {...defaultProps} capturedOuttake={captured} />);
     await waitFor(() => expect(screen.getByDisplayValue("Captured")).toBeInTheDocument());
     expect(screen.getByDisplayValue("Alpha")).toBeInTheDocument();
     expect(api.outtakes.list).toHaveBeenCalledTimes(1);
@@ -246,11 +257,11 @@ describe("OuttakesPanel", () => {
   it("the captured row survives a card delete fired right after (I1)", async () => {
     vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "a", label: "Alpha" })]);
     const user = userEvent.setup();
-    const { rerender } = render(<OuttakesPanel {...defaultProps} capturedOuttake={null} />);
+    const { rerender } = render(<Panel {...defaultProps} capturedOuttake={null} />);
     await waitFor(() => expect(screen.getByDisplayValue("Alpha")).toBeInTheDocument());
 
     const captured = makeOuttake({ id: "b", label: "Captured" });
-    rerender(<OuttakesPanel {...defaultProps} capturedOuttake={captured} />);
+    rerender(<Panel {...defaultProps} capturedOuttake={captured} />);
     await waitFor(() => expect(screen.getByDisplayValue("Captured")).toBeInTheDocument());
 
     // Deleting the other row (which seq.abort()s any in-flight reload) must not
@@ -266,10 +277,10 @@ describe("OuttakesPanel", () => {
     const captured = makeOuttake({ id: "b", label: "Captured" });
     // The mount load already contains the row (a prior reload surfaced it).
     vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "a" }), captured]);
-    const { rerender } = render(<OuttakesPanel {...defaultProps} capturedOuttake={null} />);
+    const { rerender } = render(<Panel {...defaultProps} capturedOuttake={null} />);
     await waitFor(() => expect(screen.getByDisplayValue("Captured")).toBeInTheDocument());
 
-    rerender(<OuttakesPanel {...defaultProps} capturedOuttake={captured} />);
+    rerender(<Panel {...defaultProps} capturedOuttake={captured} />);
     await new Promise((r) => setTimeout(r, 0));
     // Prepend dedups by id — no duplicate React row for "b".
     expect(screen.getAllByDisplayValue("Captured")).toHaveLength(1);
@@ -282,7 +293,7 @@ describe("OuttakesPanel", () => {
     // horizontal scrollbar, clipped by the aside), above it a dead gutter and
     // a duplicate border. jsdom does no layout, so the class list IS the
     // contract — the sibling tab (ImageGallery) is just "flex flex-col h-full".
-    const { container } = render(<OuttakesPanel {...defaultProps} />);
+    const { container } = render(<Panel {...defaultProps} />);
     await waitFor(() => expect(api.outtakes.list).toHaveBeenCalled());
 
     const root = container.firstElementChild!;
@@ -302,7 +313,7 @@ describe("OuttakesPanel", () => {
       captured,
       makeOuttake({ id: "a", label: "Alpha" }),
     ]);
-    render(<OuttakesPanel {...defaultProps} capturedOuttake={captured} />);
+    render(<Panel {...defaultProps} capturedOuttake={captured} />);
 
     await waitFor(() => expect(screen.getByDisplayValue("Alpha")).toBeInTheDocument());
     expect(screen.getAllByDisplayValue("Captured")).toHaveLength(1);
@@ -313,7 +324,7 @@ describe("OuttakesPanel", () => {
     // for project B: the stale row must not appear at all.
     const projectARow = makeOuttake({ id: "cap", project_id: "proj-A", label: "From A" });
     vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "b", label: "B row" })]);
-    render(<OuttakesPanel {...defaultProps} projectId="proj-B" capturedOuttake={projectARow} />);
+    render(<Panel {...defaultProps} projectId="proj-B" capturedOuttake={projectARow} />);
 
     await waitFor(() => expect(screen.getByDisplayValue("B row")).toBeInTheDocument());
     expect(screen.queryByDisplayValue("From A")).not.toBeInTheDocument();
@@ -327,11 +338,11 @@ describe("OuttakesPanel", () => {
     // B's first render, so the id differs and the prepend effect fires. The row
     // belongs to A and must be dropped on its project_id, not on a ref seed.
     vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "b", label: "B row" })]);
-    const { rerender } = render(<OuttakesPanel {...defaultProps} projectId="proj-B" />);
+    const { rerender } = render(<Panel {...defaultProps} projectId="proj-B" />);
     await waitFor(() => expect(screen.getByDisplayValue("B row")).toBeInTheDocument());
 
     const projectARow = makeOuttake({ id: "cap", project_id: "proj-A", label: "From A" });
-    rerender(<OuttakesPanel {...defaultProps} projectId="proj-B" capturedOuttake={projectARow} />);
+    rerender(<Panel {...defaultProps} projectId="proj-B" capturedOuttake={projectARow} />);
 
     await waitFor(() => expect(screen.getByDisplayValue("B row")).toBeInTheDocument());
     expect(screen.queryByDisplayValue("From A")).not.toBeInTheDocument();
@@ -346,7 +357,7 @@ describe("OuttakesPanel", () => {
     vi.mocked(api.outtakes.create).mockResolvedValue(
       makeOuttake({ id: "new", project_id: "proj-OTHER", label: "Wrong project" }),
     );
-    render(<OuttakesPanel {...defaultProps} projectId="proj-1" />);
+    render(<Panel {...defaultProps} projectId="proj-1" />);
     await waitFor(() => expect(screen.getByText(S.empty)).toBeInTheDocument());
 
     await user.click(screen.getByRole("button", { name: S.newBlank }));
@@ -375,7 +386,7 @@ describe("OuttakesPanel", () => {
       }),
     );
     vi.mocked(api.outtakes.list).mockResolvedValue([]);
-    const { rerender } = render(<OuttakesPanel {...defaultProps} projectId="proj-A" />);
+    const { rerender } = render(<Panel {...defaultProps} projectId="proj-A" />);
     await waitFor(() => expect(screen.getByText(S.empty)).toBeInTheDocument());
 
     await user.click(screen.getByRole("button", { name: S.newBlank }));
@@ -383,7 +394,7 @@ describe("OuttakesPanel", () => {
     await user.click(screen.getByRole("button", { name: S.save }));
     await waitFor(() => expect(api.outtakes.create).toHaveBeenCalled());
 
-    rerender(<OuttakesPanel {...defaultProps} projectId="proj-B" />);
+    rerender(<Panel {...defaultProps} projectId="proj-B" />);
     resolveCreate(makeOuttake({ id: "cap", project_id: "proj-A", label: "From A" }));
     await new Promise((r) => setTimeout(r, 0));
 
@@ -405,7 +416,7 @@ describe("OuttakesPanel", () => {
       }),
     );
     vi.mocked(api.outtakes.list).mockResolvedValue([]);
-    const { rerender } = render(<OuttakesPanel {...defaultProps} projectId="proj-A" />);
+    const { rerender } = render(<Panel {...defaultProps} projectId="proj-A" />);
     await waitFor(() => expect(screen.getByText(S.empty)).toBeInTheDocument());
 
     await user.click(screen.getByRole("button", { name: S.newBlank }));
@@ -413,7 +424,7 @@ describe("OuttakesPanel", () => {
     await user.click(screen.getByRole("button", { name: S.save }));
     await waitFor(() => expect(api.outtakes.create).toHaveBeenCalled());
 
-    rerender(<OuttakesPanel {...defaultProps} projectId="proj-B" />);
+    rerender(<Panel {...defaultProps} projectId="proj-B" />);
     resolveCreate(makeOuttake({ id: "cap", project_id: "proj-A", label: "From A" }));
     await new Promise((r) => setTimeout(r, 0));
 
@@ -435,7 +446,7 @@ describe("OuttakesPanel", () => {
       }),
     );
     vi.mocked(api.outtakes.list).mockResolvedValue([]);
-    const { rerender } = render(<OuttakesPanel {...defaultProps} projectId="proj-A" />);
+    const { rerender } = render(<Panel {...defaultProps} projectId="proj-A" />);
     await waitFor(() => expect(screen.getByText(S.empty)).toBeInTheDocument());
 
     await user.click(screen.getByRole("button", { name: S.newBlank }));
@@ -443,7 +454,7 @@ describe("OuttakesPanel", () => {
     await user.click(screen.getByRole("button", { name: S.save }));
     await waitFor(() => expect(api.outtakes.create).toHaveBeenCalled());
 
-    rerender(<OuttakesPanel {...defaultProps} projectId="proj-B" />);
+    rerender(<Panel {...defaultProps} projectId="proj-B" />);
     rejectCreate(new Error("boom"));
     await new Promise((r) => setTimeout(r, 0));
 
@@ -467,7 +478,7 @@ describe("OuttakesPanel", () => {
         rejectRename = rej;
       }),
     );
-    const { rerender } = render(<OuttakesPanel {...defaultProps} projectId="proj-A" />);
+    const { rerender } = render(<Panel {...defaultProps} projectId="proj-A" />);
     const input = await screen.findByDisplayValue("Before");
 
     await user.clear(input);
@@ -476,7 +487,7 @@ describe("OuttakesPanel", () => {
     await waitFor(() => expect(api.outtakes.updateLabel).toHaveBeenCalled());
 
     vi.mocked(api.outtakes.list).mockResolvedValue([]);
-    rerender(<OuttakesPanel {...defaultProps} projectId="proj-B" />);
+    rerender(<Panel {...defaultProps} projectId="proj-B" />);
     await waitFor(() => expect(screen.getByText(S.empty)).toBeInTheDocument());
     rejectRename(new Error("boom"));
     await new Promise((r) => setTimeout(r, 0));
@@ -491,11 +502,11 @@ describe("OuttakesPanel", () => {
       makeOuttake({ id: "a", project_id: "proj-A", label: "A row" }),
     ]);
     vi.mocked(api.outtakes.delete).mockReturnValue(
-      new Promise<void>((_res, rej) => {
+      new Promise<undefined>((_res, rej) => {
         rejectDelete = rej;
       }),
     );
-    const { rerender } = render(<OuttakesPanel {...defaultProps} projectId="proj-A" />);
+    const { rerender } = render(<Panel {...defaultProps} projectId="proj-A" />);
     await screen.findByDisplayValue("A row");
 
     await user.click(screen.getByRole("button", { name: S.delete }));
@@ -503,7 +514,7 @@ describe("OuttakesPanel", () => {
     await waitFor(() => expect(api.outtakes.delete).toHaveBeenCalled());
 
     vi.mocked(api.outtakes.list).mockResolvedValue([]);
-    rerender(<OuttakesPanel {...defaultProps} projectId="proj-B" />);
+    rerender(<Panel {...defaultProps} projectId="proj-B" />);
     await waitFor(() => expect(screen.getByText(S.empty)).toBeInTheDocument());
     rejectDelete(new Error("boom"));
     await new Promise((r) => setTimeout(r, 0));
@@ -524,7 +535,7 @@ describe("OuttakesPanel", () => {
     const row = makeOuttake({ id: "a", label: "A row" });
     vi.mocked(api.outtakes.list).mockResolvedValueOnce([row]);
     vi.mocked(api.outtakes.delete).mockRejectedValue(new Error("boom"));
-    const { rerender } = render(<OuttakesPanel {...defaultProps} />);
+    const { rerender } = render(<Panel {...defaultProps} />);
     await screen.findByDisplayValue("A row");
 
     // A capture came back 2xx BAD_JSON: EditorPage bumps the refresh key, so a
@@ -534,7 +545,7 @@ describe("OuttakesPanel", () => {
         resolveReload = res;
       }),
     );
-    rerender(<OuttakesPanel {...defaultProps} externalRefreshKey={1} />);
+    rerender(<Panel {...defaultProps} externalRefreshKey={1} />);
     await waitFor(() => expect(api.outtakes.list).toHaveBeenCalledTimes(2));
 
     await user.click(screen.getByRole("button", { name: S.delete }));
@@ -560,7 +571,7 @@ describe("OuttakesPanel", () => {
     vi.mocked(api.outtakes.create).mockRejectedValue(
       new ApiRequestError("Project not found.", 404, "NOT_FOUND"),
     );
-    render(<OuttakesPanel {...defaultProps} />);
+    render(<Panel {...defaultProps} />);
     await waitFor(() => expect(screen.getByText(S.empty)).toBeInTheDocument());
 
     await user.click(screen.getByRole("button", { name: S.newBlank }));
@@ -586,11 +597,11 @@ describe("OuttakesPanel", () => {
     const warn = expectConsole("warn");
     const error = expectConsole("error");
     vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "a", label: "A row" })]);
-    const { rerender } = render(<OuttakesPanel {...defaultProps} projectId="proj-A" />);
+    const { rerender } = render(<Panel {...defaultProps} projectId="proj-A" />);
     await waitFor(() => expect(screen.getByDisplayValue("A row")).toBeInTheDocument());
 
     vi.mocked(api.outtakes.list).mockRejectedValue(new Error("boom"));
-    rerender(<OuttakesPanel {...defaultProps} projectId="proj-B" />);
+    rerender(<Panel {...defaultProps} projectId="proj-B" />);
 
     await waitFor(() => {
       expect(screen.getByText(STRINGS.error.loadOuttakesFailed)).toBeInTheDocument();
@@ -604,7 +615,7 @@ describe("OuttakesPanel", () => {
     const warn = expectConsole("warn");
     const error = expectConsole("error");
     vi.mocked(api.outtakes.list).mockRejectedValue(new Error("boom"));
-    render(<OuttakesPanel {...defaultProps} />);
+    render(<Panel {...defaultProps} />);
     await waitFor(() => {
       expect(screen.getByText(STRINGS.error.loadOuttakesFailed)).toBeInTheDocument();
     });
@@ -615,7 +626,7 @@ describe("OuttakesPanel", () => {
   it("deletes an outtake and removes it from the list", async () => {
     vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "a", label: "Doomed" })]);
     const user = userEvent.setup();
-    render(<OuttakesPanel {...defaultProps} />);
+    render(<Panel {...defaultProps} />);
     await waitFor(() => expect(screen.getByDisplayValue("Doomed")).toBeInTheDocument());
 
     await user.click(screen.getByRole("button", { name: S.delete }));
@@ -636,7 +647,7 @@ describe("OuttakesPanel", () => {
       makeOuttake({ id: "a", label: "After", content: docFromLines("Server body") }),
     );
     const user = userEvent.setup();
-    render(<OuttakesPanel {...defaultProps} />);
+    render(<Panel {...defaultProps} />);
     const input = await screen.findByDisplayValue("Before");
     expect(screen.getByText("Original body")).toBeInTheDocument();
 
@@ -660,7 +671,7 @@ describe("OuttakesPanel", () => {
       }),
     );
     const user = userEvent.setup();
-    render(<OuttakesPanel {...defaultProps} />);
+    render(<Panel {...defaultProps} />);
     await waitFor(() => expect(api.outtakes.list).toHaveBeenCalled());
 
     await user.click(screen.getByRole("button", { name: S.newBlank }));
@@ -694,7 +705,7 @@ describe("OuttakesPanel", () => {
       }),
     );
     const user = userEvent.setup();
-    render(<OuttakesPanel {...defaultProps} />);
+    render(<Panel {...defaultProps} />);
     await waitFor(() => expect(api.outtakes.list).toHaveBeenCalled());
 
     await user.click(screen.getByRole("button", { name: S.newBlank }));
@@ -726,7 +737,7 @@ describe("OuttakesPanel", () => {
       }),
     );
     const user = userEvent.setup();
-    render(<OuttakesPanel {...defaultProps} />);
+    render(<Panel {...defaultProps} />);
     const input = await screen.findByDisplayValue("Renamed target");
 
     // Start an in-flight label update on row "a".
@@ -755,7 +766,7 @@ describe("OuttakesPanel", () => {
       .mockRejectedValueOnce(new Error("boom"))
       .mockResolvedValueOnce(makeOuttake({ id: "a", label: "After" }));
     const user = userEvent.setup();
-    render(<OuttakesPanel {...defaultProps} />);
+    render(<Panel {...defaultProps} />);
     const input = await screen.findByDisplayValue("Before");
 
     await user.clear(input);
@@ -790,7 +801,7 @@ describe("OuttakesPanel", () => {
       new ApiRequestError("Outtake not found.", 404, "NOT_FOUND"),
     );
     const user = userEvent.setup();
-    render(<OuttakesPanel {...defaultProps} />);
+    render(<Panel {...defaultProps} />);
     const input = await screen.findByDisplayValue("Before");
 
     await user.clear(input);
@@ -820,7 +831,7 @@ describe("OuttakesPanel", () => {
       new ApiRequestError("bad body", 200, "BAD_JSON"),
     );
     const user = userEvent.setup();
-    render(<OuttakesPanel {...defaultProps} />);
+    render(<Panel {...defaultProps} />);
     await screen.findByDisplayValue("Alpha");
 
     const betaInput = screen.getByDisplayValue("Beta");
@@ -863,7 +874,7 @@ describe("OuttakesPanel", () => {
       )
       .mockResolvedValue([created]);
     const user = userEvent.setup();
-    render(<OuttakesPanel {...defaultProps} projectId="proj-1" />);
+    render(<Panel {...defaultProps} projectId="proj-1" />);
     await waitFor(() => expect(api.outtakes.list).toHaveBeenCalledTimes(1));
 
     await user.click(screen.getByRole("button", { name: S.newBlank }));
@@ -899,7 +910,7 @@ describe("OuttakesPanel", () => {
       .mockResolvedValue([created, existing]);
     vi.mocked(api.outtakes.create).mockResolvedValue(created);
     const user = userEvent.setup();
-    render(<OuttakesPanel {...defaultProps} />);
+    render(<Panel {...defaultProps} />);
     await waitFor(() => expect(api.outtakes.list).toHaveBeenCalledTimes(1));
 
     await user.click(screen.getByRole("button", { name: S.newBlank }));
@@ -920,7 +931,7 @@ describe("OuttakesPanel", () => {
     vi.mocked(api.outtakes.list).mockResolvedValue([]);
     vi.mocked(api.outtakes.create).mockResolvedValue(makeOuttake({ id: "new", label: "New" }));
     const user = userEvent.setup();
-    render(<OuttakesPanel {...defaultProps} />);
+    render(<Panel {...defaultProps} />);
     await waitFor(() => expect(api.outtakes.list).toHaveBeenCalledTimes(1));
 
     await user.click(screen.getByRole("button", { name: S.newBlank }));
@@ -937,7 +948,7 @@ describe("OuttakesPanel", () => {
       new ApiRequestError("bad body", 200, "BAD_JSON"),
     );
     const user = userEvent.setup();
-    render(<OuttakesPanel {...defaultProps} />);
+    render(<Panel {...defaultProps} />);
     await waitFor(() => expect(api.outtakes.list).toHaveBeenCalledTimes(1));
 
     await user.click(screen.getByRole("button", { name: S.newBlank }));
@@ -962,7 +973,7 @@ describe("OuttakesPanel", () => {
       new ApiRequestError("bad body", 200, "BAD_JSON"),
     );
     const user = userEvent.setup();
-    render(<OuttakesPanel {...defaultProps} />);
+    render(<Panel {...defaultProps} />);
     const input = await screen.findByDisplayValue("Before");
 
     await user.clear(input);
@@ -995,7 +1006,7 @@ describe("OuttakesPanel", () => {
           }),
     );
     const user = userEvent.setup();
-    render(<OuttakesPanel {...defaultProps} />);
+    render(<Panel {...defaultProps} />);
     await screen.findByDisplayValue("Alpha");
 
     // Start delete A (in flight), then delete B (in flight). With a single shared

@@ -276,6 +276,33 @@ describe("E1: Outtakes reference-panel tab", () => {
     // The empty-state copy is unique to the OuttakesPanel.
     expect(await screen.findByText(STRINGS.outtakes.empty)).toBeInTheDocument();
   });
+
+  // I6 (agentic-review 2026-08-05): ReferencePanel renders only the active tab
+  // and EditorMainContent renders the panel only while open, so an unsaved
+  // blank-note draft used to die on an ordinary Ctrl+. or a single arrow key
+  // in the tablist — no confirm, no warning, and no server copy, since the POST
+  // never fired. This branch is what put them in conflict: it added the second
+  // tab and the arrow-key handler that switches on keydown.
+  it("keeps an unsaved blank-note draft across a tab switch (I6)", async () => {
+    const user = userEvent.setup();
+    renderEditorPage();
+    await openOuttakesTab(user);
+    await screen.findByText(STRINGS.outtakes.empty);
+
+    await user.click(screen.getByRole("button", { name: STRINGS.outtakes.newBlank }));
+    await user.type(
+      screen.getByLabelText(STRINGS.outtakes.newPlaceholder),
+      "four hundred words of it",
+    );
+
+    await user.click(screen.getByRole("tab", { name: STRINGS.referencePanel.imagesTab }));
+    expect(screen.queryByLabelText(STRINGS.outtakes.newPlaceholder)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: STRINGS.outtakes.tab }));
+    expect(await screen.findByLabelText(STRINGS.outtakes.newPlaceholder)).toHaveValue(
+      "four hundred words of it",
+    );
+  });
 });
 
 describe("F1: insert outtake at cursor", () => {

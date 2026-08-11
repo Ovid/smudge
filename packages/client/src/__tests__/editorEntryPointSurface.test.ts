@@ -196,6 +196,17 @@ const EDITOR_MAIN_CONTENT_PROPS = [
   // so — it writes no editor content and triggers only a GET the panel already
   // issues on its own; the capture POST it follows is latched upstream.
   "outtakesExternalRefreshKey",
+  // I6 (agentic-review 2026-08-05): the outtakes panel's unsent blank-note text,
+  // lifted here because the panel unmounts on an ordinary tab switch and took
+  // the writer's text with it. Guard axis: NONE and correctly so — this pair
+  // never touches chapter content, the editor, or the save pipeline. It is UI
+  // state that happens to be valuable, in the same class as "panelWidth"; the
+  // POST it eventually feeds is latched inside the panel and mapped through the
+  // outtake.create scope. If a future edit makes this write into the EDITOR
+  // (e.g. a destructive cut restoring text at the cursor), it becomes an
+  // insert-at-cursor entry point and must call guardInsertAtCursor().
+  "outtakeDraft",
+  "onOuttakeDraftChange",
   "snapshotPanelOpen",
   "onCloseSnapshotPanel",
   "snapshotPanelRef",
