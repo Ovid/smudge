@@ -27,7 +27,14 @@ type TipTapNode = {
 // BLOCK_TYPES in tiptap-plaintext.ts before registering a new node type.
 function extractText(node: TipTapNode, depth: number = 0): string {
   if (depth > MAX_TIPTAP_DEPTH) return "";
-  if (node.text) return node.text;
+  // I2 (agentic-review 2026-08-05): typeof, not truthiness — the same reason
+  // the content guard below is Array.isArray. `text` is unvalidated in exactly
+  // the same way, so `{"type":"text","text":42}` reached here, was returned
+  // verbatim, and countWords' `.trim()` threw: a TypeError inside OuttakeCard's
+  // render (which unmounts the drawer, making the row undeletable on a table
+  // with no trash) and a 500 out of PATCH /api/chapters/:id where the contract
+  // says 400. tiptap-plaintext.ts:32, the sibling walker, already type-checks.
+  if (typeof node.text === "string") return node.text;
   // Array.isArray, not a truthiness check: `content` is unvalidated in exactly
   // the same way its children are (TipTapDocSchema types top-level elements
   // only; DB reads bypass Zod), so `{"type":"paragraph","content":5}` reaches

@@ -125,3 +125,19 @@ describe("countWords", () => {
     expect(() => countWords(doc)).not.toThrow();
   });
 });
+
+describe("countWords with a non-string text field (I2)", () => {
+  // TipTapDocSchema types top-level elements only and DB reads bypass Zod, so
+  // `text: 42` is reachable. `if (node.text)` returned the number and countWords
+  // then called .trim() on it — a TypeError out of a render (OuttakeCard) and a
+  // 500 out of PATCH /api/chapters/:id where the contract says 400.
+  it("does not throw on a non-string text at the root", () => {
+    expect(() => countWords({ type: "doc", text: 42 })).not.toThrow();
+    expect(countWords({ type: "doc", text: 42 })).toBe(0);
+  });
+
+  it("does not count a non-string text nested in content", () => {
+    const doc = { type: "doc", content: [{ type: "text", text: 7 }] };
+    expect(countWords(doc)).toBe(0);
+  });
+});
