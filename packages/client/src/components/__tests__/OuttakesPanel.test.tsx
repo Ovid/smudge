@@ -559,6 +559,29 @@ describe("OuttakesPanel", () => {
     expect(screen.getByText(STRINGS.error.deleteOuttakeFailed)).toBeInTheDocument();
   });
 
+  // UAT (2026-08-11): the banners rendered as the first children of the
+  // scrolling list container, so a failure on a card below the fold printed its
+  // explanation off-screen. What the writer saw was a card silently vanishing —
+  // the exact "drops without saying why" defect I3 was raised to close, reopened
+  // by geometry rather than by logic. The list is deliberately unbounded (§5,
+  // design), so "below the fold" is the normal case for a working drawer.
+  it("keeps a write failure out of the scrolling list, so it cannot scroll away", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "a", label: "A row" })]);
+    vi.mocked(api.outtakes.delete).mockRejectedValue(new Error("boom"));
+    render(<Panel {...defaultProps} />);
+    await screen.findByDisplayValue("A row");
+
+    await user.click(screen.getByRole("button", { name: S.delete }));
+    await user.click(screen.getByRole("button", { name: STRINGS.delete.confirmButton }));
+    const banner = await screen.findByText(STRINGS.error.deleteOuttakeFailed);
+
+    // The scroll container is whatever element lays the list out; the banner
+    // must not live inside it at any depth.
+    const scrollContainer = screen.getByRole("list").parentElement!;
+    expect(scrollContainer.contains(banner)).toBe(false);
+  });
+
   // S3 (agentic-review 2026-08-05): outtake.create was the one write scope with
   // no 404 arm, though outtakes.routes throws NotFoundError("Project not found.")
   // when the project was soft-deleted while the editor was open. The generic

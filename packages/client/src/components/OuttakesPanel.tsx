@@ -422,25 +422,37 @@ export function OuttakesPanel({
         )}
       </div>
 
+      {/* UAT (2026-08-11): these three banners used to be the first children of
+          the scrolling list below, which put every one of them off-screen the
+          moment the writer acted on a card past the fold — and the list is
+          deliberately unbounded (§5, design), so that is the ordinary state of a
+          drawer in use. A card would then just vanish with its explanation
+          printed somewhere the writer never looks, which is precisely the
+          "drops without saying why" failure I3 closed. Pinned beside the filter
+          instead: outside the scroll container, always on screen. */}
+      {(committedNotice || error || listError) && (
+        <div className="border-b border-border/40 px-4 py-2 flex flex-col gap-1">
+          {committedNotice && (
+            <p role="alert" className="text-xs text-red-700 font-sans">
+              {committedNotice}
+            </p>
+          )}
+
+          {error && (
+            <p role="alert" className="text-xs text-red-700 font-sans">
+              {error}
+            </p>
+          )}
+
+          {listError && (
+            <p role="alert" className="text-xs text-red-700 font-sans">
+              {listError}
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-3">
-        {committedNotice && (
-          <p role="alert" className="text-xs text-red-700 font-sans">
-            {committedNotice}
-          </p>
-        )}
-
-        {error && (
-          <p role="alert" className="text-xs text-red-700 font-sans">
-            {error}
-          </p>
-        )}
-
-        {listError && (
-          <p role="alert" className="text-xs text-red-700 font-sans">
-            {listError}
-          </p>
-        )}
-
         {outtakes.length === 0 && !listError && !loading && (
           <p className="text-sm text-text-secondary text-center py-6 font-sans">{S.empty}</p>
         )}

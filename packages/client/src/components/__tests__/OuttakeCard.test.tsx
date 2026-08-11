@@ -132,6 +132,24 @@ describe("OuttakeCard", () => {
     expect(await screen.findByRole("status")).toHaveTextContent(S.copied);
   });
 
+  // UAT (2026-08-11): the badge rendered between Copy and Delete, so appearing
+  // re-flowed the row and slid Delete sideways under a cursor that had just
+  // clicked next to it — a moving target on the card's one irreversible action,
+  // on a HARD-delete table. Feedback must not lay out the controls.
+  it("does not move the action buttons when the copy succeeds", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    render(<OuttakeCard outtake={makeOuttake()} {...defaultProps} />);
+
+    await user.click(screen.getByRole("button", { name: S.copy }));
+    expect(await screen.findByRole("status")).toHaveTextContent(S.copied);
+
+    // Same flex row as Delete ⇒ the badge is a sibling that pushes it along.
+    const actionRow = screen.getByRole("button", { name: S.delete }).parentElement!;
+    expect(actionRow.contains(screen.getByRole("status"))).toBe(false);
+  });
+
   it("refuses to copy a corrupt outtake instead of wiping the clipboard (S2)", async () => {
     // The degraded read hands the card a valid EMPTY doc, so plainText is "",
     // writeText("") resolves, and the card announced "Copied" — destroying

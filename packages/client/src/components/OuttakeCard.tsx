@@ -310,6 +310,16 @@ export function OuttakeCard({
         <span>{S.created(outtake.created_at)}</span>
         <span aria-hidden="true">&middot;</span>
         <span>{S.wordCount(countWords(outtake.content))}</span>
+        {/* S4: the success signal the silent failure had nothing to contrast
+            with. role="status" so it is announced, not just seen.
+            UAT (2026-08-11): it used to sit between Copy and Delete, so
+            showing it re-flowed the action row and slid Delete under a cursor
+            that had just clicked beside it. It lives on the metadata line
+            instead — same card, adjacent to the button that produces it, but
+            laying out nothing the writer clicks. */}
+        <span role="status" className="ml-auto text-accent">
+          {copied ? S.copied : ""}
+        </span>
       </div>
 
       <div className="flex gap-3 text-xs font-sans">
@@ -327,11 +337,6 @@ export function OuttakeCard({
         >
           {S.copy}
         </button>
-        {/* S4: the success signal the silent failure had nothing to contrast
-            with. role="status" so it is announced, not just seen. */}
-        <span role="status" className="text-accent">
-          {copied ? S.copied : ""}
-        </span>
         <button
           type="button"
           onClick={() => setConfirmingDelete(true)}
