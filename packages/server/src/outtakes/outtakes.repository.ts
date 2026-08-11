@@ -1,5 +1,5 @@
 import type { Knex } from "knex";
-import { isTipTapNode } from "@smudge/shared";
+import { TipTapDocSchema } from "@smudge/shared";
 import type { OuttakeRow, CreateOuttakeData } from "./outtakes.types";
 import { logger } from "../logger";
 
@@ -18,8 +18,18 @@ function parseRow(row: Record<string, unknown>): OuttakeRow {
     // OuttakeRow.content — which callers dereference unguarded (EditorPage
     // reads content.content, OuttakeCard walks it for the word count). Route it
     // through the same degrade, mirroring snapshots.service.ts.
-    if (!isTipTapNode(parsed)) {
-      throw new TypeError("Outtake content is not a JSON object");
+    //
+    // S2 (agentic-review 2026-08-05): gate on the SCHEMA, not on isTipTapNode.
+    // That predicate answers "may a walker descend into this?" — deliberately
+    // any non-null non-array object — so `{"foo":1}` and
+    // `{"type":"doc","content":{…}}` passed it and listed as an empty card with
+    // 0 words and no corruption badge: the "looks empty, safe to hard-delete"
+    // failure this flag exists to prevent, on a table with no trash. The sibling
+    // this file mirrors (snapshots.service restore) already names this case and
+    // gates on TipTapDocSchema; the two degrade policies must not disagree.
+    const safe = TipTapDocSchema.safeParse(parsed);
+    if (!safe.success) {
+      throw new TypeError("Outtake content is not a TipTap document");
     }
     content = parsed as Record<string, unknown>;
   } catch (err) {

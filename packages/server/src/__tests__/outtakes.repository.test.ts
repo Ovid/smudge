@@ -174,6 +174,31 @@ describe("outtakes repository", () => {
       );
       warnSpy.mockRestore();
     });
+
+    // S2 (agentic-review 2026-08-05): isTipTapNode is the shared "may a walker
+    // descend into this?" predicate — deliberately any non-null non-array
+    // object — so it flags null/42/[]/"text" but waves through `{"foo":1}` and
+    // a doc whose `content` is not an array. Those list as an empty card with 0
+    // words and NO corruption badge: the exact "looks empty, invites the writer
+    // to hard-delete the last recoverable copy" failure the flag exists for.
+    // The sibling this file says it mirrors (snapshots.service restore) gates on
+    // TipTapDocSchema and names this case explicitly.
+    it.each([
+      ["an object that is not a document", '{"foo":1}'],
+      ["a doc whose content is not an array", '{"type":"doc","content":{"0":{}}}'],
+      ["a doc with a primitive child", '{"type":"doc","content":[7]}'],
+    ])("flags content that parses to %s (S2)", async (_label, stored) => {
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger);
+      const projectId = await createProject();
+      const row = makeData(projectId, { label: "wrong shape", content: stored });
+      await t.db("outtakes").insert(row);
+
+      const found = await OuttakesRepo.findById(t.db, row.id);
+
+      expect(found!.content).toEqual({ type: "doc", content: [] });
+      expect(found!.content_corrupt).toBe(true);
+      warnSpy.mockRestore();
+    });
   });
 
   describe("updateLabel()", () => {
