@@ -407,7 +407,12 @@ describe("TipTap child-shape contract (fail closed on a non-descendable child)",
     expect(extractImageIds(doc)).toEqual([]);
     expect(searchInDoc(doc, "x")).toEqual([]);
     expect(extractNotes(doc)).toEqual([]);
-    expect(validateTipTapDepth(doc)).toBe(true); // shallow: no depth violation
+    // OOSI1 (agentic-review 2026-08-05): the walker rejects on SHAPE as well as
+    // depth, so a non-object where a node belongs is refused at the boundary
+    // rather than accepted and stripped — matching the array-child arm above.
+    // The walkers below still fail closed regardless; the two are layers, not
+    // alternatives, because DB reads bypass the schema entirely.
+    expect(validateTipTapDepth(doc)).toBe(false);
   });
 
   /**

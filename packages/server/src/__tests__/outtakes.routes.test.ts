@@ -44,11 +44,21 @@ describe("outtakes routes", () => {
       expect(res.status).toBe(400);
     });
 
-    it("does not 500 on a body TipTapDocSchema accepts but the walker cannot", async () => {
+    it("returns 400 for a nested null/primitive child rather than 500 or accepting it", async () => {
       // TipTapDocSchema constrains top-level elements only, so nested null and
-      // primitive children pass validation and reach stripImageNodes. An
-      // unguarded walk threw there, surfacing as 500 INTERNAL_ERROR — a status
-      // the API contract does not allow for a malformed body.
+      // primitive children used to pass validation and reach stripImageNodes.
+      // An unguarded walk threw there, surfacing as 500 INTERNAL_ERROR — a
+      // status the API contract does not allow for a malformed body. The
+      // walkers were hardened first (accept-and-strip), which is why this once
+      // asserted 201.
+      //
+      // OOSI1 (agentic-review 2026-08-05): validateTipTapDepth now rejects a
+      // non-object where a NODE belongs, so the body is refused at the
+      // boundary — same reasoning and same outcome as the array-child case
+      // below. Accept-and-strip was survivable here but not everywhere: a
+      // number or string child makes renderEditorHtml throw RangeError, so
+      // chapterContentToHtml returns "" and the whole chapter body vanishes
+      // from four export formats behind one logger.warn.
       const projectId = await createProject();
       const res = await request(t.app)
         .post(`/api/projects/${projectId}/outtakes`)
@@ -58,7 +68,7 @@ describe("outtakes routes", () => {
             content: [{ type: "paragraph", content: [null, 42] }],
           },
         });
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(400);
     });
 
     it("returns 400 for an array-wrapped child rather than accepting it", async () => {

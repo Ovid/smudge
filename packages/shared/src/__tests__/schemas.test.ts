@@ -130,6 +130,24 @@ describe("UpdateChapterSchema", () => {
       { type: "doc", content: [{ type: "paragraph", content: [[{ type: "text", text: "x" }]] }] },
     ],
     ["a non-array content", { type: "doc", content: [{ type: "paragraph", content: 5 }] }],
+    // OOSI1 (agentic-review 2026-08-05): the entry arm `if (!node || typeof
+    // node !== "object") return true` fires for a null/primitive sitting as an
+    // ELEMENT of a nested content[], and the recursion loop did not gate on
+    // isTipTapNode — so the branch closed the container case (S1) and the
+    // array-child case two lines away and left the primitive-child case open,
+    // while the function's doc comment asserted a fail-closed contract. A
+    // number or string child makes renderEditorHtml throw RangeError, so
+    // chapterContentToHtml returns "" and HTML/EPUB/markdown/plaintext emit the
+    // chapter heading with NO BODY behind a single logger.warn, while
+    // word_count still reads healthy.
+    [
+      "a primitive child of a nested content[]",
+      { type: "doc", content: [{ type: "paragraph", content: [0] }] },
+    ],
+    [
+      "a null child of a nested content[]",
+      { type: "doc", content: [{ type: "paragraph", content: [null] }] },
+    ],
   ])("names shape as well as depth when rejecting %s", (_name, doc) => {
     const result = UpdateChapterSchema.safeParse({ content: doc });
     expect(result.success).toBe(false);

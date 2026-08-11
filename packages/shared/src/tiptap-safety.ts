@@ -37,10 +37,12 @@ export const MAX_TIPTAP_DEPTH = 64;
  * the previous review's I2 bug. Callers keep their own degrade in the `if` body;
  * only the predicate is shared, because only the predicate is the same.
  *
- * Two sites deliberately do NOT adopt it: tiptap-safety's own
- * validateTipTapDepth needs array→`false` but primitive→`true`, and
- * tiptap-notes' walker needs array→`undefined` but primitive→`node`. Neither
- * can be expressed by one boolean.
+ * One site deliberately does NOT adopt it: tiptap-notes' walker needs
+ * array→`undefined` but primitive→`node`, which no boolean expresses.
+ * validateTipTapDepth uses it for CHILDREN (where a non-object is invalid) but
+ * not at its entry arm, where a non-object `node` means "nothing to descend
+ * into" rather than "malformed" — the two positions ask different questions
+ * (OOSI1).
  */
 export function isTipTapNode(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -80,6 +82,16 @@ export function validateTipTapDepth(node: unknown, depth: number = 0): boolean {
   if (content === undefined) return true;
   if (!Array.isArray(content)) return false;
   for (const child of content) {
+    // OOSI1 (agentic-review 2026-08-05): reject a non-object where a NODE
+    // belongs, in the loop rather than at the entry arm. That arm's
+    // `typeof node !== "object" → true` is right for a `content` VALUE that
+    // isn't there, and wrong for an element of a content[]: it made
+    // `{"type":"paragraph","content":[0]}` valid, and a number or string child
+    // makes renderEditorHtml throw RangeError — chapterContentToHtml catches and
+    // returns "", so HTML/EPUB/markdown/plaintext emit the chapter heading with
+    // no body behind one logger.warn while word_count still reads healthy.
+    // isTipTapNode subsumes the Array.isArray arm above for this position.
+    if (!isTipTapNode(child)) return false;
     if (!validateTipTapDepth(child, depth + 1)) return false;
   }
   return true;
