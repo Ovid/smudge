@@ -281,40 +281,55 @@ describe("applyImageRefDiff()", () => {
     warnSpy.mockRestore();
   });
 
-  it("aborts diff (no increments or decrements) when newContent JSON is corrupt", async () => {
-    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
-    const incrementCalls: Array<[string, number]> = [];
-    const imageId = "33333333-3333-3333-3333-333333333333";
-    const projectId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+  // S1 (dedup review 2026-07-26): the guard was a bare try/catch, and its own
+  // comment named `extractImageIds(null)` as the case it prevented — which the
+  // catch cannot see, because JSON.parse("null") RETURNS null rather than
+  // throwing. Same for "42", '"text"' and "[]": all parse cleanly to a value
+  // extractImageIds reads as "no images", classifying every old id as removed.
+  // The shape check closes the case the comment always claimed to.
+  it.each([
+    ["unparseable", "{not valid json"],
+    ["the literal null", "null"],
+    ["a number", "42"],
+    ["a string", '"text"'],
+    ["an array", "[]"],
+  ])(
+    "aborts diff (no increments or decrements) when newContent JSON is %s",
+    async (_label, badContent) => {
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+      const incrementCalls: Array<[string, number]> = [];
+      const imageId = "33333333-3333-3333-3333-333333333333";
+      const projectId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 
-    // Old content references the image; if newContent were parsed as null
-    // (the prior behavior), the image would be classified as removed and
-    // its ref count decremented silently. We expect NO calls instead.
-    const oldContent = JSON.stringify({
-      type: "doc",
-      content: [{ type: "image", attrs: { src: `/api/images/${imageId}` } }],
-    });
-    await applyImageRefDiff(
-      {
-        findImagesByIds: async () => [
-          { id: imageId, project_id: projectId, reference_count: 3 } as unknown as ImageRow,
-        ],
-        incrementImageReferenceCount: async (id, delta) => {
-          incrementCalls.push([id, delta]);
+      // Old content references the image; if newContent were parsed as null
+      // (the prior behavior), the image would be classified as removed and
+      // its ref count decremented silently. We expect NO calls instead.
+      const oldContent = JSON.stringify({
+        type: "doc",
+        content: [{ type: "image", attrs: { src: `/api/images/${imageId}` } }],
+      });
+      await applyImageRefDiff(
+        {
+          findImagesByIds: async () => [
+            { id: imageId, project_id: projectId, reference_count: 3 } as unknown as ImageRow,
+          ],
+          incrementImageReferenceCount: async (id, delta) => {
+            incrementCalls.push([id, delta]);
+          },
         },
-      },
-      oldContent,
-      "{not valid json",
-      projectId,
-    );
+        oldContent,
+        badContent,
+        projectId,
+      );
 
-    expect(incrementCalls).toEqual([]);
-    expect(warnSpy).toHaveBeenCalledWith(
-      { project_id: projectId },
-      "applyImageRefDiff: newContent JSON.parse failed; aborting diff to avoid mass decrement",
-    );
-    warnSpy.mockRestore();
-  });
+      expect(incrementCalls).toEqual([]);
+      expect(warnSpy).toHaveBeenCalledWith(
+        { project_id: projectId },
+        "applyImageRefDiff: newContent is not a TipTap object; aborting diff to avoid mass decrement",
+      );
+      warnSpy.mockRestore();
+    },
+  );
 
   it("skips increment and warns when the referenced image belongs to a different project", async () => {
     const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});

@@ -1,4 +1,9 @@
-import { UNTITLED_CHAPTER, TRASH_RETENTION_DAYS, TRASH_RETENTION_MS } from "@smudge/shared";
+import {
+  UNTITLED_CHAPTER,
+  TRASH_RETENTION_DAYS,
+  TRASH_RETENTION_MS,
+  MAX_IMAGE_UPLOAD_LABEL,
+} from "@smudge/shared";
 
 export const STRINGS = {
   app: {
@@ -95,6 +100,8 @@ export const STRINGS = {
     updateTitleProjectSlugLost:
       "This project was renamed and moved to a new URL. Refresh the page to continue editing.",
     renameChapterFailed: "Failed to rename chapter",
+    renameChapterResponseUnreadable:
+      "The rename may have been saved, but the server response was unreadable. Refresh to see the current title.",
     deleteFailed: "Failed to delete project",
     loadTrashFailed: "Failed to load trash",
     loadTrashFailedNetwork: "Failed to load trash — check your connection and try again.",
@@ -127,6 +134,26 @@ export const STRINGS = {
     settingsLoadFailed: "Unable to load settings. Close and reopen the dialog to retry.",
     settingsLoadFailedNetwork:
       "Unable to load settings — check your connection. Close and reopen the dialog to retry.",
+    loadOuttakesFailed: "Failed to load outtakes",
+    createOuttakeFailed: "Failed to save outtake",
+    createOuttakeTooLarge: "Outtake is too large to save. Capture a smaller selection.",
+    // S3 (agentic-review 2026-08-05): the create endpoint's only 404 producer is
+    // "Project not found." — the project was soft-deleted while the editor was
+    // open. Shared by the panel's blank-note form and the toolbar capture, so
+    // the copy cannot promise the writer their text is still in a textarea.
+    createOuttakeProjectGone: "This project is no longer available, so the outtake wasn't saved.",
+    updateOuttakeFailed: "Failed to update outtake",
+    // S5: the only 400 the rename endpoint emits is the label cap. The generic
+    // fallback names no cause, and the field reverts on a definite failure — so
+    // the writer watched their text vanish and an identical retry reproduce it.
+    // S9 (agentic-review 2026-08-04): "under N" states an EXCLUSIVE bound for a
+    // cap Zod enforces INCLUSIVELY (.max(LABEL_MAX_UNITS)), so a label of
+    // exactly N was accepted while the copy said it would not be. "characters"
+    // also names a different unit than the cap measures (UTF-16 code units) —
+    // a distinction a prior grapheme-vs-unit mix-up already burned.
+    updateOuttakeLabelRejected: (max: number) =>
+      `That outtake label is too long — keep it to ${max.toLocaleString()} characters or fewer.`,
+    deleteOuttakeFailed: "Failed to delete outtake",
   },
   editor: {
     placeholder: "Start writing\u2026",
@@ -159,6 +186,11 @@ export const STRINGS = {
       "Unable to save pending changes. Try again once your connection recovers before switching views.",
     mutationBusy: "Another operation is in progress — please wait.",
     lockedRefusal: "The editor is locked — refresh the page before continuing.",
+    // S3: no editor is mounted (preview / dashboard / trash view unmounts it
+    // while the reference panel stays on screen and its Insert buttons stay
+    // clickable). Distinct from mutationBusy: nothing is in progress, so
+    // "please wait" would be a lie and waiting would never help.
+    insertNeedsEditor: "Switch to the editor view to insert here.",
     refreshButton: "Refresh page",
   },
   shortcuts: {
@@ -367,7 +399,7 @@ export const STRINGS = {
     usedInChapters: "Used in",
     saving: "Saving...",
     saved: "Saved",
-    fileTooLarge: "File too large. Maximum: 10MB.",
+    fileTooLarge: `File too large. Maximum: ${MAX_IMAGE_UPLOAD_LABEL}.`,
     deleteSuccess: (filename: string) => `Image deleted: ${filename}`,
     saveFailed: "Save failed. Your changes have not been saved.",
     saveFailedNetwork: "Save failed — check your connection and try again.",
@@ -468,6 +500,90 @@ export const STRINGS = {
       hours: (n: number) => `${n}h ago`,
       days: (n: number) => `${n}d ago`,
     },
+  },
+  outtakes: {
+    tab: "Outtakes",
+    empty: "No outtakes yet. Stash cut text here to find it later.",
+    noMatches: "No outtakes match your filter.",
+    newFromSelection: "Send selection to outtakes",
+    selectionRequired: "Select some text first, then send it to outtakes.",
+    selectionHasNoText: "That selection has no text to stash — images aren't kept in outtakes.",
+    // S3 (agentic-review 2026-08-04): the toolbar button lives OUTSIDE the
+    // reference panel, so the ordinary case is capturing with the panel closed —
+    // where the prepended row is the only feedback and its consumer is
+    // unmounted. All four refusal arms announce; the success arm said nothing,
+    // which reads as a broken button.
+    captured: "Sent to outtakes.",
+    // The hint is only true when the drawer is NOT on screen. Announced over an
+    // open Outtakes tab it instructs the writer to open what they are already
+    // looking at, which reads as a failure. Panel open on another tab still
+    // takes the hint — "Outtakes tab" is the accurate instruction either way.
+    capturedHidden: "Sent to outtakes. Open the Outtakes tab to see it.",
+    // S14: the delete re-entrancy latch used to refuse in silence. onConfirm
+    // closes the dialog but the card stays until onDeleted, so a second
+    // Delete -> Confirm during the in-flight DELETE is an ordinary gesture. Its
+    // twin (EditorPage's captureInFlightRef) has always announced.
+    deleteInFlight: "Still deleting that outtake — please wait.",
+    // I2 (agentic-review 2026-08-04): the rename latch's twin. It returned bare,
+    // so a second blur during an in-flight PATCH dropped the edit with no banner
+    // and no retry path, leaving the field asserting a label the server never
+    // received.
+    renameInFlight: "Still renaming that outtake — wait, then click away again to save.",
+    newBlank: "New outtake",
+    createdElsewhere:
+      "Saved to the project you were in when you clicked Save — it isn't in this project's outtakes. Your text is still below.",
+    // I3 (agentic-review 2026-08-04): the same mid-POST project switch on the
+    // failure arms. Covers both the definite failure and the possibly-committed
+    // one: either way the note is not in THIS project, the other project is
+    // where to look, and the retained draft now targets the project on screen.
+    createFailedElsewhere:
+      "That note didn't land in this project — it was aimed at the project you were in when you clicked Save. Check there before retrying; saving now files your text under this project.",
+    filterPlaceholder: "Filter outtakes…",
+    untitled: "Untitled outtake",
+    fromChapterPrefix: "From ",
+    insert: "Insert into editor",
+    copy: "Copy",
+    // S4 (agentic-review 2026-08-04): off a secure context navigator.clipboard
+    // is undefined, so the copy throws — and the deployment target is plain HTTP
+    // on port 3456. The button was dead AND silent, so the writer pasted stale
+    // clipboard content into the manuscript.
+    copied: "Copied",
+    copyFailed: "Couldn't copy — select the text and copy it manually.",
+    delete: "Delete",
+    confirmDeleteTitle: "Delete this outtake?",
+    confirmDeleteBody: "This can't be undone.",
+    labelAriaLabel: "Outtake label",
+    newPlaceholder: "Paste or type text to stash here…",
+    save: "Save",
+    cancel: "Cancel",
+    // S7 (agentic-review 2026-08-04): outtakes are hard-deleted, so an
+    // apparently-empty card is an invitation to destroy the last copy of JSON a
+    // human could still recover by hand. Say what actually happened.
+    corruptContent:
+      "This outtake's saved text couldn't be read. Don't delete it if you want it back.",
+    insertFailedCorrupt:
+      "This outtake's content is corrupt and can't be inserted. Copy the text instead.",
+    // S1/S2 (agentic-review 2026-08-04): distinct from insertFailedCorrupt,
+    // which covers a row whose text IS present but fails the doc schema — there
+    // "copy it instead" is good advice. A server-flagged content_corrupt row was
+    // degraded to an empty doc on read, so there is no text for either action:
+    // Insert was a silent no-op and Copy wrote "" over the writer's clipboard
+    // while announcing success.
+    corruptNoText:
+      "This outtake's saved text couldn't be read, so there's nothing to insert or copy.",
+    // S5 (agentic-review 2026-08-04): a rename against a row the server no
+    // longer has. Reverting the field to a label that does not exist left a card
+    // whose every retry 404s; the card goes instead, and this says why.
+    alreadyGone: "That outtake is no longer there — it's been removed from the list.",
+    showMore: "Show more",
+    showLess: "Show less",
+    wordCount: (count: number) => `${count.toLocaleString()} words`,
+    created: (dateStr: string) =>
+      new Date(dateStr).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }),
   },
   findReplace: {
     panelTitle: "Find and Replace",

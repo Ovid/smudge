@@ -1,6 +1,7 @@
-import { useRef, useEffect } from "react";
+import { useRef } from "react";
 import { PANEL_MIN_WIDTH, PANEL_MAX_WIDTH } from "../hooks/useReferencePanelState";
 import { STRINGS } from "../strings";
+import { ResizeSeparator } from "./ResizeSeparator";
 
 export interface ReferencePanelTab {
   id: string;
@@ -16,9 +17,16 @@ interface ReferencePanelProps {
   onSelectTab: (id: string) => void;
 }
 
-// ponytail: native-button tabs, no roving-tabindex arrow nav until 2+ tabs
-// warrant APG polish. Each <button role="tab"> is Tab-focusable and
-// Enter/Space-activatable, satisfying WCAG 2.1.1.
+// S12 (agentic-review 2026-08-04): the "no roving-tabindex arrow nav until 2+
+// tabs warrant APG polish" deferral recorded here has come due — Outtakes made
+// this tablist multi-tab for the first time, and 4c.3 adds a Tags tab. The
+// markup opts into the WAI-ARIA tabs pattern (role="tablist"/"tab"/"tabpanel",
+// aria-selected, aria-controls), and a screen-reader user who knows that pattern
+// expects arrow keys to move between tabs and Tab to leave the tablist. aXe has
+// no rule for this, so the panel's e2e scan could not have caught it.
+//
+// Automatic activation (focus selects), which APG recommends when switching
+// panels is cheap — both panels are already-loaded client components.
 export function ReferencePanel({
   width,
   onResize,
@@ -30,13 +38,43 @@ export function ReferencePanel({
   // removed in a later build). Degrade to the first tab so the panel stays
   // non-empty and the tablist keeps a valid selection + aria-labelledby target.
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
-  const resizeCleanupRef = useRef<(() => void) | null>(null);
 
-  useEffect(() => {
-    return () => {
-      resizeCleanupRef.current?.();
-    };
-  }, []);
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  function handleTabKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    // Index of the SELECTED tab, not of the event target: with a roving
+    // tabIndex the selected tab is the only focusable one, so they agree —
+    // and deriving from selection keeps the unknown-tab fallback above honest.
+    const current = tabs.findIndex((t) => t.id === activeTab?.id);
+    if (current < 0) return;
+    const last = tabs.length - 1;
+    let next: number;
+    switch (event.key) {
+      case "ArrowRight":
+        next = current === last ? 0 : current + 1;
+        break;
+      case "ArrowLeft":
+        next = current === 0 ? last : current - 1;
+        break;
+      case "Home":
+        next = 0;
+        break;
+      case "End":
+        next = last;
+        break;
+      default:
+        return;
+    }
+    // `current >= 0` above means the list is non-empty, so every branch lands
+    // in range — but read it optionally rather than asserting.
+    const target = tabs[next];
+    if (!target) return;
+    // Only after a key we handle: Escape and Ctrl+. must still reach the
+    // listeners that close the panel.
+    event.preventDefault();
+    onSelectTab(target.id);
+    tabRefs.current[next]?.focus();
+  }
 
   return (
     <aside
@@ -45,60 +83,36 @@ export function ReferencePanel({
       className="border-l border-border/60 bg-bg-sidebar flex flex-col h-full overflow-hidden relative"
       style={{ width: `${width}px`, minWidth: `${width}px` }}
     >
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label={STRINGS.referencePanel.resizeHandle}
-        aria-valuenow={width}
-        aria-valuemin={PANEL_MIN_WIDTH}
-        aria-valuemax={PANEL_MAX_WIDTH}
-        tabIndex={0}
-        className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-accent/20 focus:bg-accent/20 focus:outline-none transition-colors duration-200"
-        onMouseDown={(e) => {
-          e.preventDefault();
-          const startX = e.clientX;
-          const startWidth = width;
-          function onMouseMove(ev: MouseEvent) {
-            const newWidth = Math.min(
-              PANEL_MAX_WIDTH,
-              Math.max(PANEL_MIN_WIDTH, startWidth - (ev.clientX - startX)),
-            );
-            onResize(newWidth);
-          }
-          function onMouseUp() {
-            cleanupResize();
-          }
-          function cleanupResize() {
-            document.removeEventListener("mousemove", onMouseMove);
-            document.removeEventListener("mouseup", onMouseUp);
-            resizeCleanupRef.current = null;
-          }
-          document.addEventListener("mousemove", onMouseMove);
-          document.addEventListener("mouseup", onMouseUp);
-          resizeCleanupRef.current = cleanupResize;
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "ArrowLeft") {
-            e.preventDefault();
-            onResize(Math.min(PANEL_MAX_WIDTH, width + 10));
-          }
-          if (e.key === "ArrowRight") {
-            e.preventDefault();
-            onResize(Math.max(PANEL_MIN_WIDTH, width - 10));
-          }
-        }}
+      <ResizeSeparator
+        edge="left"
+        value={width}
+        min={PANEL_MIN_WIDTH}
+        max={PANEL_MAX_WIDTH}
+        ariaLabel={STRINGS.referencePanel.resizeHandle}
+        onResize={onResize}
       />
 
-      <div role="tablist" className="border-b border-border/40 px-4 py-2 flex gap-2">
-        {tabs.map((tab) => {
+      <div
+        role="tablist"
+        onKeyDown={handleTabKeyDown}
+        className="border-b border-border/40 px-4 py-2 flex gap-2"
+      >
+        {tabs.map((tab, index) => {
           const selected = tab.id === activeTab?.id;
           return (
             <button
               key={tab.id}
               id={`${tab.id}-tab`}
+              ref={(el) => {
+                tabRefs.current[index] = el;
+              }}
               role="tab"
               aria-selected={selected}
               aria-controls={`${tab.id}-tabpanel`}
+              // Roving tabIndex: one Tab stop for the whole tablist, arrows move
+              // within it. Without this, Tab walked every tab individually —
+              // fine as plain buttons, wrong for the pattern the markup claims.
+              tabIndex={selected ? 0 : -1}
               onClick={() => onSelectTab(tab.id)}
               className={
                 selected

@@ -13,6 +13,7 @@ skimmed at a glance for patterns.
 
 | Date       | Phase                          | Model                 | Pushback (C/I/M) | Alignment (C/I/M) | Entry                                                                |
 |------------|--------------------------------|-----------------------|------------------|-------------------|----------------------------------------------------------------------|
+| 2026-07-19 | Phase 4c.2: Scratchpad / Outtakes                      | claude-opus-4-8 | 0/2/4 | 0/2/3      | [link](2026-07-19-phase-4c-2-scratchpad-outtakes.md)                 |
 | 2026-07-12 | Phase 4b.18: Persisted-Setting Storage Helper          | claude-opus-4-8 | 0/1/2 | 0/0/3      | [link](2026-07-12-phase-4b18-persisted-setting-storage-helper.md)    |
 | 2026-07-12 | Phase 4c.1: Inline Notes                                | claude-opus-4-8 | 0/5/5 | 0/0/2      | [link](2026-07-12-phase-4c-1-inline-notes.md)                        |
 | 2026-07-11 | Phase 4b.17: AbortController ESLint Rule                | claude-opus-4-8 | 0/1/1 | 0/0/1      | [link](2026-07-11-phase-4b-17-abortcontroller-eslint-rule.md)        |

@@ -14,7 +14,12 @@ import {
 import { ApiRequestError } from "../api/client";
 import { SCOPES, type ApiErrorScope } from "./scopes";
 import { STRINGS } from "../strings";
-import { SNAPSHOT_ERROR_CODES, SEARCH_ERROR_CODES } from "@smudge/shared";
+import {
+  SNAPSHOT_ERROR_CODES,
+  SEARCH_ERROR_CODES,
+  OUTTAKE_ERROR_CODES,
+  LABEL_MAX_UNITS,
+} from "@smudge/shared";
 import * as errorsBarrel from "./index";
 
 // Smoke-test the barrel so its re-exports have coverage and any typo in
@@ -359,6 +364,14 @@ describe("mapApiError — terminalStatuses plumbing (S1)", () => {
     const err = new ApiRequestError("not found", 404);
     const result = resolveError(err, { fallback: "fallback", byStatus: { 404: "gone" } });
     expect(result.terminal).toBe(false);
+  });
+});
+
+describe("SCOPES — outtake.create", () => {
+  const scope = SCOPES["outtake.create"];
+  it("413 → createOuttakeTooLarge (S1)", () => {
+    const err = new ApiRequestError("too large", 413, "PAYLOAD_TOO_LARGE");
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.createOuttakeTooLarge);
   });
 });
 
@@ -967,6 +980,47 @@ describe("image.delete extrasFrom — drop-only-malformed (4b.3c.1 S8)", () => {
   });
 });
 
+describe("SCOPES — outtake.* scopes", () => {
+  const cases: Array<[ApiErrorScope, string]> = [
+    ["outtake.list", STRINGS.error.loadOuttakesFailed],
+    ["outtake.create", STRINGS.error.createOuttakeFailed],
+    ["outtake.update", STRINGS.error.updateOuttakeFailed],
+    ["outtake.delete", STRINGS.error.deleteOuttakeFailed],
+  ];
+  it.each(cases)("%s maps a 500 to its fallback string", (scope, fallback) => {
+    const err = new ApiRequestError("boom", 500, "INTERNAL_ERROR");
+    expect(mapApiError(err, scope).message).toBe(fallback);
+  });
+  it.each(cases)("%s marks a NETWORK error transient", (scope) => {
+    const err = new ApiRequestError("offline", 0, "NETWORK");
+    expect(mapApiError(err, scope).transient).toBe(true);
+  });
+});
+
+// S8 (agentic-review 2026-08-04): this scope used to map EVERY 400 to
+// label-length copy, on the premise that the cap is the only 400 the PATCH
+// emits. It is not — validateUuidParam throws 400 before the schema runs and
+// UpdateOuttakeSchema.strict() is a second producer. It matters more here than
+// in a read scope because the consumer (OuttakeCard.commitLabel) REVERTS the
+// visible label field on a definite failure: a non-cap 400 made the writer's
+// typed label vanish under copy naming a cause that was not the cause.
+describe("outtake.update discriminates the label cap from other 400s", () => {
+  it("uses the cap copy for OUTTAKE_LABEL_TOO_LONG", () => {
+    const err = new ApiRequestError("Label is too long", 400, OUTTAKE_ERROR_CODES.LABEL_TOO_LONG);
+    expect(mapApiError(err, "outtake.update").message).toBe(
+      STRINGS.error.updateOuttakeLabelRejected(LABEL_MAX_UNITS),
+    );
+  });
+
+  it.each([["VALIDATION_ERROR"], ["INVALID_UUID"], [undefined]])(
+    "falls back to the generic message for a 400 with code %s",
+    (code) => {
+      const err = new ApiRequestError("nope", 400, code);
+      expect(mapApiError(err, "outtake.update").message).toBe(STRINGS.error.updateOuttakeFailed);
+    },
+  );
+});
+
 describe("SCOPES — snapshot.restore", () => {
   const scope = SCOPES["snapshot.restore"];
   it("CORRUPT_SNAPSHOT → restoreFailedCorrupt", () => {
@@ -1149,6 +1203,10 @@ describe("SCOPES registry", () => {
       "snapshot.list",
       "snapshot.create",
       "snapshot.delete",
+      "outtake.list",
+      "outtake.create",
+      "outtake.update",
+      "outtake.delete",
       "findReplace.search",
       "findReplace.replace",
       "export.run",
@@ -1411,5 +1469,47 @@ describe("chapter.flushBeforeNavigate scope (4b.3c.1 S16)", () => {
     const err = new ApiRequestError("internal", 500, "INTERNAL_ERROR");
     const result = mapApiError(err, "chapter.flushBeforeNavigate");
     expect(result.message).toBe(STRINGS.editor.flushBeforeNavigateFailed);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// I3 (dedup review 2026-07-26): one endpoint, one committed-code policy
+// ---------------------------------------------------------------------------
+
+describe("every scope fronting PATCH /api/chapters/:id shares its code policy", () => {
+  // chapters.service.ts throws UPDATE_READ_FAILURE UNCONDITIONALLY when the
+  // post-update read-back fails — it does not care which field was in the
+  // update — so it can reach any of the three scopes that front the endpoint.
+  // Only chapter.save declared it; rename and updateStatus declared `committed:`
+  // copy that was therefore UNREACHABLE for this code (the 2xx-BAD_JSON early
+  // return cannot fire for a 500, and possiblyCommitted on the byCode path
+  // requires committedCodes to list it).
+  //
+  // ┌─ NEW CALLER OF PATCH /api/chapters/:id? ────────────────────────────────┐
+  // │ Add its scope to this list. The assertions below then force it to carry │
+  // │ the same committed-intent policy as its three siblings.                 │
+  // └─────────────────────────────────────────────────────────────────────────┘
+  const CHAPTER_PATCH_SCOPES: ApiErrorScope[] = [
+    "chapter.save",
+    "chapter.rename",
+    "chapter.updateStatus",
+  ];
+
+  const entryOf = (scope: ApiErrorScope): ScopeEntry => SCOPES[scope];
+
+  it.each(CHAPTER_PATCH_SCOPES)("%s declares UPDATE_READ_FAILURE as committed", (scope) => {
+    expect(entryOf(scope).committedCodes ?? []).toContain("UPDATE_READ_FAILURE");
+  });
+
+  it.each(CHAPTER_PATCH_SCOPES)("%s maps UPDATE_READ_FAILURE to its own copy", (scope) => {
+    expect(entryOf(scope).byCode?.UPDATE_READ_FAILURE).toBeTruthy();
+  });
+
+  it.each(CHAPTER_PATCH_SCOPES)("%s surfaces possiblyCommitted for the real error", (scope) => {
+    const err = new ApiRequestError("read-back failed", 500, "UPDATE_READ_FAILURE");
+    const mapped = mapApiError(err, scope);
+    expect(mapped.possiblyCommitted).toBe(true);
+    // ...and does NOT fall through to the retry-inviting fallback copy.
+    expect(mapped.message).not.toBe(entryOf(scope).fallback);
   });
 });

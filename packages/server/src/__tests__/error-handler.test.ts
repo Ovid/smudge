@@ -144,3 +144,40 @@ describe("Global error handler", () => {
     logSpy.mockRestore();
   });
 });
+
+// ---------------------------------------------------------------------------
+// I4 (dedup review 2026-07-26): the status allowlist is ENFORCED, not restated
+// ---------------------------------------------------------------------------
+
+describe("status allowlist is enforced by the handler", () => {
+  // CLAUDE.md §API Design fixes the server's error-status set at
+  // 400/404/409/413/500 (503 is a documented /api/health carve-out that never
+  // reaches this handler). The AppError subclasses honour it, but the
+  // non-AppError fallback path read `err.status` straight through to
+  // `res.status(...)` with no clamp — so ANY library error carrying its own
+  // status escaped the taxonomy. body-parser's UnsupportedMediaTypeError (415)
+  // did exactly that on every body-accepting endpoint, mislabelled
+  // VALIDATION_ERROR and mapped by no client scope.
+  it.each([
+    [415, 400, "VALIDATION_ERROR"],
+    [405, 400, "VALIDATION_ERROR"],
+    [418, 400, "VALIDATION_ERROR"],
+    [429, 400, "VALIDATION_ERROR"],
+    [501, 500, "INTERNAL_ERROR"],
+    [502, 500, "INTERNAL_ERROR"],
+    [503, 500, "INTERNAL_ERROR"],
+  ])("clamps an off-allowlist %i to %i", async (raw, expected, code) => {
+    const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    const res = await request(createErrorTestApp()).get(`/api/test-error-status/${raw}`);
+    expect(res.status).toBe(expected);
+    expect(res.body.error.code).toBe(code);
+    logSpy.mockRestore();
+  });
+
+  it.each([400, 404, 409, 413, 500])("passes an allowlisted %i through unchanged", async (raw) => {
+    const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    const res = await request(createErrorTestApp()).get(`/api/test-error-status/${raw}`);
+    expect(res.status).toBe(raw);
+    logSpy.mockRestore();
+  });
+});

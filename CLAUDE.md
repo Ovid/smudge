@@ -353,7 +353,7 @@ Re-flagging one is warranted only if its stated premise changes.
   optimizations. Revisit only if Smudge ever ships a cloud / multi-writer
   deployment.
 - **`EditorPage` god-orchestrator, accepted with an enforcement net (F-1).**
-  `packages/client/src/pages/EditorPage.tsx` (~1094 lines) owns the shared
+  `packages/client/src/pages/EditorPage.tsx` (~1,330 lines) owns the shared
   mutable busy/lock state and threads it into every editor-mutating entry point;
   the cross-hook invariant holds because this one component wires the same
   objects consistently. Five prior decompositions already extracted rendering
@@ -378,7 +378,9 @@ Re-flagging one is warranted only if its stated premise changes.
 
 ## API Design
 
-REST endpoints under `/api/`. Error envelope: `{ "error": { "code": "MACHINE_READABLE", "message": "Human-readable" } }`. HTTP status codes: 200, 201, 204, 400, 404, 409, 413, 500, plus **503 for `/api/health` only** (the liveness probe emits 503 when the SQLite handle is unreachable — F-14; this is the single documented carve-out and does not extend to any other endpoint or to the `AppError` taxonomy). The allowlist governs codes the Smudge server itself emits; client error scopes may additionally map proxy-only codes (502/503/504, etc.) for resilience under reverse-proxy deployments. Error responses (4xx/5xx) are produced by the `AppError` taxonomy (`packages/server/src/errors/appError.ts`): routes `throw` a typed `AppError` and the global handler (`app.ts`) renders the envelope. The error-status subset is 400, 404, 409, 413, 500 — `AppError` never emits 2xx.
+REST endpoints under `/api/`. Error envelope: `{ "error": { "code": "MACHINE_READABLE", "message": "Human-readable" } }`. HTTP status codes: 200, 201, 204, 400, 404, 409, 413, 500, plus **503 for `/api/health` only** (the liveness probe emits 503 when the SQLite handle is unreachable — F-14; this is the single documented carve-out and does not extend to any other endpoint or to the `AppError` taxonomy). The allowlist governs codes the Smudge server itself emits; client error scopes may additionally map proxy-only codes (502/503/504, etc.) for resilience under reverse-proxy deployments. Error responses (4xx/5xx) are produced by the `AppError` taxonomy (`packages/server/src/errors/appError.ts`): routes `throw` a typed `AppError` and the global handler (`app.ts`) renders the envelope. The error-status subset is `ERROR_STATUS_ALLOWLIST` (400, 404, 409, 413, 500) — `AppError` never emits 2xx.
+
+**The error-status allowlist is enforced, not just documented (I4).** `globalErrorHandler` clamps every non-`AppError` status to `ERROR_STATUS_ALLOWLIST`: an off-allowlist 4xx becomes 400, anything else becomes 500, and the original is preserved in the log as `rawStatus`. This exists because a library error can carry its own status — body-parser's `UnsupportedMediaTypeError` (415) escaped through the unclamped handler on every body-accepting endpoint, mislabelled `VALIDATION_ERROR` and mapped by no client scope. `ERROR_STATUS_ALLOWLIST` is the single machine-readable owner; do not restate the list in a comment.
 
 - **204** No Content is the uniform success contract for **every** DELETE endpoint — chapter, project, image, and snapshot deletes all return `204` with an empty body (F-16). The client owns the user-facing success toast (sourced from `strings.ts`); the server never returns a `{ message }` or `{ deleted: true }` envelope on the delete happy-path. A blocked image delete is the exception and stays a **409** (it is not a success). Because a 204 carries no body, `apiFetch` short-circuits before reading it, so the 2xx-`BAD_JSON` `possiblyCommitted` path cannot fire for a successful delete. The same body-less-204 contract also covers two non-DELETE mutations that have nothing to return — `PUT /api/projects/{slug}/chapters/order` and `PATCH /api/settings` (F-9): the client owns the toast, the server ships no success copy.
 - **409** is used for conflict cases where the request is well-formed but violates a constraint the client needs to resolve (e.g. attempting to delete an image still referenced by chapters — the `{ error: { code, message, chapters: [...] } }` shape carries the referencing chapter list so the UI can route the user to them).
@@ -413,13 +415,35 @@ This is a first-class design constraint, not optional:
 
 ## Data Model
 
-Five tables, all using UUID primary keys (except `settings` and `chapter_statuses`):
+Core tables, all using UUID primary keys (except `settings` and `chapter_statuses`):
 
 - **projects** — id, title, slug, mode, target_word_count, target_deadline, created_at, updated_at, deleted_at
 - **chapters** — id, project_id (FK), title, content (TipTap JSON), sort_order, word_count, status, created_at, updated_at, deleted_at
 - **chapter_statuses** — status (PK), sort_order, label. Seed data; defines the chapter workflow statuses.
 - **settings** — key (PK), value. Key-value store for app settings (e.g., timezone).
 - **daily_snapshots** — id, project_id (FK), date, total_word_count, created_at. One row per project per day; upserted on each save.
+- **outtakes** — id, project_id (FK), label, content (TipTap JSON, images
+  stripped on capture), created_at, updated_at. Per-project store of cut/stashed
+  text. **Degraded read:** a row whose stored `content` is unparseable (or parses
+  to a non-node) is returned with `content` replaced by a valid empty doc and a
+  `content_corrupt: true` flag on the wire type, never as a 500 — the row must
+  keep listing, because listing is what keeps it deletable. The substituted doc
+  **passes `TipTapDocSchema`**, so a schema check is not a corruption check: any
+  code acting on outtake content (insert, copy, and the future destructive cut)
+  must test the flag, and must not read "empty" as "safe to discard". **Hard delete (no `deleted_at`)** — a documented exception to "soft delete
+  everywhere", matching ChapterSnapshot (a safety-net TipTap-JSON table). Images
+  are stripped on capture because outtake JSON is invisible to the image
+  reference-counter/reaper (which scans only `chapters`), so an image referenced
+  only by an outtake would be GC'd. Outtakes are excluded from the manuscript word
+  count, export, preview, and find-and-replace **by table separation** — any future
+  "all project content" iteration must consciously opt them in, and must never do
+  so for images without extending ref-tracking. Editor-only `note` marks are
+  **deliberately preserved** on capture (unlike images): an outtake is an
+  editor-trusted round-trip surface — shown only as plaintext in the panel or
+  re-inserted into the editor — so stripping notes would lose the writer's private
+  commentary. The stored JSON therefore holds notes, so any future code that
+  renders outtake content to HTML/export **must** strip them there (§note-strip
+  discipline); the forcing test in `outtakes.service.test.ts` pins the decision.
 
 ## Testing Philosophy
 

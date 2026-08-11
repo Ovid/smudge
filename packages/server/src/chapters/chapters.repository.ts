@@ -1,4 +1,5 @@
 import type { Knex } from "knex";
+import { isTipTapNode } from "@smudge/shared";
 import type {
   ChapterRow,
   ChapterRawRow,
@@ -14,7 +15,26 @@ import { logger } from "../logger";
 function parseContent(row: Record<string, unknown>): ChapterRow {
   if (typeof row.content === "string") {
     try {
-      return { ...row, content: JSON.parse(row.content) } as ChapterRow;
+      const parsed: unknown = JSON.parse(row.content);
+      // I6 (dedup review 2026-07-26): "valid JSON, wrong shape" — "42", "[]",
+      // "null", '"text"' — parses WITHOUT throwing, so guarding only the throw
+      // returned e.g. `{ ...row, content: 42 }` with no content_corrupt flag.
+      // isCorruptChapter was then false, the row was served as healthy, and the
+      // designed CORRUPT_CONTENT route (chapters.routes.ts) could not fire for
+      // it. Both sibling parsers already guard this — snapshots.service.ts
+      // since a19e8aa, outtakes.repository.ts since 5d3d495 ("mirroring
+      // snapshots.service.ts") — and chapters was the one that never got it.
+      //
+      // The three sites keep deliberately DIFFERENT degrade policies
+      // (corrupt-flag here, empty-doc for outtakes, reject-restore for
+      // snapshots) — but that is an argument for sharing the PREDICATE and not
+      // the degrade, which is what isTipTapNode does (S1, dedup review
+      // 2026-07-26). The predicate was the extractable part all along; each
+      // caller still owns what happens inside the `if`.
+      if (!isTipTapNode(parsed)) {
+        throw new TypeError("Chapter content is not a JSON object");
+      }
+      return { ...row, content: parsed } as ChapterRow;
     } catch (err) {
       logger.error(
         {

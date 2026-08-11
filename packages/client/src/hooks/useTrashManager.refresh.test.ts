@@ -68,12 +68,13 @@ describe("refreshTrashList", () => {
   it("returns { kind: 'ok', trashed } on success AND invokes trashOp.run + api.projects.trash with project.slug and the captured signal", async () => {
     const project = makeProject("p-1", "alpha");
     const projectRef = { current: project };
+    const slugRef = { current: project.slug };
     const trashed: Chapter[] = [];
     const controller = new AbortController();
     const trashOp = makeTrashOp(controller.signal);
     vi.mocked(api.projects.trash).mockResolvedValue(trashed);
 
-    const result = await refreshTrashList(project, projectRef, trashOp);
+    const result = await refreshTrashList(project, projectRef, slugRef, trashOp);
 
     expect(result).toEqual({ kind: "ok", trashed });
     // The contract the structural-check delegation allowlist appeals to:
@@ -89,12 +90,13 @@ describe("refreshTrashList", () => {
   it("returns { kind: 'aborted' } on success when signal is aborted", async () => {
     const project = makeProject("p-1", "alpha");
     const projectRef = { current: project };
+    const slugRef = { current: project.slug };
     const controller = new AbortController();
     controller.abort();
     const trashOp = makeTrashOp(controller.signal);
     vi.mocked(api.projects.trash).mockResolvedValue([]);
 
-    const result = await refreshTrashList(project, projectRef, trashOp);
+    const result = await refreshTrashList(project, projectRef, slugRef, trashOp);
 
     expect(result).toEqual({ kind: "aborted" });
   });
@@ -103,6 +105,7 @@ describe("refreshTrashList", () => {
     const projectA = makeProject("p-1", "alpha");
     const projectB = makeProject("p-2", "beta");
     const projectRef = { current: projectA };
+    const slugRef = { current: projectA.slug };
     const controller = new AbortController();
     const trashOp = makeTrashOp(controller.signal);
     vi.mocked(api.projects.trash).mockImplementation(() =>
@@ -112,20 +115,72 @@ describe("refreshTrashList", () => {
       }),
     );
 
-    const result = await refreshTrashList(projectA, projectRef, trashOp);
+    const result = await refreshTrashList(projectA, projectRef, slugRef, trashOp);
 
     expect(result).toEqual({ kind: "stale" });
+  });
+
+  // S8 (dedup review 2026-07-26): this helper's drift guard used to be an
+  // id-only copy, which cannot see the PRE-LOAD window — the interval between
+  // the URL slug changing and loadProject completing. In that window projectRef
+  // still holds the old project, so the id compare passes and the response is
+  // treated as fresh; the slug ref has already advanced, which is what catches
+  // it. useChapterCrud spells this out above its own copy ("Both checks are
+  // needed"), and four of the nine copies had drifted to the weaker form.
+  it("returns { kind: 'stale' } when the URL slug has advanced but the new project has not loaded yet", async () => {
+    const projectA = makeProject("p-1", "alpha");
+    const projectRef = { current: projectA };
+    // The user has navigated to /projects/beta; loadProject has not finished,
+    // so projectRef still holds alpha and an id compare would see no drift.
+    const slugRef = { current: "alpha" };
+    const controller = new AbortController();
+    const trashOp = makeTrashOp(controller.signal);
+    vi.mocked(api.projects.trash).mockImplementation(() =>
+      Promise.resolve([]).then((v) => {
+        slugRef.current = "beta";
+        return v;
+      }),
+    );
+
+    const result = await refreshTrashList(projectA, projectRef, slugRef, trashOp);
+
+    expect(result).toEqual({ kind: "stale" });
+  });
+
+  // I4 (agentic-review 2026-08-05): the S8 dedup silently moved the drift
+  // BASELINE from the operation's own project (the `project` argument, which is
+  // also the slug the GET uses) to whatever `projectRef.current` happened to
+  // hold at construction. confirmDeleteChapter awaits handleDeleteChapter
+  // BEFORE calling here, so the ref can already have advanced to B while the
+  // GET still asks for A's slug — both guard checks then pass and project A's
+  // deleted chapters paint into project B's trash view, from which Restore
+  // splices an A chapter into B's sidebar.
+  it("returns { kind: 'stale' } when the ref already moved on before the call", async () => {
+    const projectA = makeProject("p-1", "alpha");
+    const projectB = makeProject("p-2", "beta");
+    const projectRef = { current: projectB };
+    const slugRef = { current: projectB.slug };
+    const controller = new AbortController();
+    const trashOp = makeTrashOp(controller.signal);
+    vi.mocked(api.projects.trash).mockResolvedValue([]);
+
+    const result = await refreshTrashList(projectA, projectRef, slugRef, trashOp);
+
+    expect(result).toEqual({ kind: "stale" });
+    // Bailing before the GET also spares a request nobody will read.
+    expect(api.projects.trash).not.toHaveBeenCalled();
   });
 
   it("returns { kind: 'error', mapped } on rejection when project unchanged and signal not aborted", async () => {
     const project = makeProject("p-1", "alpha");
     const projectRef = { current: project };
+    const slugRef = { current: project.slug };
     const controller = new AbortController();
     const trashOp = makeTrashOp(controller.signal);
     const err = new ApiRequestError("Internal Server Error", 500, "INTERNAL");
     vi.mocked(api.projects.trash).mockRejectedValue(err);
 
-    const result = await refreshTrashList(project, projectRef, trashOp);
+    const result = await refreshTrashList(project, projectRef, slugRef, trashOp);
 
     expect(result.kind).toBe("error");
     if (result.kind !== "error") throw new Error("unreachable");
@@ -135,12 +190,13 @@ describe("refreshTrashList", () => {
   it("returns { kind: 'aborted' } on rejection when signal is aborted", async () => {
     const project = makeProject("p-1", "alpha");
     const projectRef = { current: project };
+    const slugRef = { current: project.slug };
     const controller = new AbortController();
     controller.abort();
     const trashOp = makeTrashOp(controller.signal);
     vi.mocked(api.projects.trash).mockRejectedValue(new Error("network"));
 
-    const result = await refreshTrashList(project, projectRef, trashOp);
+    const result = await refreshTrashList(project, projectRef, slugRef, trashOp);
 
     expect(result).toEqual({ kind: "aborted" });
   });
@@ -149,6 +205,7 @@ describe("refreshTrashList", () => {
     const projectA = makeProject("p-1", "alpha");
     const projectB = makeProject("p-2", "beta");
     const projectRef = { current: projectA };
+    const slugRef = { current: projectA.slug };
     const controller = new AbortController();
     const trashOp = makeTrashOp(controller.signal);
     const err = new ApiRequestError("Internal Server Error", 500, "INTERNAL");
@@ -159,7 +216,7 @@ describe("refreshTrashList", () => {
       }),
     );
 
-    const result = await refreshTrashList(projectA, projectRef, trashOp);
+    const result = await refreshTrashList(projectA, projectRef, slugRef, trashOp);
 
     expect(result).toEqual({ kind: "stale" });
   });

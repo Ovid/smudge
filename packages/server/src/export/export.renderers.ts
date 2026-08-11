@@ -2,6 +2,7 @@ import TurndownService from "turndown";
 import { renderEditorHtml } from "@smudge/shared/editor-extensions";
 import { resolveImagesInHtml, type ImageSource } from "./image-resolver";
 import { escapeHtml } from "./html-escape";
+import { UUID_PATTERN } from "../images/images.paths";
 import { logger } from "../logger";
 
 // ---------------------------------------------------------------------------
@@ -43,8 +44,22 @@ export interface RenderOptions {
 // Link), so a targeted img-tag pass over the bounded, machine-generated HTML is
 // sufficient. Runs BEFORE resolveImagesInHtml so a valid /api/images/<uuid> src
 // still resolves to its embedded data URI.
-const ALLOWED_IMAGE_SRC =
-  /^\/api\/images\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:[?#].*)?$/i;
+//
+// S2 (dedup review 2026-07-26): the UUID shape is spliced in from the canonical
+// UUID_PATTERN rather than re-typed, so it cannot drift from the sibling
+// IMAGE_SRC_REGEX built from the same constant. Previously a widening of
+// UUID_PATTERN would have left this copy narrow and silently dropped every
+// <img> from every HTML-route export.
+//
+// The captured group is the image id: exported for the DOCX walker (C1), which
+// never renders HTML and so cannot reuse stripDisallowedImages — it applies this
+// same allowlist at its own walker entry. The capture is inert for `.test()`.
+//
+// Its client counterpart is ALLOWED_URI_REGEXP (packages/client/src/sanitizer.ts),
+// which encodes the identical relative-only shape for DOMPurify. Change one,
+// review the other — they are a deliberate defense-in-depth pair, unlike the
+// F-16 pair (IMAGE_SRC_RE) whose absolute-host arm serves a different job.
+export const ALLOWED_IMAGE_SRC = new RegExp(`^/api/images/(${UUID_PATTERN})(?:[?#].*)?$`, "i");
 
 function stripDisallowedImages(html: string): string {
   return html.replace(/<img\b[^>]*>/gi, (tag) => {

@@ -1,5 +1,5 @@
 import type { ComponentProps, RefObject } from "react";
-import type { Chapter, ChapterStatusRow, ProjectWithChapters } from "@smudge/shared";
+import type { Chapter, ChapterStatusRow, OuttakeRow, ProjectWithChapters } from "@smudge/shared";
 import { Sidebar } from "./Sidebar";
 import { TrashView } from "./TrashView";
 import { PreviewMode } from "./PreviewMode";
@@ -12,6 +12,7 @@ import { SnapshotPanel } from "./SnapshotPanel";
 import { FindReplacePanel } from "./FindReplacePanel";
 import { SnapshotBanner } from "./SnapshotBanner";
 import { ImageGallery } from "./ImageGallery";
+import { OuttakesPanel } from "./OuttakesPanel";
 import { STRINGS } from "../strings";
 import type { ViewMode } from "../hooks/useKeyboardShortcuts";
 import type { useSnapshotState } from "../hooks/useSnapshotState";
@@ -112,6 +113,12 @@ interface EditorMainContentProps {
   onSelectTab: ComponentProps<typeof ReferencePanel>["onSelectTab"];
   galleryExternalRefreshKey: number;
   onInsertImage: (url: string, alt: string) => void;
+  onInsertOuttake: (outtake: OuttakeRow) => void;
+  capturedOuttake: OuttakeRow | null;
+  outtakesExternalRefreshKey: number;
+  /** I6: the panel's unsent blank-note text; null when the form is closed. */
+  outtakeDraft: string | null;
+  onOuttakeDraftChange: (draft: string | null) => void;
 
   // Snapshot panel.
   snapshotPanelOpen: boolean;
@@ -185,6 +192,11 @@ export function EditorMainContent({
   onSelectTab,
   galleryExternalRefreshKey,
   onInsertImage,
+  onInsertOuttake,
+  capturedOuttake,
+  outtakesExternalRefreshKey,
+  outtakeDraft,
+  onOuttakeDraftChange,
   snapshotPanelOpen,
   onCloseSnapshotPanel,
   snapshotPanelRef,
@@ -391,6 +403,20 @@ export function EditorMainContent({
                   externalRefreshKey={galleryExternalRefreshKey}
                   onInsertImage={onInsertImage}
                   onNavigateToChapter={onSelectChapter}
+                />
+              ),
+            },
+            {
+              id: "outtakes",
+              label: STRINGS.outtakes.tab,
+              panel: (
+                <OuttakesPanel
+                  projectId={project.id}
+                  onInsert={onInsertOuttake}
+                  capturedOuttake={capturedOuttake}
+                  externalRefreshKey={outtakesExternalRefreshKey}
+                  draft={outtakeDraft}
+                  onDraftChange={onOuttakeDraftChange}
                 />
               ),
             },

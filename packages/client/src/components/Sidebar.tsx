@@ -23,6 +23,7 @@ import type {
   ChapterStatusValue,
 } from "@smudge/shared";
 import { STRINGS } from "../strings";
+import { ResizeSeparator } from "./ResizeSeparator";
 import { STATUS_COLORS } from "../statusColors";
 
 interface StatusBadgeProps {
@@ -327,13 +328,6 @@ export function Sidebar({
   const [editDraft, setEditDraft] = useState("");
   const editInputRef = useRef<HTMLInputElement>(null);
   const [announcement, setAnnouncement] = useState("");
-  const resizeCleanupRef = useRef<(() => void) | null>(null);
-
-  useEffect(() => {
-    return () => {
-      resizeCleanupRef.current?.();
-    };
-  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -463,48 +457,13 @@ export function Sidebar({
         {announcement}
       </div>
 
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label={STRINGS.sidebar.resizeHandle}
-        aria-valuenow={width}
-        aria-valuemin={SIDEBAR_MIN_WIDTH}
-        aria-valuemax={SIDEBAR_MAX_WIDTH}
-        tabIndex={0}
-        className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-accent/20 focus:bg-accent/20 focus:outline-none transition-colors duration-200"
-        onMouseDown={(e) => {
-          e.preventDefault();
-          const startX = e.clientX;
-          const startWidth = width;
-          function onMouseMove(ev: MouseEvent) {
-            const newWidth = Math.min(
-              SIDEBAR_MAX_WIDTH,
-              Math.max(SIDEBAR_MIN_WIDTH, startWidth + ev.clientX - startX),
-            );
-            onResize(newWidth);
-          }
-          function onMouseUp() {
-            cleanupResize();
-          }
-          function cleanupResize() {
-            document.removeEventListener("mousemove", onMouseMove);
-            document.removeEventListener("mouseup", onMouseUp);
-            resizeCleanupRef.current = null;
-          }
-          document.addEventListener("mousemove", onMouseMove);
-          document.addEventListener("mouseup", onMouseUp);
-          resizeCleanupRef.current = cleanupResize;
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "ArrowRight") {
-            e.preventDefault();
-            onResize(Math.min(SIDEBAR_MAX_WIDTH, width + 10));
-          }
-          if (e.key === "ArrowLeft") {
-            e.preventDefault();
-            onResize(Math.max(SIDEBAR_MIN_WIDTH, width - 10));
-          }
-        }}
+      <ResizeSeparator
+        edge="right"
+        value={width}
+        min={SIDEBAR_MIN_WIDTH}
+        max={SIDEBAR_MAX_WIDTH}
+        ariaLabel={STRINGS.sidebar.resizeHandle}
+        onResize={onResize}
       />
     </aside>
   );

@@ -1,4 +1,3 @@
-import { randomUUID as uuidv4 } from "node:crypto";
 import {
   searchInDoc,
   replaceInDoc,
@@ -12,6 +11,7 @@ import {
   MAX_MATCHES_PER_REQUEST,
   SEARCH_ERROR_CODES,
   sanitizeSnapshotLabel,
+  isTipTapNode,
 } from "@smudge/shared";
 import type { SearchErrorCode } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
@@ -21,7 +21,7 @@ import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
 import { applyImageRefDiff } from "../images/images.references";
 import { buildAutoSnapshotLabel } from "../snapshots/labels";
-import { canonicalContentHash } from "../snapshots/content-hash";
+import { insertAutoSnapshotIfChanged } from "../snapshots/auto-snapshot";
 import type { SearchResult, ReplaceResult } from "@smudge/shared";
 
 /**
@@ -139,11 +139,19 @@ export async function searchProject(
 
     let parsed: Record<string, unknown>;
     try {
-      parsed = JSON.parse(chapter.content);
+      // OOSS2 (agentic-review 2026-08-04): "valid JSON, wrong shape" ("null",
+      // "42", "[]", '"text"') parses without throwing, so guarding only the
+      // throw let the walker examine a non-document, find nothing, and continue
+      // WITHOUT recording a skip — reporting the project fully searched when a
+      // chapter was never read. Same isTipTapNode gate as the sibling parse
+      // sites (chapters.repository, images.references, outtakes.repository).
+      const raw: unknown = JSON.parse(chapter.content);
+      if (!isTipTapNode(raw)) throw new TypeError("Chapter content is not a TipTap node");
+      parsed = raw as Record<string, unknown>;
     } catch {
       logger.warn(
         { chapter_id: chapter.id, project_id: projectId },
-        "Skipping chapter with corrupt JSON during search",
+        "Skipping chapter with unreadable content during search",
       );
       skippedIds.push(chapter.id);
       continue;
@@ -250,11 +258,15 @@ export async function replaceInProject(
 
         let parsed: Record<string, unknown>;
         try {
-          parsed = JSON.parse(chapter.content);
+          // OOSS2: see searchProject above — a wrong-shape row silently counted
+          // as "replaced, nothing to do" instead of as skipped.
+          const raw: unknown = JSON.parse(chapter.content);
+          if (!isTipTapNode(raw)) throw new TypeError("Chapter content is not a TipTap node");
+          parsed = raw as Record<string, unknown>;
         } catch {
           logger.warn(
             { chapter_id: chapter.id, project_id: projectId },
-            "Skipping chapter with corrupt JSON during replace",
+            "Skipping chapter with unreadable content during replace",
           );
           skippedIds.push(chapter.id);
           continue;
@@ -295,28 +307,10 @@ export async function replaceInProject(
         const rawLabel = `Before find-and-replace: \u2018${truncateForLabel(search)}\u2019 \u2192 \u2018${truncateForLabel(replace)}\u2019`;
         const label = buildAutoSnapshotLabel(rawLabel);
 
-        // Auto-snapshot before replacement (using DB-committed word_count),
-        // deduped against the latest snapshot of ANY kind — manual OR auto
-        // (F-15). Unlike the manual-snapshot path (which dedups against the
-        // latest *manual* snapshot), this insert is itself an auto-snapshot,
-        // so it must also be skipped when the pre-replace content is byte-
-        // identical to a prior auto-snapshot left by an earlier
-        // restore/replace. This removes the identical-content history noise
-        // the flaw describes. The replacement itself still proceeds; only the
-        // redundant snapshot insert is skipped.
-        const preReplaceHash = canonicalContentHash(chapter.content);
-        const latestSnapshotHash = await txStore.getLatestSnapshotContentHashAnyKind(chapter.id);
-        if (latestSnapshotHash !== preReplaceHash) {
-          await txStore.insertSnapshot({
-            id: uuidv4(),
-            chapter_id: chapter.id,
-            label,
-            content: chapter.content,
-            word_count: chapter.word_count,
-            is_auto: true,
-            created_at: new Date().toISOString(),
-          });
-        }
+        // Auto-snapshot before replacement, using the DB-committed
+        // word_count, deduped against the latest snapshot of ANY kind (F-15).
+        // See insertAutoSnapshotIfChanged for the full rationale.
+        await insertAutoSnapshotIfChanged(txStore, chapter, chapter.content, label);
 
         // Update chapter content — guard against amplification (`$'` / `$\``
         // in regex replacements can splice the full match context repeatedly)
@@ -377,11 +371,11 @@ export async function replaceInProject(
   if (txResult.affected_chapter_ids.length > 0) {
     try {
       const svc = getVelocityService();
-      await svc.recordSave(projectId);
+      await svc.updateDailySnapshot(projectId);
     } catch (err: unknown) {
       logger.error(
         { err, project_id: projectId },
-        "Velocity recordSave failed after replace (best-effort)",
+        "Velocity updateDailySnapshot failed after replace (best-effort)",
       );
     }
   }

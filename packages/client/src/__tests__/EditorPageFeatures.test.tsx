@@ -2138,6 +2138,36 @@ describe("EditorPage find-and-replace confirmation", () => {
     expect(vi.mocked(api.search.replace).mock.calls.length).toBe(callsAfterLock);
   });
 
+  it("the locked refusal says the editor is locked, not that an operation is busy (I1)", async () => {
+    // I1 (dedup review 2026-07-26): the three lock refusals in the controllers
+    // announced STRINGS.editor.mutationBusy — "Another operation is in progress
+    // — please wait." That is false under a lock. Nothing is in progress, and
+    // waiting never clears it: only EDITOR_REMOUNTED or UNLOCK does, and no
+    // production code dispatches UNLOCK. So the user saw the persistent
+    // "refresh the page before continuing" banner, clicked Replace, and was
+    // told to wait for an operation that does not exist and will never end.
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.search.replace).mockRejectedValueOnce(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+
+    await openPanelAndSearch();
+
+    const replaceOne = await screen.findAllByRole("button", { name: "Replace" }, { timeout: 3000 });
+    await userEvent.click(replaceOne[0]!);
+
+    await screen.findByText(STRINGS.findReplace.replaceResponseUnreadable);
+
+    // The panel is NOT closed by the lock (applyReloadFailedLock dispatches
+    // only COMMITTED_UNRELOADED) and the Replace buttons carry no lock-derived
+    // `disabled`, so this second click is exactly what a real user does.
+    const replaceAgain = screen.getAllByRole("button", { name: "Replace" });
+    await userEvent.click(replaceAgain[0]!);
+
+    expect(await screen.findByText(STRINGS.editor.lockedRefusal)).toBeInTheDocument();
+    expect(screen.queryByText(STRINGS.editor.mutationBusy)).not.toBeInTheDocument();
+  });
+
   it("C-10/C-11: aborting replaceOp via unmount causes api.search.replace to receive an aborted signal", async () => {
     // The replace flow (executeReplace + handleReplaceOne) routes its
     // api.search.replace call through a shared replaceOp instance of

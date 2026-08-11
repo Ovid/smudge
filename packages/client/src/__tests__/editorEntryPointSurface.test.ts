@@ -104,6 +104,16 @@ const EDITOR_HEADER_PROPS = [
   "snapshotCount",
   "onToggleSnapshots",
   "onToggleFindReplace",
+  // Phase 4c.2: non-destructive read + POST (copy selection to outtakes).
+  // Guard axis: RE-ENTRANCY LATCH (captureInFlightRef) plus two input
+  // refusals (collapsed caret, image-only selection). NOT the busy/lock axis:
+  // it writes no editor content, so save-pipeline invariants 1-4 do not apply.
+  // S15 (agentic-review 2026-08-04): this said "Guard axis: NONE", which is
+  // the one kind of inaccuracy this file cannot afford — an author adding a
+  // sibling entry point reads it as licence to ship no latch, and a second
+  // capture click aborting a POST that may have committed is precisely what
+  // the latch exists to stop.
+  "onSendSelectionToOuttakes",
   "snapshotsTriggerRef",
   "findReplaceTriggerRef",
   "onSwitchToView",
@@ -167,7 +177,36 @@ const EDITOR_MAIN_CONTENT_PROPS = [
   "activeTabId",
   "onSelectTab",
   "galleryExternalRefreshKey",
+  // Phase 3d: insert an image at the cursor. Guard axis: guardInsertAtCursor().
   "onInsertImage",
+  // Phase 4c.2: insert an outtake's blocks at the cursor. Guard axis:
+  // guardInsertAtCursor() — the SAME call, not merely the same list. S4
+  // (review 2026-07-26): these two are one operation (write blocks into the
+  // mounted editor at the cursor) and used to carry two hand-written guard
+  // chains that had already drifted apart once (I2) and were still asymmetric
+  // afterwards — the image path gated on isActionBusy(), the outtake path did
+  // not, reconciled by a comment asserting both were correct. A comment is not
+  // a mechanism. A third insert-at-cursor entry point must call
+  // guardInsertAtCursor() too rather than growing a third chain.
+  "onInsertOuttake",
+  // Phase 4c.2: pure data — the panel prepends this captured row (I1). No guard.
+  "capturedOuttake",
+  // S1: a monotonic nonce, bumped only on the capture's possibly-committed
+  // failure arm, that asks the panel to refetch. Guard axis: NONE and correctly
+  // so — it writes no editor content and triggers only a GET the panel already
+  // issues on its own; the capture POST it follows is latched upstream.
+  "outtakesExternalRefreshKey",
+  // I6 (agentic-review 2026-08-05): the outtakes panel's unsent blank-note text,
+  // lifted here because the panel unmounts on an ordinary tab switch and took
+  // the writer's text with it. Guard axis: NONE and correctly so — this pair
+  // never touches chapter content, the editor, or the save pipeline. It is UI
+  // state that happens to be valuable, in the same class as "panelWidth"; the
+  // POST it eventually feeds is latched inside the panel and mapped through the
+  // outtake.create scope. If a future edit makes this write into the EDITOR
+  // (e.g. a destructive cut restoring text at the cursor), it becomes an
+  // insert-at-cursor entry point and must call guardInsertAtCursor().
+  "outtakeDraft",
+  "onOuttakeDraftChange",
   "snapshotPanelOpen",
   "onCloseSnapshotPanel",
   "snapshotPanelRef",

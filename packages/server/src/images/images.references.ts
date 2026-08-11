@@ -1,4 +1,4 @@
-import { MAX_TIPTAP_DEPTH } from "@smudge/shared";
+import { MAX_TIPTAP_DEPTH, isTipTapNode } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { logger } from "../logger";
 import { UUID_PATTERN } from "./images.paths";
@@ -62,7 +62,12 @@ export function extractImageIds(content: Record<string, unknown> | null): string
     }
     if (Array.isArray(node.content)) {
       for (const child of node.content) {
-        if (typeof child === "object" && child !== null) {
+        // Skip anything this walker cannot see inside — kept explicitly
+        // symmetric with stripImageNodes (packages/shared/src/tiptap-images.ts),
+        // which DROPS the same children. If one side walked an array-wrapped
+        // child and the other did not, the two halves of the reference count
+        // would disagree and the reaper would GC a still-referenced image.
+        if (isTipTapNode(child)) {
           walk(child as Record<string, unknown>, depth + 1);
         }
       }
@@ -115,21 +120,32 @@ export async function applyImageRefDiff(
   }
   let newContent: Record<string, unknown> | null = null;
   if (newContentJson) {
+    // New content corrupt: abort. If we proceeded, extractImageIds would return
+    // [] and every old id would be classified as removed — silently
+    // decrementing every referenced image toward purge. Ref counts must stay
+    // conservative, not optimistic. Callers validate content before writing, so
+    // this path is latent today but the shared surface must be safe for future
+    // writers.
+    //
+    // S1 (dedup review 2026-07-26): the guard used to be a bare try/catch, and
+    // its own comment named `extractImageIds(null)` as the case it prevented —
+    // which the catch cannot see, because `JSON.parse("null")` RETURNS null
+    // rather than throwing. So did "42", '"text"' and "[]". The shape check is
+    // what actually closes the case the comment always claimed to.
+    let parsed: unknown;
     try {
-      newContent = JSON.parse(newContentJson);
+      parsed = JSON.parse(newContentJson);
     } catch {
-      // New content corrupt: abort. If we proceeded, extractImageIds(null)
-      // would return [] and every old id would be classified as removed —
-      // silently decrementing every referenced image toward purge. Ref
-      // counts must stay conservative, not optimistic. Callers validate
-      // content before writing, so this path is latent today but the
-      // shared surface must be safe for future writers.
+      parsed = null;
+    }
+    if (!isTipTapNode(parsed)) {
       logger.warn(
         { project_id: projectId },
-        "applyImageRefDiff: newContent JSON.parse failed; aborting diff to avoid mass decrement",
+        "applyImageRefDiff: newContent is not a TipTap object; aborting diff to avoid mass decrement",
       );
       return;
     }
+    newContent = parsed;
   }
 
   const oldIds = extractImageIds(oldContent);
@@ -172,8 +188,46 @@ export async function applyImageRefDiff(
 }
 
 /**
+ * Does one chapter's STORED content reference `imageId`?
+ *
+ * OOSI2 (agentic-review 2026-08-05): the third answer is the point. Both
+ * scanners used to fold "this chapter could not be read" into "this chapter
+ * does not reference the image" — an empty `catch` for a parse throw, and
+ * nothing at all for content that parses to a non-object (`"null"`, `"42"`,
+ * `"[]"`), which extractImageIds walks to `[]`. Callers gate an IRREVERSIBLE
+ * delete on that answer, so a chapter whose row is unreadable but whose text
+ * still holds `<img src="/api/images/X">` produced 204-and-unlinked instead of
+ * 409. The chapter itself is repairable — chapters.repository flags it
+ * `content_corrupt` and there is a designed CORRUPT_CONTENT route — so the
+ * repair then yields a chapter with a permanently broken image.
+ *
+ * Blocking on unreadable is the same conservative posture this file already
+ * argues for above IMAGE_SRC_RE: when the scan is uncertain, refuse the delete.
+ */
+export type ImageScanResult = "references" | "no-reference" | "unreadable";
+
+export function scanChapterContentForImage(
+  content: string | null | undefined,
+  imageId: string,
+): ImageScanResult {
+  if (!content) return "no-reference";
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return "unreadable";
+  }
+  if (!isTipTapNode(parsed)) return "unreadable";
+  return extractImageIds(parsed).includes(imageId.toLowerCase()) ? "references" : "no-reference";
+}
+
+/**
  * Scans all non-deleted chapters in a project for references to a specific image.
  * Pure read — does NOT update reference_count in the database.
+ *
+ * OOSI2: an unreadable chapter counts as a reference, matching deleteImage —
+ * the two must agree or the UI's "which chapters block this?" list contradicts
+ * the 409 the delete actually returns.
  */
 export async function scanImageReferences(
   imageId: string,
@@ -185,16 +239,15 @@ export async function scanImageReferences(
   const referencingChapters: Array<{ id: string; title: string }> = [];
 
   for (const ch of chapters) {
-    if (ch.content) {
-      try {
-        const parsed = JSON.parse(ch.content) as Record<string, unknown>;
-        const ids = extractImageIds(parsed);
-        if (ids.includes(imageId.toLowerCase())) {
-          referencingChapters.push({ id: ch.id, title: ch.title });
-        }
-      } catch {
-        // Corrupt JSON — skip this chapter
-      }
+    const scan = scanChapterContentForImage(ch.content, imageId);
+    if (scan === "unreadable") {
+      logger.warn(
+        { chapter_id: ch.id, image_id: imageId, project_id: projectId },
+        "Chapter content unreadable during image reference scan; counting as a reference",
+      );
+    }
+    if (scan !== "no-reference") {
+      referencingChapters.push({ id: ch.id, title: ch.title });
     }
   }
 

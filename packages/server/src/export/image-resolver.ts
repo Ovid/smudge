@@ -15,6 +15,37 @@ export interface ImageSource {
   findImageById(id: string): Promise<ImageRow | null>;
 }
 
+/**
+ * Wrap an image lookup so it only ever yields images owned by `projectId`.
+ *
+ * I1 (dedup review 2026-07-26): the ownership rule — "an image id found in
+ * chapter content is honoured only if `image.project_id` matches the project
+ * being operated on" — was applied by `applyImageRefDiff` (warn + skip the
+ * refcount update) and by the EPUB cover path (`row.project_id === project.id`),
+ * but NOT on the export resolution path, which had no project parameter at all.
+ * A stale paste of `/api/images/<other-project-uuid>` between two of the
+ * writer's own projects — an entirely ordinary relative src, no hostile input
+ * needed — therefore embedded the other project's bytes into this project's
+ * export, in all five formats.
+ *
+ * The check lives HERE, at the injected boundary, rather than as a `projectId`
+ * argument threaded through `resolveImage` / `resolveImagesInHtml` /
+ * `resolveImagesForEpub` / the DOCX build state. `ImageSource` is already the
+ * one narrow seam every renderer resolves images through (F-12), so scoping it
+ * once at construction means a renderer cannot omit the check — including a
+ * renderer that does not exist yet. The EPUB cover's own `project_id` compare is
+ * left in place: it is now redundant, but it is the documented second layer and
+ * costs nothing.
+ */
+export function projectScopedImageSource(source: ImageSource, projectId: string): ImageSource {
+  return {
+    async findImageById(id: string): Promise<ImageRow | null> {
+      const row = await source.findImageById(id);
+      return row && row.project_id === projectId ? row : null;
+    },
+  };
+}
+
 export interface ResolvedImage {
   id: string;
   filename: string;
@@ -30,7 +61,15 @@ export async function resolveImage(
   imageId: string,
   source: ImageSource,
 ): Promise<ResolvedImage | null> {
-  const row = await source.findImageById(imageId);
+  // I1 (agentic-review 2026-08-05): canonicalize HERE, not only in
+  // resolveImageSrcs — DOCX is the documented exception that never goes through
+  // that pipeline (it walks TipTap JSON straight into Word paragraphs), so
+  // OOSS1's fix reached four export formats and not the fifth. Both allowlist
+  // regexes carry the "i" flag while `findImageById` ends at `where({ id })`
+  // under SQLite's BINARY collation, and ids are minted lowercase
+  // (randomUUID) — so lowercase IS the canonical spelling. At the lookup, every
+  // renderer inherits it, including one that does not exist yet.
+  const row = await source.findImageById(imageId.toLowerCase());
   if (!row) return null;
 
   const ext = mimeToExt(row.mime_type);
@@ -96,29 +135,63 @@ async function resolveImageSrcs(
 ): Promise<{ html: string; images: Map<string, ResolvedImage> }> {
   IMAGE_SRC_REGEX.lastIndex = 0;
   const matches = [...html.matchAll(IMAGE_SRC_REGEX)];
-  const uniqueIds = [...new Set(matches.map((m) => m[1]).filter(Boolean))] as string[];
+  // OOSS1 (agentic-review 2026-08-04): canonicalize BEFORE resolving, not just
+  // when keying the maps below. `resolve(id)` ends at `where({ id })` under
+  // SQLite's BINARY collation, so an uppercase-only reference resolved to null
+  // and was then deleted outright by the unresolved-image catch-all — the image
+  // gone from every HTML-route export with no warning, after two i-flagged
+  // regexes had accepted it. Ids are minted lowercase (randomUUID), so lowercase
+  // IS the canonical spelling.
+  const uniqueIds = [
+    ...new Set(matches.map((m) => m[1]?.toLowerCase()).filter(Boolean)),
+  ] as string[];
 
   const images = new Map<string, ResolvedImage>();
-  let resolvedHtml = html;
+  const srcById = new Map<string, string>();
 
   for (const id of uniqueIds) {
     const result = await resolve(id);
     if (result) {
-      images.set(id, result.image);
-      resolvedHtml = resolvedHtml.replace(
-        new RegExp(`src="/api/images/${id}"`, "gi"),
-        `data-image-id="${id}" src="${result.src}"`,
-      );
+      // S6: keyed by the CANONICAL lowercase id, matching srcById below and the
+      // `data-image-id` the rewrite emits. Keying by the id as matched let two
+      // differently-cased references to one image become two map entries whose
+      // "g"-only caption regexes each missed the other's tag.
+      images.set(id.toLowerCase(), result.image);
+      srcById.set(id.toLowerCase(), result.src);
     }
   }
+
+  // C1 (dedup review 2026-07-26): substitute in ONE pass driven by the same
+  // IMAGE_SRC_REGEX that found the ids, rather than rebuilding a second
+  // `src="/api/images/${id}"` pattern per image. The rebuilt pattern was a
+  // third encoding of "is this src an image reference?" and it had already
+  // drifted from this one — it could not match a src carrying a `?query`
+  // suffix, so an id found by the scanner still failed to substitute and the
+  // catch-all below then dropped the whole tag. One regex, no drift surface.
+  // An unresolved src is left untouched here on purpose: the catch-all is what
+  // strips it, so the fail-closed behaviour is unchanged.
+  let resolvedHtml = html.replace(IMAGE_SRC_REGEX, (whole, id: string) => {
+    const src = srcById.get(id.toLowerCase());
+    // S6: emit the canonical lowercase id, so the caption pass below (and the
+    // plaintext renderer's own `data-image-id` matcher) sees one spelling.
+    return src ? `data-image-id="${id.toLowerCase()}" src="${src}"` : whole;
+  });
 
   // Add figure/figcaption for images with captions or attribution
   for (const [id, img] of images) {
     const fullCaption = buildCaptionText(img);
     if (fullCaption) {
+      // OOSI1: a FUNCTION replacer, matching the sibling rewrite above. As a
+      // string, every `$` token in the caption is interpolated by the engine —
+      // and escapeHtml manufactures the hazard rather than closing it, since it
+      // rewrites `&` to `&amp;` and leaves the `$&` match token intact. `$\``
+      // splices the whole preceding rendered document into a figcaption meant
+      // to hold escaped text; ordinary prose ("Sold for US$1,200") is enough to
+      // trigger it. Captions are user-settable via PATCH /api/images/:id.
+      const caption = escapeHtml(fullCaption);
       resolvedHtml = resolvedHtml.replace(
         new RegExp(`(<img[^>]*data-image-id="${id}"[^>]*>)`, "g"),
-        `<figure>$1<figcaption>${escapeHtml(fullCaption)}</figcaption></figure>`,
+        (tag) => `<figure>${tag}<figcaption>${caption}</figcaption></figure>`,
       );
     }
   }

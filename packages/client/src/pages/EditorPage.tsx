@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import type { Chapter, ChapterStatusRow, ChapterStatusValue } from "@smudge/shared";
+import type { Chapter, ChapterStatusRow, ChapterStatusValue, OuttakeRow } from "@smudge/shared";
+import { stripImageNodes, truncateUnits, LABEL_MAX_UNITS, TipTapDocSchema } from "@smudge/shared";
 import type { EditorHandle } from "../components/Editor";
 import type { Editor as TipTapEditor } from "@tiptap/react";
 import { STRINGS } from "../strings";
@@ -16,6 +17,7 @@ import { useFindReplaceState } from "../hooks/useFindReplaceState";
 import { useChapterTitleEditing } from "../hooks/useChapterTitleEditing";
 import { useProjectTitleEditing } from "../hooks/useProjectTitleEditing";
 import { useTrashManager } from "../hooks/useTrashManager";
+import { makeStaleProjectGuard } from "../hooks/staleProjectGuard";
 import { useKeyboardShortcuts, type ViewMode } from "../hooks/useKeyboardShortcuts";
 import { api } from "../api/client";
 import {
@@ -40,6 +42,24 @@ import { useFindReplaceController } from "../hooks/useFindReplaceController";
 import { EditorHeader } from "../components/EditorHeader";
 import { EditorMainContent } from "../components/EditorMainContent";
 import { EditorDialogs } from "../components/EditorDialogs";
+
+// The outtake label schema rejects (does not truncate) above the label cap.
+// The capture auto-label is machine-derived from a chapter title that is itself
+// capped at the same length, so "From " + title can overshoot and
+// deterministically 400 the POST. Truncate the title portion to fit, without
+// leaving a dangling high surrogate.
+//
+// I4 (dedup review 2026-07-26): the cap is imported rather than re-typed. The
+// old local copy said "keep in sync with CreateOuttakeSchema.label's post-pipe
+// max" — a comment is not a mechanism, and this is precisely the number that
+// must not drift, since lowering the schema's cap alone would make every
+// outtake capture deterministically 400: the failure this helper exists to
+// prevent.
+function buildOuttakeLabel(title: string): string {
+  const prefix = STRINGS.outtakes.fromChapterPrefix;
+  const budget = LABEL_MAX_UNITS - prefix.length;
+  return prefix + truncateUnits(title, budget);
+}
 
 export function EditorPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -127,6 +147,8 @@ export function EditorPage() {
     cancelPendingSaves,
     seedConfirmedStatus,
     replaceConfirmedStatusesFromProject,
+    projectRef,
+    projectSlugRef,
   } = useProjectEditor(slug, {
     // I2: route terminal save-fail codes through the invariant-pair
     // helper so the banner and setEditable(false) stay in lock-step.
@@ -248,6 +270,12 @@ export function EditorPage() {
   // setActionInfo("Replaced N occurrences"), leaving a contradictory
   // success+failure banner pair pinned to one logical operation.
   const actionBusyRef = useRef(false);
+  // S2 (dedup review 2026-07-26): three sites in the settings-refresh flow used
+  // to read `mutation.isBusy() || isActionBusy()`, which is `A || (A || B)`.
+  // `mutation` is a single instance and isActionBusy is never shadowed, so those
+  // were pure tautologies — and misleading ones: they read as a stricter gate
+  // than the other 22 call sites, when they were identical. Every busy check
+  // goes through isActionBusy().
   const isActionBusy = useCallback(() => mutation.isBusy() || actionBusyRef.current, [mutation]);
 
   // I2: shared lock-banner predicate for entry points outside useEditorMutation
@@ -452,6 +480,125 @@ export function EditorPage() {
   // than uploading the same file again.
   const [galleryExternalRefreshKey, setGalleryExternalRefreshKey] = useState(0);
   const [toolbarEditor, setToolbarEditor] = useState<TipTapEditor | null>(null);
+
+  // Phase 4c.2 (Outtakes). The row the toolbar capture just POSTed. The panel
+  // prepends it optimistically (I1) rather than reloading — a reload could be
+  // staled by a concurrent card delete/rename, silently dropping the capture.
+  const [capturedOuttake, setCapturedOuttake] = useState<OuttakeRow | null>(null);
+  // S1: a 2xx BAD_JSON capture leaves no row to hand the panel, but the server
+  // most likely committed it. Bumping this is the only way an open panel learns
+  // to refetch — and without it a re-capture mints a duplicate of a row the
+  // writer cannot see.
+  const [outtakesExternalRefreshKey, setOuttakesExternalRefreshKey] = useState(0);
+  // I6 (agentic-review 2026-08-05): the blank-note draft lives HERE, not in
+  // OuttakesPanel. ReferencePanel renders only the active tab and
+  // EditorMainContent renders the panel only while open, so an ordinary Ctrl+.
+  // or one arrow key in the tablist unmounted the panel and took the writer's
+  // unsent text with it — no confirm, no warning, and no server copy, since the
+  // POST never fired. This page outlives both. `null` means the form is closed;
+  // "" means it is open and empty, so one value carries both bits.
+  //
+  // It also fixes the sharper case: handleCreate's POST deliberately carries no
+  // AbortSignal, so a failure settling after the panel unmounted had nowhere to
+  // put the text back. The setter it calls now belongs to a live component.
+  const [outtakeDraft, setOuttakeDraft] = useState<string | null>(null);
+
+  // S3 + S4 (review 2026-07-26): ONE guard for the two insert-at-cursor entry
+  // points. I2 established that inserting an image and inserting an outtake are
+  // the same operation — write blocks into the mounted editor at the cursor —
+  // and fixed the axes the image path was missing. The pair was still
+  // asymmetric in the other direction (the image path also gated on
+  // isActionBusy(), the outtake path did not) and the divergence was reconciled
+  // by a comment asserting both were correct. An assertion is not a mechanism;
+  // this is. Returns the editor to insert into, or null after announcing why
+  // the click was refused.
+  //
+  // The axes, in refusal order:
+  //   1. No editor mounted. Preview / dashboard / trash view unmounts the
+  //      Editor while the reference panel keeps rendering its Insert buttons.
+  //      Its own copy (S3) — announcing mutationBusy here was a lie: nothing is
+  //      in progress and waiting never clears it.
+  //   2. Persistent lock (terminal save failure). TipTap does not gate
+  //      programmatic dispatch on `editable`, so this must be checked, not
+  //      assumed.
+  //   3. Not editable, or the extended post-mutation window where the editor is
+  //      editable again but trailing banner/refresh work is still running
+  //      (actionBusyRef, via isActionBusy).
+  //
+  // On axis 3, honestly: it is defence-in-depth, not a reachable bug fix, and
+  // the review finding that prompted this refactor overstated it. Both flows
+  // that raise actionBusyRef — snapshot restore and project-wide replace —
+  // close the reference panel on open (handleToggleSnapshotPanel /
+  // handleToggleFindReplace call setPanelOpen(false)), and
+  // handleToggleReferencePanel refuses to reopen it while isActionBusy(), so
+  // neither Insert button is on screen during that window. The snapshot path
+  // additionally never yields between mutation.run() resolving and its finally.
+  // The axis is kept because it costs one predicate and the unreachability
+  // rests on panel-exclusivity invariants a future panel could break — but no
+  // test drives it, because no user gesture can.
+  const guardInsertAtCursor = useCallback((): TipTapEditor | null => {
+    if (!toolbarEditor) {
+      setActionInfo(STRINGS.editor.insertNeedsEditor);
+      return null;
+    }
+    if (editorMachine.isLocked()) {
+      setActionInfo(STRINGS.editor.lockedRefusal);
+      return null;
+    }
+    if (!toolbarEditor.isEditable || isActionBusy()) {
+      setActionInfo(STRINGS.editor.mutationBusy);
+      return null;
+    }
+    return toolbarEditor;
+  }, [toolbarEditor, editorMachine, isActionBusy, setActionInfo]);
+
+  // Insert an outtake's blocks at the cursor. Inserts the block ARRAY
+  // (content.content), never the wrapping doc node.
+  const handleInsertOuttake = useCallback(
+    (outtake: OuttakeRow) => {
+      const editor = guardInsertAtCursor();
+      if (!editor) return;
+      // S11: agree with the gate useSnapshotState applies to the other stored
+      // TipTap surface. Not an XSS concern — but an over-depth or malformed row
+      // (hand-edited DB, restored backup) inserted into a REAL chapter then
+      // fails that chapter's auto-save Zod validation on every attempt: the
+      // terminal "Unable to save" lock, on text the writer just pasted in.
+      // S1 (agentic-review 2026-08-04): before the schema gate, because the
+      // server's degraded read substitutes a VALID empty doc for unreadable
+      // content — so a corrupt row sails through safeParse and fell out of the
+      // emptiness short-circuit below in silence. The card renders a corruption
+      // alert, not an empty preview, so nothing on screen explained the no-op.
+      if (outtake.content_corrupt) {
+        setActionInfo(STRINGS.outtakes.corruptNoText);
+        return;
+      }
+      const parsed = TipTapDocSchema.safeParse(outtake.content);
+      if (!parsed.success) {
+        setActionInfo(STRINGS.outtakes.insertFailedCorrupt);
+        return;
+      }
+      const docContent = outtake.content.content;
+      const blocks = Array.isArray(docContent) ? docContent : [];
+      // An empty outtake is a card-level oddity, not a refused action — there
+      // is nothing to report beyond "nothing happened because it is empty",
+      // which the (visibly empty) card already says.
+      if (blocks.length === 0) return;
+      editor.chain().focus().insertContent(blocks).run();
+    },
+    [guardInsertAtCursor, setActionInfo],
+  );
+
+  // Insert an image at the cursor. Same operation as handleInsertOuttake, so
+  // same guard — see guardInsertAtCursor above for the axes and why each is
+  // load-bearing (notably I2: the persistent lock, which TipTap's programmatic
+  // dispatch does not honour on its own).
+  const handleInsertImage = useCallback(
+    (url: string, alt: string) => {
+      if (!guardInsertAtCursor()) return;
+      editorRef.current?.insertImage(url, alt);
+    },
+    [guardInsertAtCursor],
+  );
 
   // Clean up image announcement timer on unmount.
   // settingsRefreshOp auto-aborts on unmount — no explicit call needed.
@@ -795,7 +942,7 @@ export function EditorPage() {
     // pending search that the user hasn't had a chance to re-kick-off.
     // Surface the mutationBusy banner so the user knows the refresh was
     // deferred and can retry once the mutation settles.
-    if (mutation.isBusy() || isActionBusy()) {
+    if (isActionBusy()) {
       setActionInfo(STRINGS.editor.mutationBusy);
       return;
     }
@@ -815,7 +962,7 @@ export function EditorPage() {
           // this .then would then stomp them with the pre-mutation GET
           // response. Skip the merge; a subsequent refresh picks up
           // the post-mutation state once the mutation settles.
-          if (mutation.isBusy() || isActionBusy()) return;
+          if (isActionBusy()) return;
           setProject((prev) => {
             if (!prev) return data;
             // I3 (review 2026-04-21): cross-project race. If the user
@@ -838,7 +985,7 @@ export function EditorPage() {
           // that fights with the mutation's own UI state. Skip the
           // banner; a subsequent refresh after the mutation settles
           // can re-surface a real failure.
-          if (mutation.isBusy() || isActionBusy()) return;
+          if (isActionBusy()) return;
           // 404 after a settings update means the project was deleted
           // (or purged) from another tab/request — refreshing here would
           // leave the user staring at a stale editor with a retry banner
@@ -852,7 +999,118 @@ export function EditorPage() {
           applyMappedError(mapApiError(err, "project.load"), { onMessage: setActionError });
         });
     }
-  }, [slug, setProject, setActionError, navigate, mutation, isActionBusy, settingsRefreshOp]);
+  }, [slug, setProject, setActionError, navigate, isActionBusy, settingsRefreshOp]);
+
+  // Dedicated abortable op for the capture POST — never reuse a content-
+  // mutation op (this flow touches no editor content).
+  const captureOp = useAbortableAsyncOperation();
+  // I4: re-entrancy latch, mirroring the panel's own `creating` flag. Letting a
+  // second click run captureOp.run() again would abort the first POST's
+  // controller — but that POST may already have reached the server, leaving a
+  // committed row that never reaches setCapturedOuttake and (since the prepend
+  // is now the only thing that surfaces a capture) never appears at all.
+  // Aborting a POST that may have committed is the wrong cancellation
+  // semantic; abort-on-unmount still comes free from the hook. Note this is NOT
+  // covered by the F-8 duplicate-upload trade-off, whose premise is that the
+  // only retry path is manual.
+  const captureInFlightRef = useRef(false);
+
+  // Send the current selection to outtakes (non-destructive copy). Reads the
+  // selection, strips images, POSTs a new outtake, then hands the created row
+  // to the panel to prepend (S14: the refresh nonce this comment used to
+  // describe was replaced by that prepend mid-implementation; the nonce that
+  // remains — outtakesExternalRefreshKey — fires only on the possibly-committed
+  // failure arm). It never writes editor content, so save-pipeline invariants
+  // 1-4 do NOT apply and NO busy/lock guard is needed. It is not unguarded,
+  // though: a re-entrancy latch (captureInFlightRef), a collapsed-caret refusal
+  // and an image-only refusal all gate it — see the surface test's annotation.
+  // A toolbar click is safe on a blurred editor because ProseMirror keeps
+  // state.selection.
+  const handleSendSelectionToOuttakes = useCallback(async () => {
+    if (!toolbarEditor || !project) return;
+    if (captureInFlightRef.current) {
+      setActionInfo(STRINGS.editor.mutationBusy);
+      return;
+    }
+    const { from, to } = toolbarEditor.state.selection;
+    // I5: the toolbar button is always enabled, so a collapsed caret is the
+    // everyday way to reach this — a silent no-op reads as a broken button.
+    if (from === to) {
+      setActionInfo(STRINGS.outtakes.selectionRequired);
+      return;
+    }
+    // I2 (agentic-review 2026-08-04): selection.content(), NOT doc.slice(from,
+    // to). The latter defaults includeParents = false and cuts at
+    // $from.sharedDepth(to), so a selection inside ONE paragraph — the feature's
+    // most natural gesture — captured the paragraph's INLINE content and
+    // persisted {type:"doc",content:[{type:"text",…}]}, which fails the doc
+    // node's `block+` expression. Nothing downstream rejected it (TipTapDocSchema
+    // types content as z.array(z.record()), the JSON walkers tolerate it,
+    // insertContent accepts an inline fragment) so the rows just accumulated in a
+    // HARD-delete table. Pinned against a real schema in outtakeCaptureSlice.test.ts.
+    const slice = toolbarEditor.state.selection.content();
+    const content = stripImageNodes({ type: "doc", content: slice.content.toJSON() ?? [] });
+    // An image-only selection strips to an empty doc — POSTing it would create a
+    // blank outtake card. from !== to passed the guard above, so the user DID
+    // select something; say what happened to it rather than no-op silently (I5).
+    if (!Array.isArray(content.content) || content.content.length === 0) {
+      setActionInfo(STRINGS.outtakes.selectionHasNoText);
+      return;
+    }
+    const label = buildOuttakeLabel(activeChapter?.title ?? "");
+    // I1 (review 2026-07-26): captureOp aborts on unmount and on a newer
+    // capture — never on project navigation, and EditorPage stays mounted
+    // across /projects/:slug changes. Without this, an A→B switch mid-POST
+    // paints project A's failure banner over project B (nothing clears
+    // actionError on project change) and hands A's row to a panel showing B.
+    // Built at entry, before the await, exactly as the nine sibling sites do.
+    const isStaleProject = makeStaleProjectGuard(projectRef, projectSlugRef);
+    captureInFlightRef.current = true;
+    const { promise, signal } = captureOp.run((s) =>
+      api.outtakes.create(project.id, { content, label }, s),
+    );
+    try {
+      const row = await promise;
+      if (signal.aborted || isStaleProject()) return;
+      // Hand the created row to the panel to prepend (I1). A new object
+      // identity each time drives the panel's prepend effect. The panel
+      // independently refuses a row whose project_id is not its own — belt and
+      // braces, since this guard cannot see the pre-load window's far side.
+      setCapturedOuttake(row);
+      // S3: the prepend is the only feedback a capture produces, and its sole
+      // consumer is the panel — which is closed by default, and whose toolbar
+      // button lives outside it. Announce into the live region the four refusal
+      // arms above already use, so the success case is not the silent one.
+      setActionInfo(
+        panelOpen && activeTabId === "outtakes"
+          ? STRINGS.outtakes.captured
+          : STRINGS.outtakes.capturedHidden,
+      );
+    } catch (err) {
+      if (signal.aborted || isStaleProject()) return;
+      applyMappedError(mapApiError(err, "outtake.create"), {
+        // S1: no STOP — the ambiguity copy still belongs on the banner. The
+        // refetch is what makes a committed-but-unreturned row visible, exactly
+        // as notePossiblyCommitted does for the three write paths the panel
+        // owns itself.
+        onCommitted: () => setOuttakesExternalRefreshKey((k) => k + 1),
+        onMessage: setActionError,
+      });
+    } finally {
+      captureInFlightRef.current = false;
+    }
+  }, [
+    toolbarEditor,
+    project,
+    activeChapter,
+    captureOp,
+    setActionError,
+    setActionInfo,
+    projectRef,
+    projectSlugRef,
+    panelOpen,
+    activeTabId,
+  ]);
 
   useKeyboardShortcuts({
     shortcutHelpOpen,
@@ -984,6 +1242,7 @@ export function EditorPage() {
         snapshotCount={snapshotCount}
         onToggleSnapshots={handleToggleSnapshotPanel}
         onToggleFindReplace={handleToggleFindReplace}
+        onSendSelectionToOuttakes={handleSendSelectionToOuttakes}
         snapshotsTriggerRef={snapshotsTriggerRef}
         findReplaceTriggerRef={findReplaceTriggerRef}
         onSwitchToView={switchToView}
@@ -1053,18 +1312,12 @@ export function EditorPage() {
         activeTabId={activeTabId}
         onSelectTab={setActiveTab}
         galleryExternalRefreshKey={galleryExternalRefreshKey}
-        onInsertImage={(url, alt) => {
-          // I4: gate behind isActionBusy() like every other editor-
-          // modifying entry point. Inserting during an in-flight
-          // mutation fires onUpdate, sets dirtyRef=true on content
-          // that is about to be overwritten, and schedules an auto-
-          // save after the hook already markClean-ed.
-          if (isActionBusy()) {
-            setActionInfo(STRINGS.editor.mutationBusy);
-            return;
-          }
-          editorRef.current?.insertImage(url, alt);
-        }}
+        onInsertImage={handleInsertImage}
+        onInsertOuttake={handleInsertOuttake}
+        capturedOuttake={capturedOuttake}
+        outtakesExternalRefreshKey={outtakesExternalRefreshKey}
+        outtakeDraft={outtakeDraft}
+        onOuttakeDraftChange={setOuttakeDraft}
         snapshotPanelOpen={snapshotPanelOpen}
         onCloseSnapshotPanel={() => setSnapshotPanelOpen(false)}
         snapshotPanelRef={snapshotPanelRef}

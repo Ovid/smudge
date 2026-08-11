@@ -88,6 +88,47 @@ describe("ImageGallery", () => {
     });
   });
 
+  it("does not claim the project has no images while the list is loading (S6)", async () => {
+    // There was no loading flag, so the empty state rendered for the full
+    // duration of every load: a project with a full gallery was told it had
+    // none and invited to re-upload something it already has.
+    let settle!: (rows: ImageRow[]) => void;
+    vi.mocked(api.images.list).mockReturnValue(
+      new Promise((res) => {
+        settle = res;
+      }),
+    );
+    render(<ImageGallery {...defaultProps} />);
+    await waitFor(() => expect(api.images.list).toHaveBeenCalled());
+
+    expect(screen.queryByText(S.noImages)).not.toBeInTheDocument();
+
+    const image = makeImage();
+    settle([image]);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: imageButtonName(image) })).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(S.noImages)).not.toBeInTheDocument();
+  });
+
+  it("keeps the loaded thumbnails on screen while a refresh is in flight (I1)", async () => {
+    // The S6 loading gate was hoisted one arm too high in the ternary chain, so
+    // `loading` blanked the whole <ul>, not just the empty state. Every image
+    // mutation bumps a refresh key, which flips `loading` true in the same
+    // render — so deleting one image made every remaining thumbnail vanish
+    // until the GET settled.
+    const image = makeImage();
+    vi.mocked(api.images.list).mockResolvedValue([image]);
+    const { rerender } = render(<ImageGallery {...defaultProps} externalRefreshKey={0} />);
+    await waitFor(() => expect(screen.getByRole("list")).toBeInTheDocument());
+
+    vi.mocked(api.images.list).mockReturnValue(new Promise(() => {}));
+    rerender(<ImageGallery {...defaultProps} externalRefreshKey={1} />);
+
+    expect(screen.getByRole("list")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: imageButtonName(image) })).toBeInTheDocument();
+  });
+
   it("renders upload button", () => {
     render(<ImageGallery {...defaultProps} />);
     expect(screen.getByText(S.uploadButton)).toBeInTheDocument();

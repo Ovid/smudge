@@ -9,10 +9,11 @@ import { settingsRouter } from "./settings/settings.routes";
 import { exportRouter } from "./export/export.routes";
 import { imagesRouter, imagesDirectRouter } from "./images/images.routes";
 import { snapshotChapterRouter, snapshotDirectRouter } from "./snapshots/snapshots.routes";
+import { projectOuttakesRouter, outtakeDirectRouter } from "./outtakes/outtakes.routes";
 import { searchRouter } from "./search/search.routes";
-import { AppError } from "./errors/appError";
+import { AppError, ERROR_STATUS_ALLOWLIST } from "./errors/appError";
 import { requestContext } from "./requestContext";
-import { MAX_CHAPTER_CONTENT_LIMIT_STRING } from "./constants";
+import { MAX_CHAPTER_CONTENT_BYTES } from "./constants";
 
 export function createApp(): express.Express {
   const app = express();
@@ -35,7 +36,7 @@ export function createApp(): express.Express {
   // F-10: assign a correlation id before any body parsing, so even a
   // malformed-JSON 400 is traceable in the logs.
   app.use(requestContext);
-  app.use(express.json({ limit: MAX_CHAPTER_CONTENT_LIMIT_STRING }));
+  app.use(express.json({ limit: MAX_CHAPTER_CONTENT_BYTES }));
 
   app.use("/api/projects", projectsRouter());
   app.use("/api/chapters", chaptersRouter());
@@ -46,6 +47,8 @@ export function createApp(): express.Express {
   app.use("/api/images", imagesDirectRouter());
   app.use("/api/chapters", snapshotChapterRouter());
   app.use("/api/snapshots", snapshotDirectRouter());
+  app.use("/api/projects", projectOuttakesRouter());
+  app.use("/api/outtakes", outtakeDirectRouter());
   app.use("/api/projects", searchRouter());
 
   app.get("/api/health", async (_req, res) => {
@@ -91,11 +94,27 @@ export function globalErrorHandler(
   // call. Fall back to the top-level logger with explicit fields for the
   // pre-middleware error case (e.g. an error thrown from helmet, mounted
   // BEFORE requestContext) where req.log was never assigned.
-  const status = err.status ?? err.statusCode ?? 500;
+  //
+  // I4: clamp to the allowlist. A non-AppError can carry any status it likes —
+  // body-parser's UnsupportedMediaTypeError (415) reached here from
+  // express.json() on every body-accepting endpoint, was rendered verbatim, and
+  // was mislabelled VALIDATION_ERROR by the ladder's else arm while matching no
+  // client error scope. An off-allowlist 4xx is still the client's fault, so it
+  // becomes 400; anything else becomes 500. `rawStatus` is what gets LOGGED, so
+  // the clamp never hides the original from the operator.
+  const rawStatus = err.status ?? err.statusCode ?? 500;
+  const status = ERROR_STATUS_ALLOWLIST.has(rawStatus)
+    ? rawStatus
+    : rawStatus >= 400 && rawStatus < 500
+      ? 400
+      : 500;
   if (req.log) {
-    req.log.error({ err, status }, "Unhandled request error");
+    req.log.error({ err, status, rawStatus }, "Unhandled request error");
   } else {
-    logger.error({ err, status, method: req.method, path: req.path }, "Unhandled request error");
+    logger.error(
+      { err, status, rawStatus, method: req.method, path: req.path },
+      "Unhandled request error",
+    );
   }
   const code =
     status >= 500

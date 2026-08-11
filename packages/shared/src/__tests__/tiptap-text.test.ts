@@ -780,3 +780,38 @@ describe("replaceInDoc mark canonicalization (I2)", () => {
     expect((para.content![0] as TipTapTextNode).text).toBe("fOOBar");
   });
 });
+
+describe("non-string text nodes (I2 sibling)", () => {
+  // Same unvalidated field as countWords' `node.text`: TipTapDocSchema types
+  // top-level elements only and DB reads bypass Zod. `child.text != null` let a
+  // number through, so `child.text.length` was `undefined` and every subsequent
+  // segment offset went NaN while the flat string still absorbed "42" — a
+  // find-and-replace that silently mangles the writer's paragraph.
+  const doc = {
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test fixture: a shape only reachable from the DB
+        content: [{ type: "text", text: 42 } as any, { type: "text", text: "find me" }],
+      },
+    ],
+  };
+
+  it("does not fold the non-string node into the flattened text", () => {
+    const matches = searchInDoc(doc, "find");
+    expect(matches).toHaveLength(1);
+    // Offset is relative to the text run, which starts AFTER the non-text
+    // separator. `!= null` made the flat string "42find me", reporting 2.
+    expect(matches[0]!.offset).toBe(0);
+    expect(matches[0]!.context).not.toContain("42");
+  });
+
+  it("replaces without swallowing the non-string node's neighbours", () => {
+    const result = replaceInDoc(doc, "find me", "kept");
+    expect(result.count).toBe(1);
+    const para = (result.doc.content as TipTapBlock[])[0]!;
+    const texts = (para.content as TipTapTextNode[]).map((n) => n.text);
+    expect(texts).toContain("kept");
+  });
+});

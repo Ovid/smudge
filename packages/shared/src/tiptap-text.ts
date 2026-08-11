@@ -63,6 +63,9 @@ export interface ReplaceOptions extends SearchOptions {
 /** Maximum matches allowed in a single search/replace request. */
 export const MAX_MATCHES_PER_REQUEST = 10_000;
 
+// S9: one of three independent "what separates text" encodings — see the
+// cross-reference comment above BLOCK_TYPES in tiptap-plaintext.ts before
+// registering a new block-level node type.
 const LEAF_BLOCKS = new Set(["paragraph", "heading", "codeBlock"]);
 
 /**
@@ -127,7 +130,14 @@ function splitBlockRuns(block: TipTapNode): { runs: TextRun[]; separators: TipTa
   if (Array.isArray(block.content)) {
     for (const child of block.content) {
       if (!child || typeof child !== "object") continue;
-      if (child.type === "text" && child.text != null) {
+      // I2 sibling (agentic-review 2026-08-05): typeof, not `!= null`. `text` is
+      // unvalidated (TipTapDocSchema types top-level elements only; DB reads
+      // bypass Zod), so `{"type":"text","text":42}` reached here: `.length` was
+      // undefined, every later segment bound went NaN — searchInDoc then found
+      // nothing — while `currentFlat` still absorbed "42", so a replace merged
+      // the number into the writer's prose. A non-string text is not a text
+      // node; treat it as a separator, which preserves it verbatim.
+      if (child.type === "text" && typeof child.text === "string") {
         const len = child.text.length;
         currentSegments.push({ start: offset, end: offset + len, marks: child.marks });
         currentFlat += child.text;

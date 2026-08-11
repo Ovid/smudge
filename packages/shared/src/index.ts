@@ -13,7 +13,10 @@ export {
   EXPORT_CONTENT_TYPES,
   UpdateImageSchema,
   CreateSnapshotSchema,
+  CreateOuttakeSchema,
+  UpdateOuttakeSchema,
   sanitizeSnapshotLabel,
+  LABEL_MAX_UNITS,
   validateTipTapDepth,
   MAX_TIPTAP_DEPTH,
   TipTapDocSchema,
@@ -33,10 +36,13 @@ export {
   CONTEXT_RADIUS,
 } from "./tiptap-text";
 export type { SearchMatch, SearchOptions } from "./tiptap-text";
-export { CANONICAL_UNSAFE_KEYS } from "./tiptap-safety";
+export { CANONICAL_UNSAFE_KEYS, isTipTapNode } from "./tiptap-safety";
 export { stripNoteMarks, extractNotes, NOTE_MARK_NAME } from "./tiptap-notes";
+export { toPlainText } from "./tiptap-plaintext";
+export { stripImageNodes } from "./tiptap-images";
 export type { ExtractedNote } from "./tiptap-notes";
 export { generateSlug } from "./slugify";
+export { truncateUnits } from "./truncate";
 export { parsePort } from "./parsePort";
 // Helpers that import node:fs / node:path (findFirstNonDirectoryAncestor,
 // formatMkdirDataDirError) are deliberately NOT re-exported here. Vite
@@ -54,10 +60,13 @@ export {
   DEFAULT_SERVER_PORT,
   SEARCH_ERROR_CODES,
   SNAPSHOT_ERROR_CODES,
+  OUTTAKE_ERROR_CODES,
   MAX_QUERY_LENGTH,
   MAX_REPLACE_LENGTH,
+  MAX_IMAGE_UPLOAD_BYTES,
+  MAX_IMAGE_UPLOAD_LABEL,
 } from "./constants";
-export type { SearchErrorCode, SnapshotErrorCode } from "./constants";
+export type { SearchErrorCode, SnapshotErrorCode, OuttakeErrorCode } from "./constants";
 export type {
   Project,
   Chapter,
@@ -71,6 +80,7 @@ export type {
   VelocityResponse,
   SnapshotRow,
   SnapshotListItem,
+  OuttakeRow,
   SearchResult,
   ReplaceResult,
 } from "./types";

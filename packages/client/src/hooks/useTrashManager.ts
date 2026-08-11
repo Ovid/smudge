@@ -5,6 +5,7 @@ import { mapApiError, applyMappedError, devWarn, clientWarn, clientError } from 
 import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
 import { useAbortableSequence } from "./useAbortableSequence";
 import { refreshTrashList } from "./useTrashManager.refresh";
+import { makeStaleProjectGuard } from "./staleProjectGuard";
 
 export interface UseTrashManagerOptions {
   // C2 (review 2026-04-25): wire through to useProjectEditor's
@@ -111,7 +112,7 @@ export function useTrashManager(
     // mechanism lives in refreshTrashList (4b.3d S13). EditorPage
     // stays mounted across project navigation so this is a routine
     // race.
-    const result = await refreshTrashList(project, projectRef, trashOp);
+    const result = await refreshTrashList(project, projectRef, slugRef, trashOp);
     if (result.kind === "aborted" || result.kind === "stale") return;
     if (result.kind === "ok") {
       setTrashedChapters(result.trashed);
@@ -150,6 +151,17 @@ export function useTrashManager(
       // at the catch tail surfaced the failure banner on whichever
       // project the user was looking at when the response landed.
       const restoreStartedForProjectId = projectRef.current?.id;
+      // S2 (review 2026-07-26): the full-strength guard. The two hand-rolled
+      // copies below were id-only — missing check 2 (slug, compared both ways)
+      // — and so could not see the pre-load window: URL slug advanced to B,
+      // loadProject not finished, projectRef still holding A's id, id equality
+      // passing. In that window the success arm below navigates the user out of
+      // the project they just opened, and the catch arm surfaces A's restore
+      // banner over loading B. Both are exactly what this guard exists to stop.
+      // (restoreStartedForProjectId is kept for the defense-in-depth identity
+      // re-check INSIDE the setProject updater, which compares prev.id rather
+      // than the ref and so is a different question.)
+      const isStaleProject = makeStaleProjectGuard(projectRef, slugRef);
       // User callout (2026-04-25): abort any prior in-flight restore
       // before issuing the new one. The restoreOp instance threads the
       // signal into api.chapters.restore so the abort propagates to the
@@ -166,12 +178,7 @@ export function useTrashManager(
         // success arm would otherwise splice A's restored chapter into
         // B's chapter list, overwrite B's slug, seed A's chapter into
         // the confirmed-status cache, and navigate the user out of B.
-        if (
-          restoreStartedForProjectId !== undefined &&
-          projectRef.current?.id !== restoreStartedForProjectId
-        ) {
-          return;
-        }
+        if (isStaleProject()) return;
         setTrashedChapters((prev) => prev.filter((c) => c.id !== chapterId));
         setProject((prev) => {
           if (!prev) return prev;
@@ -216,12 +223,7 @@ export function useTrashManager(
         // so any post-navigation state corruption was already covered
         // — the only remaining cross-project leak was the actionError
         // banner, which this guard now closes.
-        if (
-          restoreStartedForProjectId !== undefined &&
-          projectRef.current?.id !== restoreStartedForProjectId
-        ) {
-          return;
-        }
+        if (isStaleProject()) return;
         const mapped = mapApiError(err, "trash.restoreChapter");
         // ABORTED returns message: null. Skip log + state update so a
         // late abort does not surface noise.
@@ -368,7 +370,7 @@ export function useTrashManager(
       // setTrashedChapters; unlike openTrash this site does NOT set
       // setTrashOpen (already open) and does NOT log (the failure
       // banner via applyMappedError is sufficient signal).
-      const result = await refreshTrashList(project, projectRef, trashOp);
+      const result = await refreshTrashList(project, projectRef, slugRef, trashOp);
       if (result.kind === "aborted" || result.kind === "stale") return;
       if (result.kind === "ok") {
         setTrashedChapters(result.trashed);

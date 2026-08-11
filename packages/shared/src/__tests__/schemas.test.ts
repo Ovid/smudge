@@ -2,12 +2,15 @@ import { describe, it, expect } from "vitest";
 import {
   CreateProjectSchema,
   CreateSnapshotSchema,
+  CreateOuttakeSchema,
+  UpdateOuttakeSchema,
   UpdateProjectSchema,
   UpdateChapterSchema,
   UpdateSettingsSchema,
   ChapterStatus,
   ExportSchema,
 } from "../schemas";
+import { MAX_TIPTAP_DEPTH } from "../tiptap-safety";
 
 describe("CreateProjectSchema", () => {
   it("accepts valid project creation input", () => {
@@ -112,12 +115,67 @@ describe("UpdateChapterSchema", () => {
     const result = UpdateChapterSchema.safeParse({ content: doc });
     expect(result.success).toBe(false);
   });
+
+  // S4 (agentic-review 2026-08-04): validateTipTapDepth gained two NON-depth
+  // rejections on this branch (an array node, a present non-array `content`)
+  // while the refine kept its depth-only message. That message reaches the
+  // client verbatim, so a shape violation was reported as a depth violation the
+  // writer cannot act on by un-nesting.
+  it.each([
+    // Nested, not top-level: Zod's own z.array(z.record()) already rejects a
+    // top-level array child with an accurate message. The refine is the only
+    // check that sees deeper positions.
+    [
+      "a nested array node",
+      { type: "doc", content: [{ type: "paragraph", content: [[{ type: "text", text: "x" }]] }] },
+    ],
+    ["a non-array content", { type: "doc", content: [{ type: "paragraph", content: 5 }] }],
+    // OOSI1 (agentic-review 2026-08-05): the entry arm `if (!node || typeof
+    // node !== "object") return true` fires for a null/primitive sitting as an
+    // ELEMENT of a nested content[], and the recursion loop did not gate on
+    // isTipTapNode — so the branch closed the container case (S1) and the
+    // array-child case two lines away and left the primitive-child case open,
+    // while the function's doc comment asserted a fail-closed contract. A
+    // number or string child makes renderEditorHtml throw RangeError, so
+    // chapterContentToHtml returns "" and HTML/EPUB/markdown/plaintext emit the
+    // chapter heading with NO BODY behind a single logger.warn, while
+    // word_count still reads healthy.
+    [
+      "a primitive child of a nested content[]",
+      { type: "doc", content: [{ type: "paragraph", content: [0] }] },
+    ],
+    [
+      "a null child of a nested content[]",
+      { type: "doc", content: [{ type: "paragraph", content: [null] }] },
+    ],
+  ])("names shape as well as depth when rejecting %s", (_name, doc) => {
+    const result = UpdateChapterSchema.safeParse({ content: doc });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const message = result.error.issues.map((i) => i.message).join(" ");
+    expect(message).toMatch(/malformed/i);
+    expect(message).toContain(String(MAX_TIPTAP_DEPTH));
+  });
 });
 
 describe("CreateSnapshotSchema", () => {
   it("accepts a missing label", () => {
     const result = CreateSnapshotSchema.safeParse({});
     expect(result.success).toBe(true);
+  });
+
+  // S9 (dedup review 2026-07-26): the two create schemas share
+  // sanitizedLabelBase and both write a nullable `text` column, but disagreed
+  // on the nullability modifier — snapshot `.optional()` 400s on an explicit
+  // null that outtake `.nullish()` accepts. Latent (no shipped client sends
+  // one) and a strict subset, so widening breaks nothing. UpdateOuttakeSchema
+  // stays `.nullable()`: a PATCH genuinely needs an explicit clear signal and
+  // must not treat "absent" as "clear".
+  it.each([
+    ["CreateSnapshotSchema", CreateSnapshotSchema, { label: null }],
+    ["CreateOuttakeSchema", CreateOuttakeSchema, { label: null, content: { type: "doc" } }],
+  ])("%s accepts an explicit null label", (_label, schema, body) => {
+    expect(schema.safeParse(body).success).toBe(true);
   });
 
   it("sanitizes control characters in the label", () => {
@@ -298,6 +356,54 @@ describe("UpdateSettingsSchema", () => {
     const result = UpdateSettingsSchema.safeParse({
       settings: [{ key: "", value: "foo" }],
     });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("CreateOuttakeSchema", () => {
+  const doc = { type: "doc", content: [{ type: "paragraph" }] };
+  it("accepts content with an optional label", () => {
+    expect(CreateOuttakeSchema.safeParse({ content: doc }).success).toBe(true);
+    expect(CreateOuttakeSchema.safeParse({ content: doc, label: "Cut scene" }).success).toBe(true);
+  });
+  it("rejects unknown keys (strict)", () => {
+    expect(CreateOuttakeSchema.safeParse({ content: doc, word_count: 5 }).success).toBe(false);
+  });
+  it("rejects a non-TipTap content", () => {
+    expect(CreateOuttakeSchema.safeParse({ content: 42 }).success).toBe(false);
+  });
+  it("trims surrounding whitespace from the label", () => {
+    const result = CreateOuttakeSchema.safeParse({ content: doc, label: "  Cut scene  " });
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.label).toBe("Cut scene");
+  });
+  it("rejects an over-max label", () => {
+    const result = CreateOuttakeSchema.safeParse({ content: doc, label: "a".repeat(501) });
+    expect(result.success).toBe(false);
+  });
+  it("rejects a huge label before sanitizing (pre-cap)", () => {
+    const result = CreateOuttakeSchema.safeParse({ content: doc, label: "a".repeat(5001) });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("UpdateOuttakeSchema", () => {
+  it("accepts a label (string or null) and rejects other keys", () => {
+    expect(UpdateOuttakeSchema.safeParse({ label: "x" }).success).toBe(true);
+    expect(UpdateOuttakeSchema.safeParse({ label: null }).success).toBe(true);
+    expect(UpdateOuttakeSchema.safeParse({ content: {} }).success).toBe(false);
+  });
+  it("trims surrounding whitespace from the label", () => {
+    const result = UpdateOuttakeSchema.safeParse({ label: "  Cut scene  " });
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.label).toBe("Cut scene");
+  });
+  it("rejects an over-max label", () => {
+    const result = UpdateOuttakeSchema.safeParse({ label: "a".repeat(501) });
+    expect(result.success).toBe(false);
+  });
+  it("rejects a huge label before sanitizing (pre-cap)", () => {
+    const result = UpdateOuttakeSchema.safeParse({ label: "a".repeat(5001) });
     expect(result.success).toBe(false);
   });
 });

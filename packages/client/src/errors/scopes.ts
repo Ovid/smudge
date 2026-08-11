@@ -1,6 +1,11 @@
 import type { ApiRequestError } from "../api/client";
 import { STRINGS } from "../strings";
-import { SEARCH_ERROR_CODES, SNAPSHOT_ERROR_CODES } from "@smudge/shared";
+import {
+  SEARCH_ERROR_CODES,
+  SNAPSHOT_ERROR_CODES,
+  OUTTAKE_ERROR_CODES,
+  LABEL_MAX_UNITS,
+} from "@smudge/shared";
 
 // F-13: ScopeEntry lives here (with the SCOPES registry it types) rather
 // than in apiErrorMapper.ts, so scopes.ts no longer type-imports from
@@ -58,6 +63,19 @@ function truncateCodePoints(s: string, max: number): string {
   return result;
 }
 
+// I3 (dedup review 2026-07-26): codes PATCH /api/chapters/:id can emit that
+// mean "the write landed; only the read-back failed". chapters.service.ts
+// throws UPDATE_READ_FAILURE UNCONDITIONALLY — it does not care which field was
+// in the update — so it can reach ANY scope fronting that endpoint, not just
+// chapter.save. (Contrast CORRUPT_CONTENT, correctly absent from rename and
+// updateStatus because the service gates it on `content !== undefined`.)
+//
+// Shared here so a fourth caller of the endpoint cannot silently omit it; the
+// forcing check is the CHAPTER_PATCH_SCOPES table in apiErrorMapper.test.ts.
+// Each scope still supplies its OWN byCode copy — the policy is shared, the
+// wording is not.
+const CHAPTER_PATCH_COMMITTED_CODES = ["UPDATE_READ_FAILURE"];
+
 export type ApiErrorScope =
   | "project.load"
   | "projectList.load"
@@ -84,6 +102,10 @@ export type ApiErrorScope =
   | "snapshot.list"
   | "snapshot.create"
   | "snapshot.delete"
+  | "outtake.list"
+  | "outtake.create"
+  | "outtake.update"
+  | "outtake.delete"
   | "findReplace.search"
   | "findReplace.replace"
   | "export.run"
@@ -191,7 +213,7 @@ export const SCOPES = {
     // S8: UPDATE_READ_FAILURE means the server persisted the row but
     // couldn't serialize the response. Surface possiblyCommitted so
     // callers route through the committed/lock path.
-    committedCodes: ["UPDATE_READ_FAILURE"],
+    committedCodes: [...CHAPTER_PATCH_COMMITTED_CODES],
     // S3/S7 (4b.3c.1): UPDATE_READ_FAILURE and CORRUPT_CONTENT are 5xx
     // codes the server emits when a chapter PATCH cannot be served
     // safely (the write may have landed; the read-back failed; or the
@@ -241,7 +263,14 @@ export const SCOPES = {
   "chapter.rename": {
     fallback: STRINGS.error.renameChapterFailed,
     network: STRINGS.error.renameChapterFailedNetwork,
-    committed: STRINGS.error.possiblyCommitted,
+    committed: STRINGS.error.renameChapterResponseUnreadable,
+    // I3: without these, a 500 UPDATE_READ_FAILURE fell through to the
+    // retry-inviting fallback while the DB already held the new title —
+    // the sidebar kept the old one and nothing reconciled them. The
+    // `committed:` copy above was unreachable for this code, since the
+    // mapper's 2xx-BAD_JSON early return cannot fire for a 500.
+    byCode: { UPDATE_READ_FAILURE: STRINGS.error.renameChapterResponseUnreadable },
+    committedCodes: [...CHAPTER_PATCH_COMMITTED_CODES],
   },
   "chapter.reorder": {
     fallback: STRINGS.error.reorderFailed,
@@ -259,6 +288,13 @@ export const SCOPES = {
     fallback: STRINGS.error.statusChangeFailed,
     network: STRINGS.error.statusChangeFailedNetwork,
     committed: STRINGS.error.statusChangeResponseUnreadable,
+    // I3: same endpoint, same committed-intent code. The status handler's
+    // revert branch already self-heals in the common case (its recovery
+    // GET adopts the server's truth, which for this code IS the newly
+    // written status), but the local-revert arm — reached when that GET
+    // also fails — would otherwise fight the committed server state.
+    byCode: { UPDATE_READ_FAILURE: STRINGS.error.statusChangeResponseUnreadable },
+    committedCodes: [...CHAPTER_PATCH_COMMITTED_CODES],
   },
   "chapterStatus.fetch": {
     fallback: STRINGS.error.statusesFetchFailed,
@@ -446,6 +482,58 @@ export const SCOPES = {
   "snapshot.delete": {
     fallback: STRINGS.snapshots.deleteFailed,
     network: STRINGS.snapshots.deleteFailedNetwork,
+    committed: STRINGS.error.possiblyCommitted,
+  },
+  "outtake.list": {
+    fallback: STRINGS.error.loadOuttakesFailed,
+  },
+  // Writes: mirror snapshot.create/snapshot.delete — a 2xx BAD_JSON means
+  // the server likely committed but the row couldn't be serialized, so the
+  // shared possiblyCommitted copy routes callers through the committed UX.
+  // No network: override (unlike snapshots) — a NETWORK error is still
+  // transient via the fallback message; keeping copy to the four fallbacks
+  // the phase specified.
+  "outtake.create": {
+    fallback: STRINGS.error.createOuttakeFailed,
+    committed: STRINGS.error.possiblyCommitted,
+    // S1: an oversized capture/blank note that trips the express.json limit
+    // 413s; the generic fallback invites a doomed retry, so give the same
+    // "too large" hint the sibling write scopes carry. Near-unreachable (a
+    // captured selection is a subset of a chapter that already fit).
+    // S3: 404 has exactly one producer on this route (the project was
+    // soft-deleted while the editor was open), so a status-keyed arm is safe
+    // here — unlike the 400 case that S8 had to move to byCode. The fallback
+    // read as transient and invited a retry that 404s identically, forever.
+    byStatus: {
+      404: STRINGS.error.createOuttakeProjectGone,
+      413: STRINGS.error.createOuttakeTooLarge,
+    },
+  },
+  "outtake.update": {
+    fallback: STRINGS.error.updateOuttakeFailed,
+    committed: STRINGS.error.possiblyCommitted,
+    // S5: commitLabel REVERTS the field on a definite failure, so generic copy
+    // meant the writer's text vanished with no cause named and a retry
+    // reproduced it.
+    //
+    // S8 (agentic-review 2026-08-04): by CODE, not by status. The premise for
+    // byStatus[400] was "the label cap is the only 400 this endpoint emits",
+    // and it was wrong twice over — validateUuidParam throws 400 before the
+    // schema runs, and UpdateOuttakeSchema.strict() is a second producer. Those
+    // reverted the field under copy naming a cause that was not the cause.
+    byCode: {
+      [OUTTAKE_ERROR_CODES.LABEL_TOO_LONG]:
+        STRINGS.error.updateOuttakeLabelRejected(LABEL_MAX_UNITS),
+    },
+  },
+  "outtake.delete": {
+    fallback: STRINGS.error.deleteOuttakeFailed,
+    // S10: DELETE answers 204, and apiFetch short-circuits before reading a
+    // body, so the 2xx-BAD_JSON path that sets possiblyCommitted cannot fire
+    // here. Kept deliberately, mirroring snapshot.delete: it is the scope's
+    // declaration of what SHOULD happen if the endpoint ever stops being
+    // body-less, not a live path. OuttakeCard's onCommitted arm is defensive
+    // for the same reason.
     committed: STRINGS.error.possiblyCommitted,
   },
   "findReplace.search": {

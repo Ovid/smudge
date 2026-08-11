@@ -446,12 +446,12 @@ describe("Sidebar", () => {
     fireEvent.mouseDown(resizeHandle, { clientX: 260 });
 
     // Move the mouse to the right by 50px
-    fireEvent.mouseMove(document, { clientX: 310 });
+    fireEvent.mouseMove(document, { clientX: 310, buttons: 1 });
     expect(onResize).toHaveBeenCalledWith(310);
 
     // Move left past the minimum (180)
     onResize.mockClear();
-    fireEvent.mouseMove(document, { clientX: 100 });
+    fireEvent.mouseMove(document, { clientX: 100, buttons: 1 });
     expect(onResize).toHaveBeenCalledWith(180);
 
     // Release the mouse
@@ -459,7 +459,7 @@ describe("Sidebar", () => {
 
     // After mouseUp, further moves should not trigger onResize
     onResize.mockClear();
-    fireEvent.mouseMove(document, { clientX: 400 });
+    fireEvent.mouseMove(document, { clientX: 400, buttons: 1 });
     expect(onResize).not.toHaveBeenCalled();
   });
 
@@ -470,7 +470,7 @@ describe("Sidebar", () => {
     const resizeHandle = screen.getByLabelText("Resize sidebar");
 
     fireEvent.mouseDown(resizeHandle, { clientX: 260 });
-    fireEvent.mouseMove(document, { clientX: 800 });
+    fireEvent.mouseMove(document, { clientX: 800, buttons: 1 });
     expect(onResize).toHaveBeenCalledWith(480);
 
     fireEvent.mouseUp(document);

@@ -1,40 +1,6 @@
-import { test, expect, type APIRequestContext } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import { gotoProjectEditor } from "./helpers/gotoProjectEditor";
-
-interface TestProject {
-  id: string;
-  title: string;
-  slug: string;
-}
-
-async function createTestProject(request: APIRequestContext): Promise<TestProject> {
-  // S6 (review 2026-04-25): Date.now() millisecond resolution can collide
-  // under Playwright sharding; append crypto.randomUUID() for hard uniqueness.
-  const res = await request.post("/api/projects", {
-    data: { title: `Snapshot Test ${Date.now()}-${crypto.randomUUID()}`, mode: "fiction" },
-  });
-  expect(res.ok()).toBeTruthy();
-  const json = (await res.json()) as TestProject;
-  expect(json.id).toBeTruthy();
-  expect(json.slug).toBeTruthy();
-  return json;
-}
-
-async function deleteProject(request: APIRequestContext, slug: string) {
-  // S6 (review 2026-04-27, third pass): cleanup must not compete with
-  // the test's own assertion. See e2e/editor-save.spec.ts for the
-  // full rationale.
-  try {
-    const res = await request.delete(`/api/projects/${slug}`);
-    if (!res.ok()) {
-      console.warn(`deleteProject(${slug}): cleanup DELETE returned ${res.status()}`);
-    }
-  } catch (err) {
-    console.warn(
-      `deleteProject(${slug}): cleanup threw — ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-}
+import { createTestProject, deleteProject, type TestProject } from "./helpers/project";
 
 /** Type content into the editor and wait for it to be saved. */
 async function typeAndWaitForSave(page: import("@playwright/test").Page, text: string) {
@@ -61,7 +27,7 @@ test.describe("Snapshot E2e Tests", () => {
   let projectCreated = false;
 
   test.beforeEach(async ({ request }) => {
-    project = await createTestProject(request);
+    project = await createTestProject(request, "Snapshot Test");
     projectCreated = true;
   });
 

@@ -610,6 +610,13 @@ describe("SqliteProjectStore", () => {
         "getLatestSnapshotContentHash",
         "getLatestSnapshotContentHashAnyKind",
       ],
+      outtakes: [
+        "insertOuttake",
+        "findOuttakeById",
+        "listOuttakesByProject",
+        "updateOuttakeLabel",
+        "deleteOuttake",
+      ],
       transactions: ["transaction"],
     };
 

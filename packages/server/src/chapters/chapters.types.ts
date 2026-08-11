@@ -69,7 +69,21 @@ export function isCorruptChapter(chapter: { content_corrupt?: boolean }): boolea
   return chapter.content_corrupt === true;
 }
 
-export function stripCorruptFlag(chapter: ChapterRow): Omit<ChapterRow, "content_corrupt"> {
+/**
+ * Drop the internal `content_corrupt` flag before a row crosses into a wire
+ * type. The single owner of the corrupt-flag surface: adding a field to that
+ * surface must mean editing exactly this function.
+ *
+ * I5 (dedup review 2026-07-26): generic over any row carrying the optional
+ * flag, rather than `ChapterRow` only. The narrow signature is why
+ * enrichChaptersWithLabels' generic overload — which sees
+ * `{ status: string; content_corrupt?: unknown }` — inlined its own strip
+ * instead of calling this. Rest-destructuring an ABSENT key omits nothing, so
+ * one unconditional call covers rows with and without the flag alike.
+ */
+export function stripCorruptFlag<T extends { content_corrupt?: unknown }>(
+  chapter: T,
+): Omit<T, "content_corrupt"> {
   const { content_corrupt: _, ...rest } = chapter;
   return rest;
 }
@@ -106,13 +120,13 @@ export async function enrichChaptersWithLabels(
   labelMap?: Record<string, string>,
 ): Promise<unknown[]> {
   const map = labelMap ?? (await provider.getStatusLabelMap());
-  return chapters.map((ch) => {
-    if ("content_corrupt" in ch) {
-      const { content_corrupt: _, ...rest } = ch;
-      return { ...rest, status_label: map[ch.status] ?? ch.status };
-    }
-    return { ...ch, status_label: map[ch.status] ?? ch.status };
-  });
+  // I5: one unconditional call replaces the `in`-guarded pair of arms. The
+  // guard was behaviorally redundant — rest-destructuring an absent key omits
+  // nothing — so both arms collapse into the shared helper.
+  return chapters.map((ch) => ({
+    ...stripCorruptFlag(ch),
+    status_label: map[ch.status] ?? ch.status,
+  }));
 }
 
 export interface CreateChapterRow {

@@ -41,14 +41,17 @@ export async function getLatestContentHash(db: Knex, chapterId: string): Promise
   // snapshot taken right after an auto-snapshot (e.g. from restore or
   // find-and-replace) would silently return "duplicate" even though
   // the user's explicit intent was to create a new manual marker.
-  // Secondary `id DESC` order breaks ties when two manual snapshots share
+  // Secondary `rowid DESC` order breaks ties when two manual snapshots share
   // the same millisecond ISO timestamp — otherwise dedup would be
   // nondeterministic under rapid scripted creates or test harness bursts.
+  // S8 (agentic-review 2026-08-04, extended from outtakes): rowid, not id —
+  // ids are v4 UUIDs and carry no ordering, so the tie-break was deterministic
+  // but arbitrary, and here it decides WHICH snapshot dedup compares against.
   const row = await db(TABLE)
     .where({ chapter_id: chapterId, is_auto: false })
     .orderBy([
       { column: "created_at", order: "desc" },
-      { column: "id", order: "desc" },
+      { column: "rowid", order: "desc" },
     ])
     .select("content")
     .first();
@@ -67,13 +70,14 @@ export async function getLatestContentHashAnyKind(
   // snapshot left by an earlier restore/replace, which the manual-only
   // `getLatestContentHash` deliberately cannot see. The manual path keeps
   // the `is_auto: false` filter so an auto-snapshot never blocks a user's
-  // explicit manual marker. Same `created_at DESC, id DESC` tie-break as the
-  // manual lookup so dedup stays deterministic under same-millisecond bursts.
+  // explicit manual marker. Same `created_at DESC, rowid DESC` tie-break as the
+  // manual lookup so dedup stays deterministic under same-millisecond bursts
+  // and resolves to the last row actually inserted (S8).
   const row = await db(TABLE)
     .where({ chapter_id: chapterId })
     .orderBy([
       { column: "created_at", order: "desc" },
-      { column: "id", order: "desc" },
+      { column: "rowid", order: "desc" },
     ])
     .select("content")
     .first();

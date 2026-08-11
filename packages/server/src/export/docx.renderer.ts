@@ -11,10 +11,10 @@ import {
   LevelFormat,
   ShadingType,
 } from "docx";
-import { stripNoteMarks } from "@smudge/shared";
+import { stripNoteMarks, MAX_TIPTAP_DEPTH } from "@smudge/shared";
 import type { ExportProjectInfo, ExportChapter, RenderOptions } from "./export.renderers";
+import { ALLOWED_IMAGE_SRC } from "./export.renderers";
 import { resolveImage, buildCaptionText, type ImageSource } from "./image-resolver";
-import { UUID_PATTERN } from "../images/images.paths";
 import { logger } from "../logger";
 
 // ---------------------------------------------------------------------------
@@ -158,6 +158,28 @@ interface BlockContext {
   indent?: { left: number };
   extraRunProps?: MarkInfo;
   listDepth?: number;
+  /**
+   * TipTap-JSON recursion depth, capped at MAX_TIPTAP_DEPTH. Distinct from
+   * `listDepth`, which is Word's indentation level (capped at MAX_LIST_DEPTH)
+   * and says nothing about how deep the source tree is.
+   *
+   * I5 (dedup review 2026-07-26): this walker was the only TipTap-JSON walker
+   * in the codebase with no depth bail. It was safe only TRANSITIVELY —
+   * tipTapToParagraphs calls stripNoteMarks first, and that walker truncates
+   * over-cap subtrees. The strip is there for note confidentiality, so a future
+   * change moving it (e.g. to per-mark handling) would keep notes out while
+   * silently unguarding this recursion. What that costs is not obvious: the
+   * RangeError is caught by blockToParagraphs' own try/catch, so the chapter's
+   * content is dropped from the export with nothing but a per-node warn — a
+   * silently truncated manuscript, not a visible failure. A safety property
+   * should not rest on an unrelated feature's implementation detail.
+   */
+  depth?: number;
+}
+
+/** Depth for children of a node at `ctx`'s level. */
+function childDepth(ctx?: BlockContext): number {
+  return (ctx?.depth ?? 0) + 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -175,7 +197,16 @@ async function listItemsToParagraphs(
   const level = Math.min(ctx?.listDepth ?? 0, MAX_LIST_DEPTH - 1);
   // Child blocks (e.g. nested lists) see an incremented depth so they
   // render at the next indentation level in Word.
-  const childCtx: BlockContext = { ...ctx, listDepth: level + 1 };
+  //
+  // S10 (agentic-review 2026-08-04): `childDepth(ctx) + 1`, not `childDepth(ctx)`.
+  // A block inside a list item sits TWO TipTap levels below the list node
+  // (list > listItem > block), and this walker never enters the listItem itself —
+  // it reads `listItem.content` directly — so counting one level lost the other.
+  // The guard therefore fired at a true nesting depth of ~130 instead of 64, one
+  // level of slack per list level. Not exploitable today, but it is a
+  // defence-in-depth guard that did not hold the depth it claims. The blockquote
+  // arm has no such gap: it recurses through the node it counts.
+  const childCtx: BlockContext = { ...ctx, listDepth: level + 1, depth: childDepth(ctx) + 1 };
   const items: Paragraph[] = [];
   for (const listItem of listItems) {
     const liContent = listItem.content as Array<Record<string, unknown>> | undefined;
@@ -223,6 +254,12 @@ async function blockToParagraphs(
   state: DocxBuildState,
   ctx?: BlockContext,
 ): Promise<Paragraph[]> {
+  // Fail CLOSED at the depth cap, matching every sibling TipTap walker: drop
+  // the over-deep subtree rather than recurse into it. See BlockContext.depth.
+  // Enrolled in the cross-cutting contract via __depthContractSeam below —
+  // NOT via renderDocx, which cannot reach this line (see the seam's comment).
+  if ((ctx?.depth ?? 0) > MAX_TIPTAP_DEPTH) return [];
+
   try {
     const type = node.type as string;
     const content = node.content as Array<Record<string, unknown>> | undefined;
@@ -271,6 +308,7 @@ async function blockToParagraphs(
           indent: { left: (ctx?.indent?.left ?? 0) + 720 },
           extraRunProps: { ...ctx?.extraRunProps, italics: true },
           listDepth: ctx?.listDepth,
+          depth: childDepth(ctx),
         };
         const paragraphs: Paragraph[] = [];
         for (const child of content) {
@@ -321,10 +359,31 @@ async function blockToParagraphs(
         const src = attrs.src as string | undefined;
         if (!src) return [];
 
-        // Extract image ID from /api/images/{uuid} URL
-        const idMatch = src.match(new RegExp(`/api/images/(${UUID_PATTERN})`, "i"));
+        // C1 (dedup review 2026-07-26): gate on the ANCHORED export allowlist,
+        // then take the image id from its capture. This walker never renders
+        // HTML, so stripDisallowedImages — which every other export format gets
+        // via chapterContentToHtml — cannot run for it; carrying the allowlist
+        // here is DOCX's own route to the same guarantee, exactly parallel to
+        // the stripNoteMarks it already carries at tipTapToParagraphs.
+        //
+        // The previous UNANCHORED match extracted a UUID from anywhere in the
+        // string, so `https://evil.example/api/images/<uuid>`,
+        // `https://evil.example/?ref=/api/images/<uuid>/x` and
+        // `javascript:x/api/images/<uuid>` all embedded the local image bytes
+        // into a file the writer hands a beta reader, while every other format
+        // dropped the <img>. Nothing upstream validates attrs.src:
+        // TipTapDocSchema is .passthrough() and DB reads bypass Zod entirely.
+        const idMatch = ALLOWED_IMAGE_SRC.exec(src);
         if (!idMatch?.[1]) {
-          logger.warn({ src }, "Image src not a recognized /api/images/ URL in docx export");
+          // S7: truncated. `src` is unvalidated user content (TipTapDocSchema is
+          // .passthrough(), DB reads bypass Zod) and the C1 anchoring above is
+          // what widened the set of srcs that reach this line — one per rejected
+          // image node, unbounded, straight into the log. 200 chars is past any
+          // legitimate /api/images/<uuid> src.
+          logger.warn(
+            { src: src.slice(0, 200) },
+            "Image src not a recognized /api/images/ URL in docx export",
+          );
           return [];
         }
 
@@ -427,6 +486,32 @@ async function tipTapToParagraphs(
   }
   return paragraphs;
 }
+
+/**
+ * Test seam for the depth-bail contract (S1, agentic-review 2026-07-26).
+ *
+ * The bail in `blockToParagraphs` is UNREACHABLE through `renderDocx`, so no
+ * test driven through `renderDocx` can pin it — which is exactly what the
+ * previous enrollment tried to do, and why deleting the bail left all 110
+ * export tests green. The arithmetic: `tipTapToParagraphs` runs
+ * `stripNoteMarks` first, and that walker counts the doc node as depth 0 and
+ * drops anything at depth > 64; `blockToParagraphs` enters doc children at
+ * depth 0, i.e. one level BEHIND. So `docxDepth === stripDepth - 1 <= 63` for
+ * every node that survives the strip, and the bail's `> 64` never fires.
+ *
+ * That does not make the bail dead code — its stated purpose is to survive a
+ * future change that relocates the strip (it exists for note confidentiality,
+ * not for depth) and leaves this recursion unguarded. But defence-in-depth that
+ * only matters when an upstream guard is gone can only be pinned by calling
+ * this walker WITHOUT that guard in the path. Hence the seam.
+ *
+ * Exported for `tiptap-depth-walkers.test.ts` only; not part of the renderer's
+ * public API.
+ */
+export const __depthContractSeam = {
+  blockToParagraphs,
+  newBuildState,
+};
 
 // ---------------------------------------------------------------------------
 // Public renderer

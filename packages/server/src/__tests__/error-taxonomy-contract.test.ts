@@ -1,6 +1,16 @@
 import { describe, it, expect } from "vitest";
 import request from "supertest";
 import { setupTestDb } from "./test-helpers";
+import { logger } from "../logger";
+import {
+  AppError,
+  ERROR_STATUS_ALLOWLIST,
+  NotFoundError,
+  BadRequestError,
+  ConflictError,
+  PayloadTooLargeError,
+  InternalError,
+} from "../errors/appError";
 
 // Safety net for architecture flaw F-3 (server error taxonomy refactor).
 //
@@ -74,5 +84,74 @@ describe("error envelope contract (F-3 safety net)", () => {
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("PROJECT_TITLE_EXISTS");
     expect(res.body.error.message).toBe("A project with that title already exists");
+  });
+});
+
+describe("no endpoint emits a status outside the allowlist (I4)", () => {
+  const t = setupTestDb();
+
+  // The real leak found by the dedup review: express.json() rejects an
+  // unsupported charset or Content-Encoding with body-parser's
+  // UnsupportedMediaTypeError, whose status 415 flowed straight through the
+  // unclamped handler on every body-accepting endpoint.
+  it.each([
+    ["an unsupported charset", "application/json; charset=iso-8859-1", undefined],
+    ["an unsupported Content-Encoding", "application/json", "br"],
+  ])("returns 400, not 415, for %s", async (_label, contentType, encoding) => {
+    // The global handler logs this through req.log (a per-request pino child),
+    // so silencing the PARENT before the request is what keeps the suite quiet
+    // — same approach as the 413 case in outtakes.routes.test.ts. §Testing
+    // Philosophy: zero warnings in test output.
+    const prevLevel = logger.level;
+    logger.level = "silent";
+    try {
+      const req = request(t.app)
+        .patch(`/api/chapters/${ABSENT_UUID}`)
+        .set("Content-Type", contentType);
+      if (encoding) req.set("Content-Encoding", encoding);
+      const res = await req.send("{}");
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    } finally {
+      logger.level = prevLevel;
+    }
+  });
+});
+
+describe("the allowlist governs the taxonomy, not just library errors (S6)", () => {
+  // The I4 comment claimed "the subclasses draw from it and the handler clamps
+  // to it". Only the second half was true: the clamp sits after the handler's
+  // `err instanceof AppError` early return, so the taxonomy itself was
+  // unchecked and AppError's public constructor could mint any status at all.
+  it("refuses to construct an AppError with an off-allowlist status", () => {
+    expect(() => new AppError(415, "NOPE", "unsupported media type")).toThrow(
+      /outside ERROR_STATUS_ALLOWLIST/,
+    );
+    // 2xx is the sharper case: AppError renders an ERROR envelope, so a 2xx
+    // here would emit `{ error: … }` under a success status.
+    expect(() => new AppError(200, "NOPE", "ok?")).toThrow(/outside ERROR_STATUS_ALLOWLIST/);
+  });
+
+  it("accepts every status the allowlist actually contains", () => {
+    for (const status of ERROR_STATUS_ALLOWLIST) {
+      expect(new AppError(status, "CODE", "message").status).toBe(status);
+    }
+  });
+
+  it("every shipped subclass draws a status the allowlist contains", () => {
+    // The mirror failure: narrowing the set (dropping 413, say) would otherwise
+    // leave PayloadTooLargeError emitting it with no test going red.
+    const subclasses = [
+      new NotFoundError("x"),
+      new BadRequestError("x"),
+      new ConflictError("x"),
+      new PayloadTooLargeError("x"),
+      new InternalError("x"),
+    ];
+    for (const err of subclasses) {
+      expect(ERROR_STATUS_ALLOWLIST.has(err.status)).toBe(true);
+    }
+    // Every allowlisted status has a subclass, so the set has no dead entries.
+    expect(new Set(subclasses.map((e) => e.status))).toEqual(new Set(ERROR_STATUS_ALLOWLIST));
   });
 });

@@ -2,13 +2,12 @@ import path from "node:path";
 import { randomUUID as uuidv4 } from "node:crypto";
 import { UpdateImageSchema } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
-import { extractImageIds, scanImageReferences } from "./images.references";
+import { MAX_IMAGE_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_LABEL } from "@smudge/shared";
+import { scanImageReferences, scanChapterContentForImage } from "./images.references";
 import { ALLOWED_MIMES, mimeToExt, getImagePath, validateMagicBytes } from "./images.paths";
 import { writeImageFile, readImageFile, deleteImageFile } from "./images.fs";
 import type { ImageRow, UpdateImageData } from "./images.types";
 import { logger } from "../logger";
-
-const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 
 export interface FileInput {
   buffer: Buffer;
@@ -57,9 +56,9 @@ export async function uploadImage(projectId: string, file: FileInput): Promise<U
     };
   }
 
-  if (file.size > MAX_SIZE_BYTES) {
+  if (file.size > MAX_IMAGE_UPLOAD_BYTES) {
     return {
-      validationError: `File too large (${file.size} bytes). Maximum size is 10 MB`,
+      validationError: `File too large (${file.size} bytes). Maximum size is ${MAX_IMAGE_UPLOAD_LABEL}`,
     };
   }
 
@@ -163,17 +162,24 @@ export async function deleteImage(id: string): Promise<DeleteResult> {
     const referencingChapters: Array<{ id: string; title: string; trashed: boolean }> = [];
     let activeRefCount = 0;
     for (const ch of chapters) {
-      if (ch.content) {
-        try {
-          const parsed = JSON.parse(ch.content) as Record<string, unknown>;
-          const ids = extractImageIds(parsed);
-          if (ids.includes(id.toLowerCase())) {
-            referencingChapters.push({ id: ch.id, title: ch.title, trashed: !!ch.deleted_at });
-            if (!ch.deleted_at) activeRefCount++;
-          }
-        } catch {
-          // Corrupt JSON — skip
-        }
+      // OOSI2 (agentic-review 2026-08-05): an UNREADABLE chapter blocks the
+      // delete rather than counting as a non-reference. The old empty catch
+      // meant the scan could not tell "no chapter references this image" from
+      // "one chapter was never read", and this is the single place in the image
+      // lifecycle where a read failure produces an irreversible write: the row
+      // is removed and the bytes unlinked. The corrupt chapter is repairable, so
+      // failing open here converts a recoverable chapter into a permanently
+      // broken image.
+      const scan = scanChapterContentForImage(ch.content, id);
+      if (scan === "unreadable") {
+        logger.warn(
+          { chapter_id: ch.id, image_id: id, project_id: image.project_id },
+          "Chapter content unreadable during image delete scan; blocking the delete",
+        );
+      }
+      if (scan !== "no-reference") {
+        referencingChapters.push({ id: ch.id, title: ch.title, trashed: !!ch.deleted_at });
+        if (!ch.deleted_at) activeRefCount++;
       }
     }
 

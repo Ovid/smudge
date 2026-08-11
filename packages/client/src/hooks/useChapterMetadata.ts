@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { api } from "../api/client";
 import { useAbortableSequence } from "./useAbortableSequence";
 import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
+import { makeStaleProjectGuard } from "./staleProjectGuard";
 import { STRINGS } from "../strings";
 import { mapApiError, applyMappedError, devWarn, isApiError, clientWarn } from "../errors";
 import type { ChapterMetadataDeps } from "./useProjectEditor.types";
@@ -83,6 +84,7 @@ export function useChapterMetadata(deps: ChapterMetadataDeps) {
       const slug = projectSlugRef.current;
       const projectId = projectRef.current?.id;
       if (!slug || !projectId) return undefined;
+      const isStaleProject = makeStaleProjectGuard(projectRef, projectSlugRef);
       // S6 (review 2026-04-21) + C1 (review 2026-04-24): drift guard —
       // see handleCreateChapter for full rationale.
       setProjectTitleError(null);
@@ -97,10 +99,21 @@ export function useChapterMetadata(deps: ChapterMetadataDeps) {
         // (refuses saveProjectTitle when project.slug !== slug), but this
         // extra check keeps handleUpdateProjectTitle independently safe for
         // any future direct caller.
-        if (projectRef.current?.id !== projectId) return undefined;
-        if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
-          return undefined;
+        if (isStaleProject()) return undefined;
         projectSlugRef.current = updated.slug;
+        // S3 (agentic-review 2026-08-04): advance projectRef in LOCK-STEP, not
+        // just projectSlugRef. makeStaleProjectGuard's check 2 compares the two,
+        // and projectRef only catches up when React commits the setProject
+        // below — so in between, a rename presents the exact signature of
+        // pre-load cross-project navigation (same id, URL slug ahead of the
+        // project's slug) and every guarded operation settling in that window
+        // bails on a project the user never left. The worst site is the trash
+        // restore success arm: the bail leaves the chapter out of the sidebar
+        // AND still in trash with no banner, and the retry 409s. The render body
+        // re-syncs this ref from state, so this only closes the gap early.
+        if (projectRef.current) {
+          projectRef.current = { ...projectRef.current, title: updated.title, slug: updated.slug };
+        }
         setProject((prev) => (prev ? { ...prev, title: updated.title, slug: updated.slug } : prev));
         return updated.slug;
       } catch (err) {
@@ -125,9 +138,25 @@ export function useChapterMetadata(deps: ChapterMetadataDeps) {
           try {
             const refreshed = await api.projects.get(slug, recoveryController.signal);
             if (recoveryController.signal.aborted) return undefined;
-            // Merge only if still on the same project (id stable across
-            // rename, changes on cross-project navigation).
-            if (projectRef.current?.id === projectId) {
+            // OOSI1 (agentic-review 2026-08-04): the full guard, not the id-only
+            // check this used to carry. The id is stable across a rename and
+            // changes on cross-project navigation only AFTER the new project
+            // finishes loading — so in the PRE-LOAD window (URL already on B,
+            // loadProject(B) not yet resolved) `projectRef` still holds A's id
+            // and the id check passed. This arm then rewound
+            // `projectSlugRef.current` to A's slug while the user was editing B.
+            //
+            // That rewind is session-permanent: useProjectEditor's render-time
+            // sync consumes its prevSlugArgRef sentinel exactly once per slug
+            // transition, so it never re-advances. makeStaleProjectGuard cannot
+            // catch the aftermath either (check 1 sees B===B, check 2 evaluates
+            // "alpha" !== "alpha"), and from there handleCreateChapter POSTs
+            // chapters into project A and handleReorderChapters reorders A's —
+            // silent cross-project writes for the rest of the session.
+            //
+            // This was the last surviving weak copy that WRITES BACK to
+            // projectSlugRef, which is what makes it worse than the other nine.
+            if (!isStaleProject()) {
               setProject(refreshed);
               projectSlugRef.current = refreshed.slug;
             }
@@ -170,9 +199,7 @@ export function useChapterMetadata(deps: ChapterMetadataDeps) {
       // (full-page overlay) when onError is omitted — both surfaces are
       // wrong-project leaks on A→B nav mid-PATCH. The drift guard bails
       // before either fires.
-      const startedForProjectId = projectRef.current?.id;
-      const isStaleProject = () =>
-        startedForProjectId !== undefined && projectRef.current?.id !== startedForProjectId;
+      const isStaleProject = makeStaleProjectGuard(projectRef, projectSlugRef);
       // I11: abort the prior in-flight PATCH before issuing a new one so
       // overlapping status clicks cannot land out-of-order at the server.
       const { promise: statusPromise, signal: statusSignal } = statusChangeOp.run((s) =>
@@ -343,18 +370,17 @@ export function useChapterMetadata(deps: ChapterMetadataDeps) {
       // I2 (review 2026-05-27 round 2, sweep): capture project id at
       // entry so the catch's onError bails when the user has navigated
       // A → B mid-rename.
-      const startedForProjectId = projectRef.current?.id;
-      const isStaleProject = () =>
-        startedForProjectId !== undefined && projectRef.current?.id !== startedForProjectId;
+      const isStaleProject = makeStaleProjectGuard(projectRef, projectSlugRef);
       // I7: abort any prior in-flight rename before issuing a new one
       // so overlapping renames cannot commit out of typing order at the
       // server (same rationale as title/status abort refs).
       const { promise, signal } = renameChapterOp.run((s) =>
         api.chapters.update(chapterId, { title }, s),
       );
-      try {
-        await promise;
-        if (signal.aborted) return;
+      // I3 (dedup review 2026-07-26): applying the new title is shared between
+      // the success path and the possibly-committed path, so it lives here
+      // rather than being written twice and drifting.
+      const applyTitle = () => {
         if (activeChapterRef.current?.id === chapterId) {
           // Only update the title — don't overwrite content with stale server data.
           // The editor holds the current truth (same principle as handleSave).
@@ -368,6 +394,11 @@ export function useChapterMetadata(deps: ChapterMetadataDeps) {
             chapters: prev.chapters.map((c) => (c.id === chapterId ? { ...c, title } : c)),
           };
         });
+      };
+      try {
+        await promise;
+        if (signal.aborted) return;
+        applyTitle();
       } catch (err) {
         // I7: ABORTED means a newer rename superseded this one; stay
         // silent so the newer call's state update is not contradicted
@@ -381,11 +412,18 @@ export function useChapterMetadata(deps: ChapterMetadataDeps) {
         // onError — useTrashManager-style wrong-project leak.
         if (isStaleProject()) return;
         applyMappedError(mapApiError(err, "chapter.rename"), {
+          // I3: UPDATE_READ_FAILURE (and 2xx BAD_JSON) mean the server wrote
+          // the new title and only the read-back failed. Reverting — which is
+          // what "do nothing" amounts to here — left the DB and the sidebar
+          // permanently disagreeing while the copy invited a retry. Keep the
+          // optimistic title and say the response was unreadable, mirroring
+          // the status handler's I6 branch.
+          onCommitted: () => applyTitle(),
           onMessage: (message) => onError?.(message),
         });
       }
     },
-    [renameChapterOp, projectRef, activeChapterRef, setActiveChapter, setProject],
+    [renameChapterOp, projectRef, projectSlugRef, activeChapterRef, setActiveChapter, setProject],
   );
 
   return {

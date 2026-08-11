@@ -2,19 +2,22 @@
 // truncateGraphemes many times per request (one auto-snapshot label per
 // affected chapter), and each `new Intl.Segmenter(...)` allocates a fresh
 // ICU handle. Reuse avoids measurable GC churn on busy paths.
-const GRAPHEME_SEGMENTER: Intl.Segmenter | null =
-  typeof Intl !== "undefined" && "Segmenter" in Intl
-    ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
-    : null;
+//
+// S5 (dedup review 2026-07-26): constructed unconditionally. The old
+// `"Segmenter" in Intl` guard fell back to a code-unit slice — which
+// reimplements the exact surrogate-splitting bug truncateGraphemes exists to
+// prevent — and was unreachable: package.json pins `"node": "22.x"`, where
+// Intl.Segmenter is always present, and wordcount.ts already calls
+// `new Intl.Segmenter(...)` unguarded on every save path. Dead code that also
+// dragged branch coverage.
+const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 /**
  * Truncate a string to at most `max` graphemes, appending no suffix.
- * Uses Intl.Segmenter when available so surrogate pairs and combining
- * sequences are never split mid-grapheme. Falls back to code-unit slice
- * on environments without Segmenter (older Node builds).
+ * Uses Intl.Segmenter so surrogate pairs and combining sequences are
+ * never split mid-grapheme.
  */
 export function truncateGraphemes(s: string, max: number): string {
-  if (!GRAPHEME_SEGMENTER) return s.length > max ? s.slice(0, max) : s;
   const out: string[] = [];
   for (const { segment } of GRAPHEME_SEGMENTER.segment(s)) {
     if (out.length >= max) break;

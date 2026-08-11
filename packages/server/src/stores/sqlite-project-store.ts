@@ -22,6 +22,7 @@ import type {
   SnapshotListItem,
   CreateSnapshotData,
 } from "../snapshots/snapshots.types";
+import type { OuttakeRow, CreateOuttakeData } from "../outtakes/outtakes.types";
 import * as projectsRepo from "../projects/projects.repository";
 import * as chaptersRepo from "../chapters/chapters.repository";
 import * as statusesRepo from "../chapter-statuses/chapter-statuses.repository";
@@ -29,6 +30,7 @@ import * as velocityRepo from "../velocity/velocity.repository";
 import * as settingsRepo from "../settings/settings.repository";
 import * as imagesRepo from "../images/images.repository";
 import * as snapshotsRepo from "../snapshots/snapshots.repository";
+import * as outtakesRepo from "../outtakes/outtakes.repository";
 
 export class SqliteProjectStore implements ProjectStore {
   private readonly isTransactionScoped: boolean;
@@ -280,6 +282,32 @@ export class SqliteProjectStore implements ProjectStore {
 
   getLatestSnapshotContentHashAnyKind(chapterId: string): Promise<string | null> {
     return snapshotsRepo.getLatestContentHashAnyKind(this.db, chapterId);
+  }
+
+  // --- Outtakes ---
+
+  insertOuttake(data: CreateOuttakeData): Promise<OuttakeRow> {
+    return outtakesRepo.insert(this.db, data);
+  }
+
+  findOuttakeById(id: string): Promise<OuttakeRow | null> {
+    return outtakesRepo.findById(this.db, id);
+  }
+
+  listOuttakesByProject(projectId: string): Promise<OuttakeRow[]> {
+    return outtakesRepo.listByProject(this.db, projectId);
+  }
+
+  updateOuttakeLabel(
+    id: string,
+    label: string | null,
+    updatedAt: string,
+  ): Promise<OuttakeRow | null> {
+    return outtakesRepo.updateLabel(this.db, id, label, updatedAt);
+  }
+
+  deleteOuttake(id: string): Promise<number> {
+    return outtakesRepo.remove(this.db, id);
   }
 
   // --- Transactions ---

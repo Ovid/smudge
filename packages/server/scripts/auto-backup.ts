@@ -1,12 +1,11 @@
-import { join } from "node:path";
-import { getDataDir, getDbPath } from "../src/config/paths";
+import { getBackupsDir, getDataDir, getDbPath } from "../src/config/paths";
 import { runAutoBackup, resolveKeep } from "../src/backup/backup-core";
 
 const keep = resolveKeep(process.env.SMUDGE_BACKUP_KEEP);
 const r = await runAutoBackup({
   dataDir: getDataDir(),
   dbPath: getDbPath(),
-  backupsDir: join(process.cwd(), "backups"),
+  backupsDir: getBackupsDir(),
   keep,
   skip: process.env.SMUDGE_SKIP_AUTO_BACKUP === "1",
 });

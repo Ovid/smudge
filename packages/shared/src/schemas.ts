@@ -52,7 +52,12 @@ export const TipTapDocSchema = z
   })
   .passthrough()
   .refine((doc) => validateTipTapDepth(doc, 0), {
-    message: `TipTap document exceeds maximum nesting depth (${MAX_TIPTAP_DEPTH}).`,
+    // S4 (agentic-review 2026-08-04): validateTipTapDepth rejects on SHAPE as
+    // well as depth (an array where a node belongs, a present non-array
+    // `content`), and this message reaches the client verbatim — so a
+    // structural violation was reported as a depth violation the writer cannot
+    // act on by un-nesting. One refine, so one message: name both causes.
+    message: `TipTap document is malformed or exceeds maximum nesting depth (${MAX_TIPTAP_DEPTH}).`,
   });
 
 export const ReorderChaptersSchema = z.object({
@@ -181,18 +186,55 @@ export function sanitizeSnapshotLabel(raw: string): string {
   );
 }
 
+/**
+ * How long a snapshot or outtake label may be, in **UTF-16 code units** —
+ * `String.length`, the unit Zod's `.max()` measures.
+ *
+ * I4 (dedup review 2026-07-26): exported because the server's auto-label
+ * builders and the client's outtake-capture label each carried their own
+ * private `500`, and one of them counted a different unit. Emoji are one
+ * grapheme and two code units, so a 500-GRAPHEME truncation happily emits a
+ * 1000-code-unit label; the restore path really did compose to store 520 units
+ * behind a schema that rejects 501. Anything that truncates a label to fit this
+ * cap must measure the same unit the cap is written in — see
+ * `truncateUnits` (@smudge/shared) and `snapshots/labels.ts`.
+ */
+export const LABEL_MAX_UNITS = 500;
+
+// Shared label chain for snapshot/outtake labels. Cap pre-sanitize at 5000 code
+// units as defense-in-depth: without this, a 1 MB payload walks through the
+// sanitizer before being rejected by the post-pipe LABEL_MAX_UNITS cap. 5000 is
+// ~10x the final cap — room for sanitizer-stripped bidi/control chars without
+// gatekeeping legitimate long labels that would fit once cleaned. Each schema
+// applies its own nullability modifier (.optional()/.nullish()/.nullable()).
+const sanitizedLabelBase = z
+  .string()
+  .max(5000, "Label is too long")
+  .transform(sanitizeSnapshotLabel)
+  .pipe(z.string().trim().max(LABEL_MAX_UNITS, "Label is too long"));
+
+// S9 (dedup review 2026-07-26): `.nullish()`, matching CreateOuttakeSchema
+// below. The two share sanitizedLabelBase and both write a nullable `text`
+// column, but this one used `.optional()` — so an explicit `null` that the
+// outtake create accepts 400'd here. A strict subset, latent (no shipped client
+// sends one), and widening breaks no client. UpdateOuttakeSchema keeps
+// `.nullable()` on purpose: a PATCH needs an explicit clear signal and must not
+// read "absent" as "clear".
 export const CreateSnapshotSchema = z
   .object({
-    // Cap pre-sanitize at 5000 code units as defense-in-depth: without this,
-    // a 1 MB payload walks through the sanitizer before being rejected by
-    // the post-pipe .max(500). 5000 is ~10x the final cap — room for
-    // sanitizer-stripped bidi/control chars without gatekeeping legitimate
-    // long labels that would fit once cleaned.
-    label: z
-      .string()
-      .max(5000, "Label is too long")
-      .transform(sanitizeSnapshotLabel)
-      .pipe(z.string().trim().max(500, "Label is too long"))
-      .optional(),
+    label: sanitizedLabelBase.nullish(),
+  })
+  .strict();
+
+export const CreateOuttakeSchema = z
+  .object({
+    content: TipTapDocSchema,
+    label: sanitizedLabelBase.nullish(),
+  })
+  .strict();
+
+export const UpdateOuttakeSchema = z
+  .object({
+    label: sanitizedLabelBase.nullable(),
   })
   .strict();

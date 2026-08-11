@@ -20,17 +20,78 @@
 export const MAX_TIPTAP_DEPTH = 64;
 
 /**
+ * Is `value` something a TipTap walker may descend into — a non-null, non-array
+ * object?
+ *
+ * TipTapDocSchema constrains TOP-LEVEL elements only
+ * (`content: z.array(z.record(z.unknown()))`) and DB reads bypass Zod entirely,
+ * so a `null` / primitive / **array** child is reachable at every nested level.
+ * The array arm is the one that gets forgotten: `typeof [] === "object"`, so the
+ * first two arms let an array through, and an array has no `.content`, so a
+ * walker that returns it verbatim smuggles the whole subtree past its own
+ * filter.
+ *
+ * S1 (dedup review 2026-07-26): this expression was written out byte-identically
+ * at seven sites, and the depth-walkers test's "NEW WALKER?" box instructed
+ * authors to copy the literal — institutionalising the copy whose omission was
+ * the previous review's I2 bug. Callers keep their own degrade in the `if` body;
+ * only the predicate is shared, because only the predicate is the same.
+ *
+ * One site deliberately does NOT adopt it: tiptap-notes' walker needs
+ * array→`undefined` but primitive→`node`, which no boolean expresses.
+ * validateTipTapDepth uses it for CHILDREN (where a non-object is invalid) but
+ * not at its entry arm, where a non-object `node` means "nothing to descend
+ * into" rather than "malformed" — the two positions ask different questions
+ * (OOSI1).
+ */
+export function isTipTapNode(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
  * Walks a TipTap doc and returns false if any `content[]` recursion
  * exceeds MAX_TIPTAP_DEPTH. Exported so callers that work with already-
  * parsed documents (snapshot restore, find/replace) can apply the same
  * guard without paying for full Zod schema parsing.
+ *
+ * This walker is the depth cap's ONLY enforcement point — TipTapDocSchema's
+ * `.refine` is the sole caller on the write path — so its fail-closed arms are
+ * load-bearing for every other walker's "unreachable via the API" assumption.
+ *
+ * I2 (dedup review 2026-07-26): an ARRAY node returned `true` here, because
+ * `typeof [] === "object"` passes the primitive arm and an array has no
+ * `.content` to recurse into. TipTapDocSchema types only TOP-LEVEL content
+ * (`z.array(z.record(z.unknown()))`), so Zod rejects a top-level array child
+ * but not a nested one — which made MAX_TIPTAP_DEPTH bypassable through
+ * `PATCH /api/chapters/:id` by nesting through `content: [[...]]`. An array is
+ * not a valid TipTap node in any position, so rejecting the document is both
+ * the fail-closed answer and the correct one.
  */
 export function validateTipTapDepth(node: unknown, depth: number = 0): boolean {
   if (depth > MAX_TIPTAP_DEPTH) return false;
+  if (Array.isArray(node)) return false;
   if (!node || typeof node !== "object") return true;
   const content = (node as { content?: unknown }).content;
-  if (!Array.isArray(content)) return true;
+  // S1 (agentic-review 2026-08-04): an ABSENT content is a leaf and fine; a
+  // PRESENT non-array one is a structurally invalid document. Returning true for
+  // it made this walker — the API's only content validator — accept
+  // `{"type":"paragraph","content":5}`, after which every consumer degraded
+  // differently and silently: chapterContentToHtml returns "", so the whole
+  // chapter body vanishes from HTML/EPUB/markdown/plaintext export with the
+  // title still rendering, behind one logger.warn.
+  if (content === undefined) return true;
+  if (!Array.isArray(content)) return false;
   for (const child of content) {
+    // OOSI1 (agentic-review 2026-08-05): reject a non-object where a NODE
+    // belongs, in the loop rather than at the entry arm. That arm's
+    // `typeof node !== "object" → true` is right for a `content` VALUE that
+    // isn't there, and wrong for an element of a content[]: it made
+    // `{"type":"paragraph","content":[0]}` valid, and a number or string child
+    // makes renderEditorHtml throw RangeError — chapterContentToHtml catches and
+    // returns "", so HTML/EPUB/markdown/plaintext emit the chapter heading with
+    // no body behind one logger.warn while word_count still reads healthy.
+    // isTipTapNode subsumes the Array.isArray arm above for this position.
+    if (!isTipTapNode(child)) return false;
     if (!validateTipTapDepth(child, depth + 1)) return false;
   }
   return true;

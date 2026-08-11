@@ -29,6 +29,11 @@ export function setupTestDb() {
 
   beforeEach(async () => {
     await testDb("chapter_snapshots").del();
+    // S7: enumerated explicitly like chapter_snapshots, though both are also
+    // cascade-covered by the projects/chapters deletes below. If that cascade
+    // ever regresses, rows leaking across tests would make the order-sensitive
+    // "newest-first" route assertion cross-test dependent.
+    await testDb("outtakes").del();
     await testDb("images").del();
     await testDb("daily_snapshots").del();
     await testDb("settings").del();

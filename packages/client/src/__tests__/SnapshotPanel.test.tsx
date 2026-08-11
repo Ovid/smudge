@@ -90,6 +90,29 @@ describe("SnapshotPanel", () => {
       });
     });
 
+    it("does not claim the chapter has no snapshots while the list is loading (S6)", async () => {
+      // There was no loading flag, so the empty state rendered for the full
+      // duration of every load — on the panel whose listError arm exists
+      // precisely because "a network blip makes the user think a chapter with
+      // snapshots has none". The empty state was doing that unconditionally.
+      let settle!: (rows: SnapshotListItem[]) => void;
+      vi.mocked(api.snapshots.list).mockReturnValue(
+        new Promise((res) => {
+          settle = res;
+        }),
+      );
+      render(<SnapshotPanel {...defaultProps} />);
+      await waitFor(() => expect(api.snapshots.list).toHaveBeenCalled());
+
+      expect(screen.queryByText(S.emptyState)).not.toBeInTheDocument();
+
+      await act(async () => {
+        settle([makeSnapshot({ label: "Shelf of them" })]);
+      });
+      await waitFor(() => expect(screen.getByText("Shelf of them")).toBeInTheDocument());
+      expect(screen.queryByText(S.emptyState)).not.toBeInTheDocument();
+    });
+
     it("does not render when isOpen is false", () => {
       render(<SnapshotPanel {...defaultProps} isOpen={false} />);
       expect(screen.queryByRole("complementary", { name: S.ariaLabel })).not.toBeInTheDocument();

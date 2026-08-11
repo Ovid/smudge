@@ -8,10 +8,12 @@
  *   - restoreSnapshot in snapshots.service (rejects legacy oversized
  *     snapshot rows before parse+schema walk).
  *
- * The numeric value and the "5mb" string passed to express.json MUST
- * agree — changing one without the other silently breaks the request
- * pipeline (either autosave fails with no CONTENT_TOO_LARGE code, or
- * replace writes exceed what autosave can read back).
+ * S8 (dedup review 2026-07-26): this used to be TWO constants — the byte
+ * count and a "5mb" string for express.json — restating one limit in two
+ * representations, with a comment insisting they MUST agree and nothing
+ * asserting it. body-parser accepts a numeric byte limit directly
+ * (`typeof opts.limit !== 'number' ? bytes.parse(...) : opts.limit`), so the
+ * string was deleted and the divergence made unrepresentable rather than
+ * merely forbidden.
  */
 export const MAX_CHAPTER_CONTENT_BYTES = 5 * 1024 * 1024;
-export const MAX_CHAPTER_CONTENT_LIMIT_STRING = "5mb";

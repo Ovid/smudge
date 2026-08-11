@@ -529,7 +529,7 @@ Writers commonly want images in multiple contexts: reference photos for characte
 
 - Images are stored as files on disk in the Docker volume alongside the SQLite database (e.g., `/app/data/images/`).
 - A simple `/api/images` upload endpoint accepts an image file and returns a URL path.
-- TipTap's built-in image extension is enabled, allowing images in chapter content, outtakes, and (in later phases) world-building entries, character sheet notes, research source notes, and journal entries.
+- TipTap's built-in image extension is enabled, allowing images in chapter content, outtakes (**superseded:** the 4c.2 design strips images from outtakes to avoid an image-GC blind spot — see `docs/plans/2026-07-19-scratchpad-outtakes-design.md`), and (in later phases) world-building entries, character sheet notes, research source notes, and journal entries.
 - Accepted formats: JPEG, PNG, GIF, WebP. Maximum file size: 10MB per image.
 - Images are referenced by URL in the TipTap JSON. Deleting an image node from the document does not delete the file (avoids data loss if the writer undoes). Orphaned image cleanup can be a background task.
 
@@ -1917,7 +1917,15 @@ codec)` plus three codec factories (`numberInRange`, `flag`, `text`). The
 > Multi-Tab Refactor (prerequisite), **4c.1** Inline Notes, **4c.2** Scratchpad
 > / Outtakes, **4c.3** Tags & Cross-References. The `plan:` comment above points
 > at the **4c.1 Notes** design (`docs/plans/2026-07-12-notes-design.md`), which
-> also specs 4c.0. 4c.2 and 4c.3 get their own designs when reached.
+> also specs 4c.0. **4c.2** now has its own design
+> (`docs/plans/2026-07-19-scratchpad-outtakes-design.md`); 4c.3 gets its own
+> when reached.
+>
+> **Further split (2026-07-19):** brainstorming 4c.2 split it into **4c.2**
+> (the non-destructive Outtakes drawer — table + CRUD + panel + copy-selection
+> capture + insert-back) and **4c.2a** (the destructive one-click "cut selection
+> to outtakes", which touches the save-pipeline invariants and gets its own PR).
+> Per CLAUDE.md §Pull Request Scope.
 >
 > **Status:**
 >
@@ -1925,8 +1933,16 @@ codec)` plus three codec factories (`numberInRange`, `flag`, `text`). The
 >   (`docs/plans/2026-07-12-4c0-reference-panel-tabs-plan.md`). `ReferencePanel`
 >   now takes a `tabs[]` + `activeTabId` + `onSelectTab` API; Images stays the
 >   only tab (no behavior change). Unblocks 4c.1.
-> - **4c.1** Inline Notes — next.
-> - **4c.2 / 4c.3** — planned.
+> - **4c.1** Inline Notes — ✅ **Done** (design
+>   `docs/plans/2026-07-12-notes-design.md`; shipped and merged to `main` —
+>   verified via merged `feat(4c.1)`/`fix(4c.1)` commits).
+> - **4c.2** Scratchpad / Outtakes — 🔨 **In Progress** (brainstormed
+>   2026-07-19; design `docs/plans/2026-07-19-scratchpad-outtakes-design.md`,
+>   plan `docs/plans/2026-07-19-scratchpad-outtakes-plan.md`, decisions
+>   `docs/roadmap-decisions/2026-07-19-phase-4c-2-scratchpad-outtakes.md`).
+> - **4c.2a** "Cut selection to outtakes" (destructive) — planned; split from
+>   4c.2, designed when reached.
+> - **4c.3** Tags & Cross-References — planned.
 
 ### Goal
 
@@ -1971,16 +1987,17 @@ Paragraph-level or section-level tags that allow the writer to find all content 
 
 ### Data Model Changes
 
-**New table: Outtake**
+**New table: Outtake** *(4c.2 design supersedes this sketch — see
+`docs/plans/2026-07-19-scratchpad-outtakes-design.md`)*
 
 - `id` — UUID, primary key
 - `project_id` — foreign key -> Project
 - `label` — text, nullable
-- `content` — text (TipTap JSON, same format as chapters)
-- `word_count` — integer
+- `content` — text (TipTap JSON, same format as chapters; **images stripped on capture**)
+- ~~`word_count` — integer~~ — **dropped** in the 4c.2 design (computed client-side from loaded content)
 - `created_at` — timestamp
 - `updated_at` — timestamp
-- `deleted_at` — timestamp, nullable (soft delete)
+- ~~`deleted_at` — timestamp, nullable (soft delete)~~ — **dropped** in the 4c.2 design (hard delete + confirm, matching `ChapterSnapshot`; 4c.2a re-evaluates before the destructive cut)
 
 No separate tables for notes or tags — these are stored within the TipTap JSON as custom marks.
 
@@ -1990,7 +2007,7 @@ No separate tables for notes or tags — these are stored within the TipTap JSON
 - `POST /api/projects/{id}/outtakes` — create an outtake.
 - `GET /api/projects/{id}/outtakes` — list outtakes.
 - `PATCH /api/outtakes/{id}` — update outtake.
-- `DELETE /api/outtakes/{id}` — soft-delete outtake.
+- `DELETE /api/outtakes/{id}` — **hard-delete** outtake (204; the 4c.2 design supersedes this earlier soft-delete sketch).
 - `GET /api/projects/{id}/tags` — return all unique tags with occurrence counts and locations.
 
 ### UI/UX Notes

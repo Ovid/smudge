@@ -2,6 +2,7 @@ import { randomUUID as uuidv4 } from "node:crypto";
 import { countWords, TipTapDocSchema, sanitizeSnapshotLabel } from "@smudge/shared";
 import { truncateGraphemes } from "../utils/grapheme";
 import { buildAutoSnapshotLabel } from "./labels";
+import { insertAutoSnapshotIfChanged } from "./auto-snapshot";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
@@ -14,6 +15,19 @@ import {
 import { canonicalContentHash } from "./content-hash";
 import { MAX_CHAPTER_CONTENT_BYTES } from "../constants";
 import type { SnapshotRow, SnapshotListItem } from "./snapshots.types";
+
+/**
+ * How much of the restored snapshot's own label may be embedded in the
+ * generated "Before restore to ‘…’" label.
+ *
+ * I4 (dedup review 2026-07-26): this was a bare 450 with no stated link to the
+ * cap it sits under. It is deliberately well below LABEL_MAX_UNITS rather than
+ * derived from it (the template's own 20 units would leave 480): the headroom
+ * lets the template text grow without silently eating into the user's
+ * fragment. It is a budget, not the enforcement — buildAutoSnapshotLabel's
+ * clamp is what guarantees the result fits.
+ */
+const EMBEDDED_LABEL_MAX = 450;
 
 export async function createSnapshot(
   chapterId: string,
@@ -43,6 +57,14 @@ export async function createSnapshot(
     const snapshot = await txStore.insertSnapshot({
       id: uuidv4(),
       chapter_id: chapterId,
+      // S9 (dedup review 2026-07-26): the review called this `.trim()` dead,
+      // because sanitizedLabelBase already trims and the route is the only
+      // production caller. True of that path — but createSnapshot is a service
+      // function callable directly, snapshots.service.test.ts asserts it trims
+      // as its own contract, and dropping it would be a behaviour change with
+      // no user-visible benefit. It stays. The substance of S9 — the
+      // `.optional()`/`.nullish()` disagreement with the outtake twin — is
+      // fixed in schemas.ts.
       label: label?.trim() || null,
       content,
       word_count: chapter.word_count,
@@ -174,35 +196,17 @@ export async function restoreSnapshot(
     // the guarantee that the stored label is sanitized even if the embed
     // template ever adds bidi chars literally.
     const sanitizedEmbed = snapshot.label ? sanitizeSnapshotLabel(snapshot.label) : null;
-    const embedded = sanitizedEmbed ? truncateGraphemes(sanitizedEmbed, 450) : null;
+    const embedded = sanitizedEmbed ? truncateGraphemes(sanitizedEmbed, EMBEDDED_LABEL_MAX) : null;
     const rawLabel = embedded
       ? `Before restore to \u2018${embedded}\u2019`
       : `Before restore to snapshot from ${snapshot.created_at}`;
     const snapshotLabel = buildAutoSnapshotLabel(rawLabel);
 
     // Auto-snapshot the pre-restore content, deduped against the latest
-    // snapshot of ANY kind — manual OR auto (F-15). Unlike the manual-
-    // snapshot path (which dedups against the latest *manual* snapshot so an
-    // auto-snapshot can't block an explicit marker), this insert is itself an
-    // auto-snapshot, so it must also be skipped when the pre-restore content
-    // is byte-identical to a prior auto-snapshot left by an earlier
-    // restore/replace. This removes the identical-content history noise the
-    // flaw describes — including a re-restore whose pre-restore content
-    // already matches the most recent snapshot. The restore itself always
-    // proceeds; only the redundant snapshot insert is skipped.
-    const currentHash = canonicalContentHash(currentContent);
-    const latestHash = await txStore.getLatestSnapshotContentHashAnyKind(chapter.id);
-    if (latestHash !== currentHash) {
-      await txStore.insertSnapshot({
-        id: uuidv4(),
-        chapter_id: chapter.id,
-        label: snapshotLabel,
-        content: currentContent,
-        word_count: chapter.word_count,
-        is_auto: true,
-        created_at: new Date().toISOString(),
-      });
-    }
+    // snapshot of ANY kind (F-15) — including a re-restore whose pre-restore
+    // content already matches the most recent snapshot. See
+    // insertAutoSnapshotIfChanged for the full rationale.
+    await insertAutoSnapshotIfChanged(txStore, chapter, currentContent, snapshotLabel);
 
     // Replace content using the validated, parsed snapshot content.
     const newWordCount = countWords(newParsed);
@@ -233,11 +237,11 @@ export async function restoreSnapshot(
   // Fire velocity side-effects after the transaction commits
   try {
     const svc = getVelocityService();
-    await svc.recordSave(result.project_id);
+    await svc.updateDailySnapshot(result.project_id);
   } catch (err: unknown) {
     logger.error(
       { err, project_id: result.project_id, chapter_id: result.chapter_id },
-      "Velocity recordSave failed after restore (best-effort)",
+      "Velocity updateDailySnapshot failed after restore (best-effort)",
     );
   }
 

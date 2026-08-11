@@ -6,20 +6,46 @@ import { getImagesDir } from "../config/paths";
 // the image path helpers below keep a stable surface.
 export { getDataDir } from "../config/paths";
 
-export const ALLOWED_MIMES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
-
-/** Strict UUID v4 capture pattern — used by reference counting and export resolvers. */
-export const UUID_PATTERN = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
-
-/** Regex matching /api/images/{uuid} src attributes — case-insensitive, global. */
-export const IMAGE_SRC_REGEX = new RegExp(`src="/api/images/(${UUID_PATTERN})"`, "gi");
-
 const MIME_TO_EXT: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/png": "png",
   "image/gif": "gif",
   "image/webp": "webp",
 };
+
+/**
+ * The MIME types an upload may declare — the gate.
+ *
+ * S3 (dedup review 2026-07-26): derived from MIME_TO_EXT rather than re-typed.
+ * The two lists sat nine lines apart and had to agree, and this file already
+ * derives its third consumer (IMAGE_EXT_PATTERN) from the same map for exactly
+ * this reason. Drift failed closed but MISDIAGNOSED: a MIME added here alone
+ * reached validateMagicBytes' `default: return false` and was reported as
+ * "File content does not match declared type" — a content error for a config
+ * gap. No test bound the two.
+ */
+export const ALLOWED_MIMES = new Set(Object.keys(MIME_TO_EXT));
+
+/** Strict UUID v4 capture pattern — used by reference counting and export resolvers. */
+export const UUID_PATTERN = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+
+/**
+ * Regex matching /api/images/{uuid} src attributes — case-insensitive, global.
+ *
+ * C1 (dedup review 2026-07-26): the optional `?query` / `#fragment` tail is
+ * load-bearing, not defensive. This scanner runs immediately downstream of
+ * ALLOWED_IMAGE_SRC (export.renderers.ts), which accepts that tail — so when
+ * this pattern demanded the closing quote right after the uuid, a suffixed src
+ * was kept by the allowlist, missed here, and then deleted outright from the
+ * export by the unresolved-image catch-all in image-resolver.ts. The two are
+ * pinned together by the third column of
+ * `shared/src/__tests__/image-src-allowlist-parity.test.ts`; widening either
+ * without the other turns it red.
+ */
+export const IMAGE_SRC_REGEX = new RegExp(
+  `src="/api/images/(${UUID_PATTERN})(?:[?#][^"]*)?"`,
+  "gi",
+);
 
 export function mimeToExt(mime: string): string | null {
   return MIME_TO_EXT[mime] ?? null;

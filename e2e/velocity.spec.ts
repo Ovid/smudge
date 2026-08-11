@@ -1,25 +1,6 @@
-import { test, expect, type APIRequestContext } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-
-interface TestProject {
-  id: string;
-  title: string;
-  slug: string;
-}
-
-async function createTestProject(request: APIRequestContext): Promise<TestProject> {
-  // S6 (review 2026-04-25): Date.now() millisecond resolution can collide
-  // under Playwright sharding; append crypto.randomUUID() for hard uniqueness.
-  const res = await request.post("/api/projects", {
-    data: { title: `Velocity ${Date.now()}-${crypto.randomUUID()}`, mode: "fiction" },
-  });
-  expect(res.ok()).toBeTruthy();
-  return res.json();
-}
-
-async function deleteProject(request: APIRequestContext, slug: string) {
-  await request.delete(`/api/projects/${slug}`);
-}
+import { createTestProject, deleteProject, type TestProject } from "./helpers/project";
 
 test.describe("Progress strip on dashboard", () => {
   // Track creation explicitly so afterEach does not throw on
@@ -30,7 +11,7 @@ test.describe("Progress strip on dashboard", () => {
   let projectCreated = false;
 
   test.beforeEach(async ({ request }) => {
-    project = await createTestProject(request);
+    project = await createTestProject(request, "Velocity Test");
     projectCreated = true;
   });
 

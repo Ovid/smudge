@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import { getCachedContent, clearCachedContent } from "./useContentCache";
 import { useAbortableSequence } from "./useAbortableSequence";
 import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
+import { makeStaleProjectGuard } from "./staleProjectGuard";
 import {
   mapApiError,
   applyMappedError,
@@ -138,6 +139,7 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
       const slug = projectSlugRef.current;
       const projectId = projectRef.current?.id;
       if (!slug || !projectId) return;
+      const isStaleProject = makeStaleProjectGuard(projectRef, projectSlugRef);
       // I1 (review 2026-05-27 round 2): bump the per-create epoch BEFORE
       // anything else so any older create's still-pending recovery GET is
       // invalidated. The token is checked inside that GET's await branch
@@ -191,9 +193,7 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
         // chapter into Project B's state, producing a phantom chapter
         // in the sidebar and pointing subsequent edits at the wrong
         // project's chapter id.
-        if (projectRef.current?.id !== projectId) return;
-        if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
-          return;
+        if (isStaleProject()) return;
         setActiveChapter(newChapter);
         setChapterWordCount(0);
         setProject((prev) => (prev ? { ...prev, chapters: [...prev.chapters, newChapter] } : prev));
@@ -222,9 +222,7 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
         // there. The drift guards convert that stale-A 404 into a
         // silent no-op — same discipline as the existing onError gate
         // below, just hoisted above the navigation side-effect.
-        if (projectRef.current?.id !== projectId) return;
-        if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
-          return;
+        if (isStaleProject()) return;
         // S11 (4b.3c.3): a 404 means the project was deleted between
         // the sidebar render and the POST landing. The default banner
         // (createChapterProjectGone) was the wrong UX because the
@@ -316,14 +314,23 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
               // because the whole post-await block bails before reaching
               // it.
               if (createToken.isStale()) return;
-              // Merge only if the user is still on the same project (by
-              // id — stable across rename, changes on cross-project
-              // navigation). The prior slug-OR check let a stale
-              // recovery response merge into a different project's
-              // state after the user navigated away AND the new project
-              // finished loading (the two refs then realign to the new
-              // slug, making the OR evaluate true).
-              if (projectRef.current?.id === projectId) {
+              // Merge only if the user is still on the same project. The prior
+              // slug-OR check let a stale recovery response merge into a
+              // different project's state after the user navigated away AND the
+              // new project finished loading (the two refs then realign to the
+              // new slug, making the OR evaluate true).
+              //
+              // OOSS1 (agentic-review 2026-08-05): this was the one post-await
+              // arm in handleCreateChapter still on the id-only compare while
+              // its three siblings used the full-strength guard built at entry.
+              // The id check cannot see the PRE-LOAD window (URL slug advanced,
+              // loadProject unfinished, projectRef still holding A) — and this
+              // arm is the most expensive one to get wrong: setProject writes
+              // A's whole snapshot, the confirmed-status map is replaced with
+              // A's pairs, setActiveChapter pins A's new chapter, and any
+              // keystroke in that window auto-saves against A's chapter id
+              // while the user is on B's URL.
+              if (!isStaleProject()) {
                 setProject(refreshed);
                 // C2 (review 2026-04-25): re-seed the confirmed-status cache
                 // from the refreshed project. The recovery branch is a fresh
@@ -379,7 +386,14 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
         // without this recheck the failure-axis banner fires on B for
         // an A event (worst case: setError surfaces the full-page
         // overlay when no onError is wired, tearing down B's editor).
-        if (projectRef.current?.id !== projectId) return;
+        // S2 (review 2026-07-26): use the full-strength guard already built at
+        // this callback's entry rather than a hand-rolled id-only compare. The
+        // id check alone cannot see the pre-load window — URL slug advanced to
+        // B, loadProject not yet finished, projectRef still holding A's id — so
+        // it waved through exactly the case the comment above describes, the
+        // worst of which is setError raising the full-page overlay on B for an
+        // A event when no onError is wired.
+        if (isStaleProject()) return;
         if (onError) {
           onError(message);
         } else {
@@ -568,9 +582,7 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
       // surfaced A's "failed to delete" banner on B. Mirrors the
       // captured-id discipline in handleCreateChapter / handleReorderChapters /
       // handleUpdateProjectTitle.
-      const startedForProjectId = projectRef.current?.id;
-      const isStaleProject = () =>
-        startedForProjectId !== undefined && projectRef.current?.id !== startedForProjectId;
+      const isStaleProject = makeStaleProjectGuard(projectRef, projectSlugRef);
       // Sequence abort + controller abort + backoff-unblock. Before S3
       // this path omitted the backoff-unblock, so a retry asleep in
       // backoff could wake up after the chapter was gone. The isStale()
@@ -690,6 +702,7 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
       selectChapterSeq,
       deleteChapterOp,
       projectRef,
+      projectSlugRef,
       activeChapterRef,
       setProject,
       setActiveChapter,
@@ -705,6 +718,7 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
       const slug = projectSlugRef.current;
       const projectId = projectRef.current?.id;
       if (!slug || !projectId) return;
+      const isStaleProject = makeStaleProjectGuard(projectRef, projectSlugRef);
       // C5 (review 2026-04-24): abort any prior in-flight reorder
       // before issuing a new one so overlapping drag-drops cannot
       // commit out of drop order. The signal is threaded through the
@@ -712,27 +726,26 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
       const { promise, signal } = reorderOp.run((s) =>
         api.projects.reorderChapters(slug, orderedIds, s),
       );
-      // S6 (review 2026-04-21) + C1 (review 2026-04-24): drift guard —
-      // see handleCreateChapter for full rationale.
-      try {
-        await promise;
-        // C2 + C1: discard if the user navigated away mid-PUT. Without
-        // this, the reorder would apply Project A's ordered ids to
-        // Project B's chapters array — the filter by id then drops
-        // everything (ids don't match), leaving Project B with an
-        // empty chapters list until refresh.
-        if (projectRef.current?.id !== projectId) return;
-        if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
-          return;
+
+      // S4 (dedup review 2026-07-26): the success branch and the
+      // possiblyCommitted branch applied the new order with
+      // character-for-character identical code — same [S20] inside-updater
+      // epoch check, same map, same filter. The committed branch's comment
+      // claimed it "stays hand-rolled because it pairs with the [S20]
+      // inside-updater epoch check", but the success branch carries that same
+      // check, so the justification was void. Precedent: applyTitle in the
+      // sibling useChapterMetadata, extracted for exactly this reason.
+      //
+      // S20 (4b.3c.2): defense-in-depth for the React-scheduling window between
+      // each branch's outer project check and this updater actually running. A
+      // setProject queued from a concurrent project-switch could drain first,
+      // making prev a different project than the one whose orderedIds we
+      // captured at handler entry — prev.chapters would then be walked with A's
+      // ids, every lookup would miss, and project B would be left with an empty
+      // chapter list until refresh.
+      const applyOrder = () =>
         setProject((prev) => {
           if (!prev) return prev;
-          // S20 (4b.3c.2): defense-in-depth for the React-scheduling window
-          // between the outer check above and this updater running. A
-          // setProject queued from a concurrent project-switch could drain
-          // before this updater, making prev a different project than the
-          // one whose orderedIds we captured at handler entry. Without
-          // this guard, prev.chapters would be walked with A's ids and
-          // every miss filtered out, leaving project B empty.
           if (prev.id !== projectId) return prev;
           const reordered = orderedIds
             .map((id, index) => {
@@ -742,15 +755,24 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
             .filter(Boolean) as Chapter[];
           return { ...prev, chapters: reordered };
         });
+      // S6 (review 2026-04-21) + C1 (review 2026-04-24): drift guard —
+      // see handleCreateChapter for full rationale.
+      try {
+        await promise;
+        // C2 + C1: discard if the user navigated away mid-PUT. Without
+        // this, the reorder would apply Project A's ordered ids to
+        // Project B's chapters array — the filter by id then drops
+        // everything (ids don't match), leaving Project B with an
+        // empty chapters list until refresh.
+        if (isStaleProject()) return;
+        applyOrder();
       } catch (err) {
         // C5: ABORTED means a newer reorder superseded this one and is
         // driving its own PATCH. Reverting here would stomp the live
         // call; stay silent and let the newer reorder land.
         if (signal.aborted) return;
         clientWarn("Failed to reorder chapters:", err);
-        if (projectRef.current?.id !== projectId) return;
-        if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
-          return;
+        if (isStaleProject()) return;
         // I4: route through the onError callback rather than setError so
         // a 400 on id-list mismatch (recoverable per CLAUDE.md) surfaces
         // as a dismissible banner instead of tearing down the editor.
@@ -765,26 +787,10 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
         // committed server state, and surface the committed copy so
         // the user knows the response was ambiguous.
         //
-        // The committed-branch setProject stays hand-rolled (outside of
-        // applyMappedError's onCommitted) because it pairs with the
-        // [S20] inside-updater epoch check — routing it through the
-        // helper would obscure the per-branch placement intent.
+        // Kept outside applyMappedError's onCommitted so the per-branch
+        // placement intent stays visible; the updater itself is applyOrder.
         if (mapped.possiblyCommitted) {
-          setProject((prev) => {
-            if (!prev) return prev;
-            // S20 (4b.3c.2): same scheduling guard as the success branch
-            // above — the committed-path updater is reached via the catch,
-            // but the project could still have switched in the React queue
-            // between the catch-arm outer check (line 1144) and here.
-            if (prev.id !== projectId) return prev;
-            const reordered = orderedIds
-              .map((id, index) => {
-                const ch = prev.chapters.find((c) => c.id === id);
-                return ch ? { ...ch, sort_order: index } : undefined;
-              })
-              .filter(Boolean) as Chapter[];
-            return { ...prev, chapters: reordered };
-          });
+          applyOrder();
         }
         // 4b.3c.2 S15: migrate the message-dispatch tail to applyMappedError.
         // ABORTED's message=null is handled inside the helper; onMessage

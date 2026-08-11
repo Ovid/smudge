@@ -50,15 +50,12 @@ async function createProjectAndChapter() {
 
 describe("chapters.service", () => {
   describe("updateChapter()", () => {
-    it("succeeds even when velocity recordSave throws", async () => {
+    it("succeeds even when velocity updateDailySnapshot throws", async () => {
       const { chapterId } = await createProjectAndChapter();
       const spy = vi.spyOn(logger, "error").mockImplementation(() => {});
 
       try {
         setVelocityService({
-          recordSave: async () => {
-            throw new Error("velocity broken");
-          },
           updateDailySnapshot: async () => {
             throw new Error("velocity broken");
           },
@@ -76,7 +73,7 @@ describe("chapters.service", () => {
             project_id: expect.any(String),
             chapter_id: chapterId,
           }),
-          "Velocity recordSave failed (best-effort)",
+          "Velocity updateDailySnapshot failed after save (best-effort)",
         );
       } finally {
         spy.mockRestore();
@@ -158,9 +155,6 @@ describe("chapters.service", () => {
 
       try {
         setVelocityService({
-          recordSave: async () => {
-            throw new Error("velocity broken");
-          },
           updateDailySnapshot: async () => {
             throw new Error("velocity broken");
           },
@@ -197,9 +191,6 @@ describe("chapters.service", () => {
         await t.db("chapters").where({ id: chapterId }).update({ deleted_at: now });
 
         setVelocityService({
-          recordSave: async () => {
-            throw new Error("velocity broken");
-          },
           updateDailySnapshot: async () => {
             throw new Error("velocity broken");
           },
@@ -447,7 +438,7 @@ describe("chapters.service", () => {
       expect(typeof result).toBe("object");
       expect(warnSpy).toHaveBeenCalledWith(
         expect.objectContaining({ project_id: expect.any(String) }),
-        "applyImageRefDiff: newContent JSON.parse failed; aborting diff to avoid mass decrement",
+        "applyImageRefDiff: newContent is not a TipTap object; aborting diff to avoid mass decrement",
       );
       logSpy.mockRestore();
       warnSpy.mockRestore();
