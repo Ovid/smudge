@@ -17,9 +17,9 @@ export type RefreshTrashResult =
  * post-delete refresh need. Callers own their state writes; the helper owns
  * the pipeline.
  *
- * `projectRef.current` is captured at entry; if the user navigates to a
- * different project mid-flight, the return is `{ kind: "stale" }` so the
- * caller bails out cleanly.
+ * The `project` argument is the baseline: if the ref has already moved on, or
+ * the user navigates to a different project mid-flight, the return is
+ * `{ kind: "stale" }` so the caller bails out cleanly.
  *
  * S8 (dedup review 2026-07-26): the drift guard was a local id-only copy, and
  * its `startedForProjectId !== undefined` arm was DEAD — it guarded
@@ -37,6 +37,15 @@ export async function refreshTrashList(
   projectSlugRef: { readonly current: string | null | undefined },
   trashOp: AbortableAsyncOperation,
 ): Promise<RefreshTrashResult> {
+  // I4 (agentic-review 2026-08-05): the OPERATION's project is the baseline.
+  // makeStaleProjectGuard reads its baseline off `projectRef.current` at
+  // construction, so it only reproduces the pre-S8 semantics when the ref still
+  // agrees with the argument. confirmDeleteChapter awaits the delete before
+  // calling here, so it can already have advanced to B while `project` — and
+  // therefore the slug this GET asks for — is still A: both guard checks then
+  // pass and A's deleted chapters paint into B's trash view. Reconciling the two
+  // up front keeps the full-strength guard AND the argument-based baseline.
+  if (projectRef.current?.id !== project.id) return { kind: "stale" };
   const isStaleProject = makeStaleProjectGuard(projectRef, projectSlugRef);
   const { promise, signal } = trashOp.run((s) => api.projects.trash(project.slug, s));
   try {

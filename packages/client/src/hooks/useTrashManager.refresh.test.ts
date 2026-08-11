@@ -147,6 +147,30 @@ describe("refreshTrashList", () => {
     expect(result).toEqual({ kind: "stale" });
   });
 
+  // I4 (agentic-review 2026-08-05): the S8 dedup silently moved the drift
+  // BASELINE from the operation's own project (the `project` argument, which is
+  // also the slug the GET uses) to whatever `projectRef.current` happened to
+  // hold at construction. confirmDeleteChapter awaits handleDeleteChapter
+  // BEFORE calling here, so the ref can already have advanced to B while the
+  // GET still asks for A's slug — both guard checks then pass and project A's
+  // deleted chapters paint into project B's trash view, from which Restore
+  // splices an A chapter into B's sidebar.
+  it("returns { kind: 'stale' } when the ref already moved on before the call", async () => {
+    const projectA = makeProject("p-1", "alpha");
+    const projectB = makeProject("p-2", "beta");
+    const projectRef = { current: projectB };
+    const slugRef = { current: projectB.slug };
+    const controller = new AbortController();
+    const trashOp = makeTrashOp(controller.signal);
+    vi.mocked(api.projects.trash).mockResolvedValue([]);
+
+    const result = await refreshTrashList(projectA, projectRef, slugRef, trashOp);
+
+    expect(result).toEqual({ kind: "stale" });
+    // Bailing before the GET also spares a request nobody will read.
+    expect(api.projects.trash).not.toHaveBeenCalled();
+  });
+
   it("returns { kind: 'error', mapped } on rejection when project unchanged and signal not aborted", async () => {
     const project = makeProject("p-1", "alpha");
     const projectRef = { current: project };
