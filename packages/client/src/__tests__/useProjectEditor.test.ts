@@ -1387,6 +1387,72 @@ describe("useProjectEditor", () => {
     warn.calledWith("handleCreateChapter recovery GET failed:", expect.any(Error));
   });
 
+  it("OOSS1 (agentic-review 2026-08-05): the create-recovery merge arm bails in the PRE-LOAD window", async () => {
+    // The three other post-await arms in handleCreateChapter use the
+    // full-strength guard built at entry; this one kept an id-only compare,
+    // which cannot see the window between the URL slug changing and
+    // loadProject completing — projectRef still holds A, so the id matches.
+    // It is the most expensive arm to get wrong: setProject writes A's whole
+    // snapshot over B, the confirmed-status map is replaced with A's pairs,
+    // setActiveChapter pins A's new chapter, and a keystroke in that window
+    // auto-saves against A's chapter id while the user is on B's URL.
+    const warn = expectConsole("warn");
+    const newChapter = {
+      id: "ch3",
+      project_id: "p1",
+      title: UNTITLED_CHAPTER,
+      content: null,
+      sort_order: 2,
+      word_count: 0,
+      status: "outline" as const,
+      created_at: "2026-01-01",
+      updated_at: "2026-01-01",
+      deleted_at: null,
+    };
+    const refreshedProject = { ...mockProject, chapters: [mockChapter1, mockChapter2, newChapter] };
+
+    vi.mocked(api.chapters.create).mockRejectedValue(
+      new ApiRequestError("body parse error", 200, "BAD_JSON"),
+    );
+    let resolveRecovery!: (p: ProjectWithChapters) => void;
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject) // initial load for slug A
+      .mockReturnValueOnce(
+        new Promise((res) => {
+          resolveRecovery = res;
+        }),
+      ) // the recovery GET, held open
+      .mockReturnValue(new Promise(() => {})); // slug B's load: never settles
+
+    const { result, rerender } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug),
+      { initialProps: { slug: "test-project" } },
+    );
+    await waitFor(() => expect(result.current.project?.chapters).toHaveLength(2));
+
+    let createPromise!: Promise<void>;
+    act(() => {
+      createPromise = result.current.handleCreateChapter();
+    });
+    await waitFor(() => expect(api.projects.get).toHaveBeenCalledTimes(2));
+
+    // Only the URL moves — project B's GET never settles, so `project` stays A
+    // and an id-only comparison sees no drift at all.
+    rerender({ slug: "project-b" });
+
+    await act(async () => {
+      resolveRecovery(refreshedProject);
+      await createPromise;
+    });
+
+    // A's recovery snapshot must not have been merged, and A's new chapter must
+    // not have been pinned active under B's URL.
+    expect(result.current.project?.chapters.find((c) => c.id === "ch3")).toBeUndefined();
+    expect(result.current.activeChapter?.id).not.toBe("ch3");
+    warn.calledWith("Failed to create chapter:", expect.any(ApiRequestError));
+  });
+
   it("OOSI1 (agentic-review 2026-08-04): the rename recovery arm does not rewind projectSlugRef in the PRE-LOAD window", async () => {
     // handleUpdateProjectTitle's possibly-committed recovery arm guarded only
     // `projectRef.current?.id === projectId` before BOTH setProject(refreshed)

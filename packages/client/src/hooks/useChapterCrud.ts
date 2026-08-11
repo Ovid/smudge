@@ -314,14 +314,23 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
               // because the whole post-await block bails before reaching
               // it.
               if (createToken.isStale()) return;
-              // Merge only if the user is still on the same project (by
-              // id — stable across rename, changes on cross-project
-              // navigation). The prior slug-OR check let a stale
-              // recovery response merge into a different project's
-              // state after the user navigated away AND the new project
-              // finished loading (the two refs then realign to the new
-              // slug, making the OR evaluate true).
-              if (projectRef.current?.id === projectId) {
+              // Merge only if the user is still on the same project. The prior
+              // slug-OR check let a stale recovery response merge into a
+              // different project's state after the user navigated away AND the
+              // new project finished loading (the two refs then realign to the
+              // new slug, making the OR evaluate true).
+              //
+              // OOSS1 (agentic-review 2026-08-05): this was the one post-await
+              // arm in handleCreateChapter still on the id-only compare while
+              // its three siblings used the full-strength guard built at entry.
+              // The id check cannot see the PRE-LOAD window (URL slug advanced,
+              // loadProject unfinished, projectRef still holding A) — and this
+              // arm is the most expensive one to get wrong: setProject writes
+              // A's whole snapshot, the confirmed-status map is replaced with
+              // A's pairs, setActiveChapter pins A's new chapter, and any
+              // keystroke in that window auto-saves against A's chapter id
+              // while the user is on B's URL.
+              if (!isStaleProject()) {
                 setProject(refreshed);
                 // C2 (review 2026-04-25): re-seed the confirmed-status cache
                 // from the refreshed project. The recovery branch is a fresh
