@@ -821,6 +821,36 @@ outtakes: {
 - Create: `packages/client/src/components/OuttakeCard.tsx`
 - Create: `packages/client/src/components/__tests__/OuttakeCard.test.tsx`
 
+> **Superseded during implementation (agentic-review 2026-08-05, item S4).**
+> The prop shape below is INVERTED in the delivered component. This task
+> specifies a presentational card that delegates every write upward
+> (`onUpdateLabel(id, next)`, `onDelete(id)`); what shipped is the opposite
+> split — `OuttakeCard` calls `api.outtakes.*` itself and owns both
+> re-entrancy latches (`updateInFlightRef` / `deleteInFlightRef`), the 404
+> reconciliation, the error routing through `mapApiError`, and the
+> field-revert policy. Delivered props:
+>
+> ```ts
+> interface OuttakeCardProps {
+>   outtake: OuttakeRow;
+>   onInsert: (outtake: OuttakeRow) => void;
+>   onDeleted: (id: string, message?: string) => void;   // I3: message is a PARAMETER
+>   onUpdated: (row: OuttakeRow) => void;
+>   onError: (message: string) => void;
+>   onPossiblyCommitted: (message: string) => void;
+> }
+> ```
+>
+> **Read this before Phase 4c.2a (the destructive cut), where the outtake
+> becomes the sole copy of the text.** Two delivered decisions do not follow
+> from the task text and are load-bearing: (a) the card's mutations carry **no
+> `AbortSignal`** on purpose — an ordinary tab switch unmounts the card, and
+> cancelling a possibly-committed write is worse than letting it land (I3,
+> review 2026-08-04); (b) because of (a), a settle can arrive after a project
+> switch, so the panel — not the card — guards every card callback on the row's
+> own `project_id` (I5, review 2026-08-05). An author who assumed from this task
+> that the PANEL owns abort policy would get both wrong.
+
 Renders: label (inline-editable input; blur/Enter → `onUpdateLabel`), a preview from `toPlainText(content)` with expand, `created_at`, a word count via `countWords(content)`, and buttons Insert / Copy / Delete. Delete opens `ConfirmDialog` (via `useDialogLifecycle`). Copy writes `toPlainText(content)` to `navigator.clipboard`. All labels from `STRINGS.outtakes`.
 
 **Step 1 — Failing tests:** renders label + word count; clicking Insert calls `onInsert(outtake)`; clicking Copy calls `navigator.clipboard.writeText` with the plain text; Delete → confirm → `onDelete(id)`; editing the label calls `onUpdateLabel(id, next)`. Use `expectConsole` if any path warns (it shouldn't).
@@ -846,12 +876,22 @@ Renders: label (inline-editable input; blur/Enter → `onUpdateLabel`), a previe
 > substitution introduced were found and fixed in the same review round: a mount
 > with a non-null `capturedOuttake` discarded the panel's list load (C1), and a
 > mutation landing during an in-flight load discarded it permanently (I3).
+>
+> **Prop set as delivered (agentic-review 2026-08-05, item S4).** The block
+> below shows three fields; the interface has six. `externalRefreshKey` (S1)
+> is the toolbar capture's possibly-committed refetch signal, and
+> `draft` / `onDraftChange` (I6) hold the blank-note text in EditorPage
+> because this panel unmounts on an ordinary tab switch and used to take the
+> writer's unsent text with it.
 
 ```ts
 interface OuttakesPanelProps {
   projectId: string;
   onInsert: (outtake: OuttakeRow) => void;
   capturedOuttake: OuttakeRow | null; // the row EditorPage's toolbar capture just POSTed
+  externalRefreshKey: number;         // S1: refetch after a 2xx BAD_JSON capture
+  draft: string | null;               // I6: owned by EditorPage; null = form closed
+  onDraftChange: (draft: string | null) => void;
 }
 ```
 
