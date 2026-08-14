@@ -1,0 +1,602 @@
+# Architecture Report — smudge
+
+**Date:** 2026-08-11
+**Commit:** b911d91e5e0e7aecdeb07cd0a2fb9a942a22573b
+**Languages:** TypeScript (Node.js 22 / Express 4 backend, React 19 / Vite / TipTap v2 frontend), better-sqlite3 + Knex, Zod, Vitest + Playwright
+**Key directories:** `packages/shared/`, `packages/server/`, `packages/client/`, `e2e/`, `scripts/`
+**Scope:** Full repository (`.devcontainer/` excluded per project policy; `packages/*/dist/` excluded as build output)
+
+## Repo Overview
+
+Smudge is a single-user, no-auth, single-process web application for writing long-form fiction and non-fiction, organized as projects containing chapters — a self-hosted replacement for Google Docs for book-length work. It is an npm-workspaces monorepo with three packages: `shared` (types, Zod schemas, `countWords()`, TipTap JSON utilities, imported isomorphically), `server` (Express API layered `Routes → Services → ProjectStore facade → Repositories`, better-sqlite3 through Knex, a typed `AppError` taxonomy, and eleven domain modules: projects, chapters, chapter-statuses, settings, velocity, snapshots, images, search, export, outtakes, backup), and `client` (a React SPA whose editor save-pipeline is built from a family of purpose-built hooks — `useEditorMutation`, `useEditorMutationMachine`, `useAbortableSequence`, `useAbortableAsyncOperation` — plus centralized error-mapping and string-externalization layers). Roughly 180 non-test source files, ~24k non-test lines, ~86k lines including tests, with enforced coverage thresholds (95/85/90/95) and 19+ architecture-decision logs under `docs/roadmap-decisions/`.
+
+242 commits have landed since the previous report (2026-07-11), dominated by Phase 4c.2 (outtakes) and its review rounds.
+
+The codebase remains unusually disciplined, and the findings skew accordingly: the confirmed flaw list is long but 20 of 35 items are Low impact, and most are *consistency* defects — a good pattern applied to three of four sibling sites. The two High-impact flaws are a genuine security gap in the trash-purge path and a coverage hole in the snapshot-restore controller. The dominant structural theme is **the newest module teaching the older ones**: outtakes was built with a stricter corruption gate, single-transaction liveness checks, `.strict()` schemas, and a discriminating label-length error code, and in each case its older siblings were left on the weaker pattern.
+
+---
+
+## Strengths
+
+### [S-01] Server layering has no repository leaks
+- **Category:** S1 (Clear modular boundaries), also S4
+- **Impact:** High
+- **Explanation:** Exactly one production file imports a `*.repository` module; no route, service, or helper reaches past the `ProjectStore` facade. The documented `Routes → Services → Store → Repositories` rule is a fact about the tree, not an aspiration.
+- **Evidence:** `packages/server/src/stores/sqlite-project-store.ts:26-33` — `import * as projectsRepo from "../projects/projects.repository";` ×8, the only non-test occurrences. `grep -rn "\.repository" packages/server/src` → 8 hits here, 11 in `__tests__/`, zero elsewhere.
+- **Found by:** Structure & Boundaries, Coupling & Dependencies (independent agreement)
+
+### [S-02] Zero import cycles across the non-test source tree
+- **Category:** S3 (Loose coupling)
+- **Impact:** High
+- **Explanation:** The full resolved import graph — including `import type`, `export … from`, dynamic `import()`, and `@smudge/shared` subpath exports — is a DAG. The verifier rebuilt the graph independently over a *superset* of files (180 vs the specialist's 161, adding `scripts/` and `e2e/`) and found 0 unresolved specifiers and 0 cycles, counting type-only edges.
+- **Evidence:** Whole repo; the only side-effect import is `packages/client/src/main.tsx:11` → `./index.css`.
+- **Found by:** Coupling & Dependencies
+- **Caveat:** Nothing enforces this — see [F-09].
+
+### [S-03] Package dependency direction is strictly one-way
+- **Category:** S4 (Stable dependency direction)
+- **Impact:** Medium *(downgraded from High: in a three-package monorepo where `shared` is by construction the leaf, this is closer to structural than hard-won)*
+- **Explanation:** `shared` has no production import of `server` or `client`; neither leaf package imports the other. The only cross-package references in production source are cross-referencing comments.
+- **Evidence:** `grep -rn "@smudge" packages/shared/src` (non-test) → 7 hits, all comments. `packages/client/src/sanitizer.ts:78,103` and `packages/server/src/export/export.renderers.ts:36,58,72` are comments, not imports. Five+ shared parity tests read sibling sources as *text* via `readFileSync` — not module edges.
+- **Found by:** Coupling & Dependencies
+
+### [S-04] The `shared` barrel encodes its own browser/node boundary
+- **Category:** S1 (Clear modular boundaries)
+- **Impact:** Medium
+- **Explanation:** The barrel deliberately does not re-export the node-only (`node:fs`) and TipTap-heavy modules; they are reachable only through named subpath exports, with the concrete failure mode written into the comment.
+- **Evidence:** `packages/shared/src/index.ts:47-56` — "deliberately NOT re-exported here… the eager `import { lstatSync } from "node:fs"` throws at React-app boot time"; `packages/shared/package.json:7-20` defines `./node-fs-helpers` and `./editor-extensions`. Verified: `grep -n "editorExtensions\|findDirectoryConflict" packages/shared/src/index.ts` → zero hits.
+- **Found by:** Structure & Boundaries, Coupling & Dependencies (independent agreement)
+
+### [S-05] The `outtakes` module is a vertical slice with recorded domain reasoning
+- **Category:** S13 (Domain modeling strength)
+- **Impact:** Medium
+- **Explanation:** Routes/service/repository/types for one bounded concept, with the domain contract stated in the service header and each decision tied to its failure mode — no word count, images stripped authoritatively on capture, notes deliberately preserved, parent-liveness on every operation.
+- **Evidence:** `packages/server/src/outtakes/outtakes.service.ts:6-31` — "Images are stripped on the way in (authoritative) so the drawer never holds image references — this is what keeps outtakes out of every image-refcount and export path structurally." All four operations (`createOuttake:39`, `listOuttakes:60`, `updateOuttakeLabel:72`, `deleteOuttake:83`) open with `store.transaction(...)`, without exception.
+- **Found by:** Structure & Boundaries
+
+### [S-06] Prior finding F-17 was fixed properly, with the reasoning recorded
+- **Category:** S2 (High cohesion)
+- **Impact:** Medium
+- **Explanation:** The ZIP byte-format/security layer was pulled out of backup lifecycle orchestration into a dependency-free module, and the header argues why a *module* rather than a region.
+- **Evidence:** `packages/server/src/backup/backup-zip-format.ts:1-19` — "They live in their own module — NOT merely their own region — so both production (runRestore) and the security-critical bomb/zip-slip tests import the SAME byte-offset logic." `backup-core.ts:23,38-39` re-exports every symbol, so no importer broke.
+- **Found by:** Structure & Boundaries
+
+### [S-07] Single-owner conventions are actually single-owner
+- **Category:** S14 (Simple, pragmatic abstractions)
+- **Impact:** Medium
+- **Explanation:** Two of the steering file's single-owner claims survive exhaustive grep: `localStorage` is touched by exactly two client modules, and every native `<dialog>` component routes through `useDialogLifecycle`.
+- **Evidence:** `packages/client/src/hooks/usePersistedState.ts:70,162` and `useContentCache.ts:7,18,28,48` (the documented exception) are the only production `localStorage` sites. `grep -rln "<dialog"` and `grep -rln useDialogLifecycle` return the identical five-file set.
+- **Found by:** Structure & Boundaries
+
+### [S-08] Hook→component edges are type-only
+- **Category:** S3 (Loose coupling)
+- **Impact:** Low *(downgraded from Medium: three imports total)*
+- **Explanation:** Components import hooks freely; hooks never import a component *value*. The three hook→component edges that exist are all `import type`, closing the one direction that would create a runtime cycle.
+- **Evidence:** `packages/client/src/hooks/useEditorMutation.ts:2`, `useSnapshotController.ts:12` (`import type { EditorHandle }`), `useSnapshotState.ts:11` (`import type { SnapshotPanelHandle }`) — the only three non-test `from "../components` lines.
+- **Found by:** Coupling & Dependencies
+
+### [S-09] Supply-chain tooling is a clean pure-core / IO-shell split
+- **Category:** S5 (Dependency management hygiene)
+- **Impact:** Medium
+- **Explanation:** The cooldown gate's decision logic is a pure, unit-tested, coverage-instrumented module; the network/fs/exit shell is thin and coverage-excluded with the exclusion justified in config.
+- **Evidence:** `scripts/dep-cooldown-core.mjs` (674 lines, 19 exports) vs `scripts/dep-cooldown.mjs` (288); `vitest.config.ts:30-35` excludes only the shell. Independently verified: of 41 production dependencies across all four manifests, 39 appear in `docs/dependency-licenses.md` (the two absentees are the internal `@smudge/shared` workspace package), with two dual-license elections documented.
+- **Found by:** Coupling & Dependencies
+
+### [S-10] The API error/status contract is enforced from both ends and pinned by tests
+- **Category:** S6 (Consistent API contracts), with S7
+- **Impact:** High
+- **Explanation:** `ERROR_STATUS_ALLOWLIST` is a single machine-readable `ReadonlySet` guarded at *both* ends — the `AppError` constructor throws on an off-allowlist status (catching taxonomy bugs the handler's `instanceof` early-return would miss) and the global handler clamps library-supplied statuses while preserving `rawStatus` in the log.
+- **Evidence:** `packages/server/src/errors/appError.ts:40,64-70` — `if (!ERROR_STATUS_ALLOWLIST.has(status)) throw new TypeError(...)`; `packages/server/src/app.ts:105-110` — `const status = ERROR_STATUS_ALLOWLIST.has(rawStatus) ? rawStatus : rawStatus >= 400 && rawStatus < 500 ? 400 : 500;`. Verified independently: `grep -rn "204" packages/server/src/*/*.routes.ts` returns exactly the five DELETEs plus the two documented non-DELETE mutations, all body-less. `error-taxonomy-contract.test.ts` pins status+code+message per failure path; `wire-type-parity.test.ts` compile-asserts row/wire parity *and* that un-narrowed rows do not match.
+- **Found by:** Integration & Data, Error Handling & Observability (merged — two ends of one mechanism)
+
+### [S-11] The outtake degraded-read contract is carried on the wire and honored at every consumer
+- **Category:** S6 (Consistent API contracts)
+- **Impact:** Medium
+- **Explanation:** A corrupt row is substituted with a doc that *passes* `TipTapDocSchema`, so "empty" cannot be read as "safe"; the flag is optional-and-omitted on the happy path (never a stale `false`), and every consumer tests the flag rather than emptiness.
+- **Evidence:** `packages/server/src/outtakes/outtakes.repository.ts:64-65` — `...(corrupt ? { content_corrupt: true as const } : {})`; consumers at `OuttakeCard.tsx:233,278` (clipboard copy refuses and says why) and `EditorPage.tsx:571`.
+- **Found by:** Integration & Data
+
+### [S-12] Retry policy is partitioned by idempotency, with explicit no-retry recovery for non-idempotent mutations
+- **Category:** S12 (Resilience patterns)
+- **Impact:** High
+- **Explanation:** The only auto-retried call in the client is the idempotent `PATCH /api/chapters/{id}`; every non-idempotent POST refetches instead of re-POSTing and says so in a comment tied to its specific data-loss risk. The retry loop re-reads the latest content each attempt and shares the request's `AbortSignal` with its backoff sleep.
+- **Evidence:** `packages/client/src/hooks/useProjectEditor.ts:373-379` (`const latest = latestContentRef.current` inside the loop), `:517-519` (`await sleep(backoffMs, s)`). Non-idempotent recovery: `useChapterCrud.ts:250-266`, `OuttakesPanel.tsx:296-307`, `useFindReplaceController.ts:334`. Verified: all six `MAX_RETRIES`/`SAVE_BACKOFF_MS` hits are in one file; there is no second retry loop anywhere.
+- **Found by:** Integration & Data
+- **Honest gap (verified, ships with this strength):** `grep -rn "AbortSignal.timeout\|requestTimeout\|headersTimeout"` across client and server production source returns **zero hits**. A stalled connection leaves the save promise pending with `saveStatus === "saving"` — a stuck indicator, not data loss, since the draft cache and `beforeunload` guard hold the text. This is about HTTP request timeouts and does not contradict [S-13]'s `REGEX_DEADLINE_MS`, which is a CPU-time bound on one endpoint.
+
+### [S-13] Untrusted-input defenses on the search/replace surface are layered and fail closed
+- **Category:** S10 (Security built-in)
+- **Impact:** High
+- **Explanation:** Five independent bounds on one endpoint, each guarding a distinct amplification route, all throwing *inside* the transaction so a partial replace never persists; neighbouring TipTap walkers fail closed rather than guessing.
+- **Evidence:** `packages/server/src/search/search.service.ts:33` (`REGEX_DEADLINE_MS = 2_000`, checked at `:139` and `:255`), `:66-71` (compiles with the same flags runtime uses so a `\p{L}` pattern 400s instead of 500-ing later), `:284` (`max_output_chars` applied *during* per-match expansion "so pathological `$'` amplification can't allocate gigabytes of intermediate strings"), `:319-321` (`Buffer.byteLength` vs `MAX_CHAPTER_CONTENT_BYTES`), `:346-360` (all four typed throws → 400). Fail-closed neighbours: `images.references.ts:141-147` ("aborting diff to avoid mass decrement"), `:207-222` (`scanChapterContentForImage` returns `"unreadable"`, blocking an irreversible delete).
+- **Found by:** Integration & Data
+
+### [S-14] The TypeError-vs-SyntaxError distinction is load-bearing and applied at all four body-read sites
+- **Category:** S7 (Robust error handling)
+- **Impact:** Medium
+- **Explanation:** A `TypeError` during a body read means the stream broke post-headers (the server never flushed a body), so it routes to NETWORK/transient rather than BAD_JSON — which would otherwise raise a *false* "possibly committed" lock banner.
+- **Evidence:** `packages/client/src/api/client.ts:220-222` — "a TypeError here is a stream-level network fault… Classifying it as BAD_JSON drives the 'possibly committed' UX — but the server never flushed a body". The same ladder appears at `readErrorEnvelope` (`:133-140`), `apiFetch` 2xx (`:207-231`), `projects.export` (`:359-376`), `images.upload` (`:468-483`). No fifth body-read site exists.
+- **Found by:** Error Handling & Observability
+
+### [S-15] The single-owner error mapper is empirically complied with, not just documented
+- **Category:** S7 (Robust error handling)
+- **Impact:** High
+- **Explanation:** "Raw `err.message` must never reach the UI" holds with zero violations across the client, and the mapper is hardened against prototype-pollution and inherited-property reads on server-controlled `extras`.
+- **Evidence:** `packages/client/src/errors/apiErrorMapper.ts:129-133` — `Object.hasOwn(scope.byCode, err.code)` plus a `typeof === "string"` check; `api/client.ts:93-104` — `Object.create(null)`, skips `__proto__`/`constructor`/`prototype`, caps at `MAX_EXTRAS_KEYS`. Verified: `grep -rn "err.message|error.message"` across non-test client source → 6 hits, all legitimate (four synthesizing `[dev]`-prefixed developer copy, two reading `mapApiError(...).message`). Used at 66 call sites across 23 non-test files.
+- **Found by:** Error Handling & Observability
+- **Caveat:** Compliance is review-enforced. Unlike [S-23]'s rules, there is no red test if a new call site skips the mapper.
+
+### [S-16] Request correlation with a bounded inbound-id allowlist and a zero-noise access log
+- **Category:** S8 (Observability present)
+- **Impact:** Medium
+- **Explanation:** Every request gets a correlation id — an inbound `X-Request-Id` only if it matches a bounded charset/length pattern, otherwise a fresh UUID — bound into a child logger, echoed in the response header, with the access log at `debug` so it costs nothing at the default level.
+- **Evidence:** `packages/server/src/requestContext.ts:22` — `const REQUEST_ID_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;`; `:45-51` — `req.log = logger.child({ req_id, method, path })`, `res.setHeader("X-Request-Id", id)`. Mounted at `app.ts:38` ahead of the routers; `globalErrorHandler` prefers `req.log` (`app.ts:111-118`) so a 500 carries the same id.
+- **Found by:** Error Handling & Observability
+
+### [S-17] Log-flood dedup on the raw-bytes fallback path
+- **Category:** S8 (Observability present)
+- **Impact:** Low
+- **Explanation:** When canonicalization fails, the warn fires once per *unique* corrupt content (sha256-keyed) and drops to `debug` on repeats, so a corrupt chapter row hit repeatedly cannot bury unrelated warnings.
+- **Evidence:** `packages/server/src/snapshots/content-hash.ts:79-91` — `const alreadyWarned = warnedFallbackDigests.has(rawDigest); … if (!alreadyWarned) logger.warn(…) else logger.debug(…)`.
+- **Found by:** Error Handling & Observability
+- **Adjudication note:** Coupling & Dependencies reported this same code as a *flaw* (premature optimization: a 256-entry hand-rolled LRU plus a test-only reset export, guarding against an "adversarial server" the project explicitly disclaims). The verifier traced the call graph — `canonicalContentHash` runs on manual snapshot create, restore, and project-wide replace, **not** on the auto-save PATCH path — and ruled: the strength survives but is narrow (hence Low), and the flaw does not clear the reporting bar. The ~18 lines of bounding machinery are mildly over-built for a single-user process, and the code's own "adversarial" justification does contradict the project's stated premise, but bounded, commented, test-isolated memory hygiene is not worth a reviewer's attention.
+
+### [S-18] Best-effort side effects are logged with domain IDs, near-consistently
+- **Category:** S8 (Observability present)
+- **Impact:** Medium
+- **Explanation:** Post-commit best-effort side effects log `{err, <domain-id>}` with a message naming the operation — which is what makes the accepted F-2 trade-off (no request correlation in the service layer) workable, since for a single writer the domain ID *is* the correlation key.
+- **Evidence:** `packages/server/src/chapters/chapters.service.ts:132-135,194-197,300-303`, `search/search.service.ts:376-379`, `snapshots/snapshots.service.ts:242-245` all use `logger.error({ err, project_id, chapter_id }, "Velocity updateDailySnapshot failed … (best-effort)")`; `images.reaper.ts:53,71,85`, `db/purge.ts:65`, `images.service.ts:120` follow the same shape across ~12 sites.
+- **Found by:** Error Handling & Observability
+- **Exceptions that must be named for the claim to be accurate:** two unlogged deviations, both reported as flaws — `chapters.service.ts:145-155` ([F-31]) and `backup-core.ts:359-361` ([F-16]).
+
+### [S-19] One owner for every persistence location, with the reasoning for each recorded
+- **Category:** S9 (Configuration discipline)
+- **Impact:** Medium
+- **Explanation:** All four persistence locations derive from one module; `DB_PATH` defaults *through* `DATA_DIR` so the two cannot silently point at unrelated directories, and `getImagesDir(dataDir?)` takes an explicit override precisely so backup/restore/purge/reaper thread their own dir instead of reading env.
+- **Evidence:** `packages/server/src/config/paths.ts:25` — `return process.env.DB_PATH ?? path.join(getDataDir(), "smudge.db");`; `:50-56` documents why `getBackupsDir()` is cwd-relative ("writing them inside the data directory would fold each archive into the next one"). Verified: `"../../data"` appears once, `join(process.cwd(), "backups")` once, the `"images"` segment once. Server production env reads total six lines across three files, each inside a validating owner.
+- **Found by:** Error Handling & Observability
+
+### [S-20] Shared constants make divergence unrepresentable rather than merely forbidden
+- **Category:** S9 (Configuration discipline)
+- **Impact:** Medium
+- **Explanation:** Where two representations of one limit used to sit side by side with a comment insisting they agree, the second was *deleted* and derived instead; the unit a cap is measured in is stated because a grapheme-vs-code-unit mismatch already produced a real bug.
+- **Evidence:** `packages/shared/src/constants.ts:57` — ``MAX_IMAGE_UPLOAD_LABEL = `${MAX_IMAGE_UPLOAD_BYTES / 1024 / 1024} MB` ``; `packages/server/src/constants.ts:11-19` — the `"5mb"` string twin "was deleted and the divergence made unrepresentable rather than merely forbidden"; `packages/shared/src/schemas.ts:196-202` — "the restore path really did compose to store 520 units behind a schema that rejects 501".
+- **Found by:** Error Handling & Observability
+
+### [S-21] The note-mark strip discipline holds; no third render path exists
+- **Category:** S10 (Security built-in)
+- **Impact:** High
+- **Explanation:** Editor-only `note` marks (the writer's private commentary) cannot reach a beta-reader file: the single HTML render path strips them where the extensions are registered, DOCX strips at its own walker entry, the server adds an independent second layer, and the remaining JSON walker emits no marks by construction.
+- **Evidence:** `packages/shared/src/editorExtensions.ts:60-64` — `return generateHTML(stripNoteMarks(content) as …, editorExtensions);`; `packages/server/src/export/docx.renderer.ts:480` — `const stripped = stripNoteMarks(content);`; `export/export.renderers.ts:87` — `stripNoteSpans(stripDisallowedImages(renderEditorHtml(content)))`. `toPlainText` (`tiptap-plaintext.ts:26-48`) emits only `node.text` and `"\n"`, never marks — which is why `OuttakeCard.tsx:238` writing `plainText` to the clipboard is safe on outtake JSON that deliberately retains notes.
+- **Found by:** Security & Code Quality, Structure & Boundaries (the `generateHTML` clause)
+- **Exception named to keep the claim accurate:** "exactly one `generateHTML` call site" is true for *production* only. Two shared test files call it directly (`editorExtensions.test.ts:81`, `noteMark.test.ts:26,33,42,49`) — deliberately, since `noteMark.test.ts:26` is the test proving an unstripped doc *does* leak.
+
+### [S-22] One fail-closed image-src rule encoded three times, held together by a test that reads the regexes out of source
+- **Category:** S10 (Security built-in)
+- **Impact:** High
+- **Explanation:** Where the accepted F-16 trade-off forbids unifying the client and server URI rules, the codebase substituted a mechanical parity check: a shared test extracts all three regex literals *from their source files* and runs one corpus through all three, so drift turns red instead of silently deleting images from exports.
+- **Evidence:** `packages/shared/src/__tests__/image-src-allowlist-parity.test.ts:44-70` — `readFileSync(CLIENT_SANITIZER)` then `matchAll(/^const ALLOWED_URI_REGEXP =\s*\n?\s*\/(.+)\/i;$/gm)`, asserting each literal is found exactly once so a rename fails loudly rather than passing on zero regexes. Header records the real bug it caught ("exactly what a `?query` suffix did before this column existed"). Layered fail-closed behaviour confirmed at `client/src/sanitizer.ts:118-131` (private DOMPurify instance, `uponSanitizeAttribute` hook closing 3.x's `DATA_URI_TAGS` carve-out) and `export.renderers.ts:64-68` (server drops the whole `<img>`).
+- **Found by:** Security & Code Quality
+
+### [S-23] The lint rules that enforce architectural invariants are themselves unit-tested against a real ESLint instance
+- **Category:** S11 (Testability & coverage)
+- **Impact:** High
+- **Explanation:** The `no-restricted-syntax` rules backing the save-pipeline and string-externalization invariants are not trusted to be correct — a harness boots a real `ESLint` with the repo's own config and lints synthetic fixtures, asserting each rule fires on the plain form, union form, and nested generics. This closes the "the guard silently stopped matching" failure mode that makes most lint-based invariants rot.
+- **Evidence:** `packages/client/src/__tests__/eslintRuleHarness.ts:22-27` — `new ESLint({ cwd: REPO_ROOT, overrideConfigFile: resolve(REPO_ROOT, "eslint.config.js") })`. `editorEntryPointSurface.test.ts` complements it by snapshotting the editor-mutating entry-point name-set, with its failure direction deliberately chosen ("a loud false-RED … not a silent false-GREEN").
+- **Found by:** Security & Code Quality
+- **Verification:** The verifier *ran* the four suites read-only — 44 tests, 4 files, all passing. This is enforcement, not documentation.
+
+### [S-24] No untested-file blind spot in the coverage gate
+- **Category:** S11 (Testability & coverage)
+- **Impact:** Medium
+- **Explanation:** `vitest.config.ts` does not set `coverage.all`, which normally hides never-imported files from the report entirely — yet no source file is missing, so the global thresholds are measured against the true surface.
+- **Evidence:** `vitest.config.ts:14-41` (exclusion list, each thin-IO-shell exclusion justified in a comment); `coverage/coverage-final.json`. The verifier enumerated every `.ts/.tsx/.mjs` under the covered roots, applied the config's exclusions independently, and diffed against the report keys: **145 expected source files, 0 missing**; the 15 remaining entries are `db/migrations/*.js`.
+- **Found by:** Security & Code Quality
+- **Residual weakness:** thresholds are global, not per-file — see [F-02].
+
+### [S-25] No secrets, and a consistent (not half-built) no-auth posture
+- **Category:** S10 (Security built-in)
+- **Impact:** Low *(downgraded from Medium: absence-of-secrets is table stakes; the coherent posture is the part that carries weight)*
+- **Explanation:** A repo-wide credential sweep is clean, `.env*` and `backups/` are gitignored with the reason stated, and the no-auth design is coherent — no partial auth scaffolding, no CORS middleware widening the origin.
+- **Evidence:** `.gitignore:76-79`, `:170-173` — "Operational backups (Phase 4b.14) — never commit the writer's manuscript." An independent case-insensitive sweep for `api_key|secret|password|token|credential|private_key` across `packages/*/src`, `e2e/`, `scripts/`, `Makefile` returns only the `SequenceToken` identifier from `useAbortableSequence`. `packages/server/src/app.ts:2,22` imports `helmet`; there is no `cors` import and no `Access-Control-*` header write.
+- **Found by:** Security & Code Quality
+
+---
+
+## Flaws/Risks
+
+### [F-01] `purgeOldTrash` recursive-deletes a path built from an unvalidated DB-sourced project id
+- **Category:** 30 (Security as an afterthought)
+- **Impact:** High
+- **Explanation:** The startup trash purge joins `projects.id` straight into a filesystem path and recursive-`rm`s it with no UUID check and no `resolve()`-containment assertion. A hostile backup zip — explicitly in this project's threat model, and the reason ~500 lines of zip defense exist — converts into arbitrary recursive directory deletion on the next server start.
+- **Evidence:** `packages/server/src/db/purge.ts:60-67` (`purgeOldTrash`):
+  ```ts
+  const imageDir = path.join(getImagesDir(resolvedDataDir), projectId);
+  await fs.rm(imageDir, { recursive: true, force: true });
+  ```
+  The full reachability chain was verified: (a) nothing touches `projectId` between the `trx("projects").select("id")` read at `:20-40` and the `fs.rm`; (b) `grep CHECK packages/server/src/db/migrations/` returns nothing — `001_create_projects_and_chapters.js:4` is `table.uuid("id").primary()`, an unconstrained `char(36)` in SQLite; (c) `runRestore` (`backup-core.ts:190-203`) validates the *archive* meticulously — `validateEntryPaths` for zip-slip, `checkDeclaredSizes` for bombs, free-space, typed-filename confirmation — then installs `smudge.db` **verbatim with zero payload inspection**; (d) `index.ts:35` runs the purge on every server start, and the crafted row controls `deleted_at`, so it fires on the first boot after restore — exactly what the restore CLI tells the operator to do next; (e) `grep "fs.rm"` across `packages/server/src` confirms this is the only recursive rm — `deleteProject` never unlinks directories and `deleteImage` (`images.service.ts:207`) unlinks a single file. Secondary sites of the same class (read/unlink, not recursive rm): `images.service.ts:115,207` and `export/image-resolver.ts` via `getImagePath(image.project_id, …)`.
+- **Found by:** Security & Code Quality
+- **Note:** The specialist confirmed this empirically with a harness run entirely outside the repo (a `projects` row with `id = "../../VICTIM_DIR"` deleted the victim directory; `git status --porcelain` clean afterward). What makes this more than theoretical is that the codebase's own defenses concede the vector — the archive is already treated as hostile, and the DB payload is the one part of it that gets no inspection.
+
+### [F-02] `useSnapshotController` has no dedicated test; its data-loss-adjacent branches are uncovered
+- **Category:** 32 (Missing test coverage for critical paths)
+- **Impact:** High
+- **Explanation:** Snapshot restore is one of the two server-mutation flows the steering file singles out as load-bearing, yet this hook is the lowest-covered non-migration source file in the repo and has no test file of its own.
+- **Evidence:** `coverage/coverage-final.json` — **68.4% statements / 48.9% branches**, versus its sibling `useFindReplaceController.ts` at 89.2 / 76.1 (which *does* have `hooks/__tests__/useFindReplaceController.test.tsx`). Zero-hit statement lines, extracted independently: `128-130, 137-139, 178-183, 212-219, 228, 238-247, 291-306, 362-368, 408-419, 483-492, 511-528, 541-554, 578-582` — i.e. the `committed_but_unreloaded` arm (`packages/client/src/hooks/useSnapshotController.ts:212-247`), the stale-chapter-switch return, flush-failure attribution, every lock/busy refusal, and the whole `snapshot.view` error ladder including `CORRUPT_SNAPSHOT` and 404. The codebase acknowledges the gap in prose rather than closing it — `EditorPageFeatures.test.tsx:3481-3493`: "That specific race is not exercised by a component test here because the surrounding busy guard … blocks every user-facing chapter-switch path." That is precisely the argument for a hook-level test, which the sibling already has. Thresholds in `vitest.config.ts` are global, so the gate cannot see one file at 48.9% branches.
+- **Found by:** Security & Code Quality
+
+### [F-03] The chapter-content-write obligation bundle is hand-assembled at three independent sites
+- **Category:** 9 (Shotgun surgery)
+- **Impact:** Medium *(down from Medium-High)*
+- **Explanation:** Three writers to `chapters.content` each open-code the same obligation set — `countWords` → `txStore.updateChapter` → `txStore.updateProjectTimestamp` → `applyImageRefDiff` → post-commit `getVelocityService().updateDailySnapshot`, plus `insertAutoSnapshotIfChanged` at two of the three — each with its own ordering, try/catch, and log string. A new obligation on a content write requires grepping for all three; nothing forces it.
+- **Evidence:** `packages/server/src/chapters/chapters.service.ts:99-137`; `packages/server/src/snapshots/snapshots.service.ts:209-246`; `packages/server/src/search/search.service.ts:313-381`.
+- **Found by:** Structure & Boundaries
+- **Why this is not a restatement of accepted F-19:** F-19's premise is that `updateChapter`/`deleteChapter`'s side effects are *enumerated in the function's doc comment*. That discipline lives only on `chapters.service.ts`; `restoreSnapshot` and `replaceInProject` carry no such enumeration and are not mentioned by F-19. The claim here is about the sequence being triplicated, not about it being undocumented in one place.
+
+### [F-04] The outtakes feature cluster landed inline in `EditorPage` instead of the controller-hook pattern
+- **Category:** 13 (Inconsistent boundaries) *(re-typed from 2/3)*
+- **Impact:** Medium
+- **Explanation:** Snapshots and find-replace each got a `use*Controller` hook taking a typed deps interface. Outtakes did not: `buildOuttakeLabel` (module scope), three state atoms, `captureOp`, `captureInFlightRef`, an 85-line `handleSendSelectionToOuttakes`, and `handleInsertOuttake` all sit in the page body, taking `EditorPage.tsx` to 1,356 lines.
+- **Evidence:** `packages/client/src/pages/EditorPage.tsx:46-62` (`buildOuttakeLabel`), `:487-504` (state atoms), `:1004-1113` (`handleSendSelectionToOuttakes`).
+- **Found by:** Structure & Boundaries, Coupling & Dependencies (independent agreement)
+- **The accepted-F-1 premise genuinely changed.** F-1's load-bearing sentence is *"the residual concentration is irreducible cross-hook coordination, not accidental complexity."* The capture flow's own comment refutes that for itself — `EditorPage.tsx:1023-1025`: *"It never writes editor content, so save-pipeline invariants 1-4 do NOT apply and NO busy/lock guard is needed."* A block that explicitly participates in none of the cross-hook coordination is, by F-1's own definition, not the irreducible residual. Partially blunted: `handleInsertOuttake` sits next to `handleInsertImage` and deliberately shares `guardInsertAtCursor` (`:555-589`), so extracting it would split a deliberately-paired guard. The capture handler is the part with no such tie.
+
+### [F-05] Image delete's reference scan owns `chapters` but not `chapter_snapshots`
+- **Category:** 17 (No clear ownership of data)
+- **Impact:** Medium
+- **Explanation:** `deleteImage` scans chapters only — deliberately including soft-deleted ones, because "restoring that chapter would produce a broken image if we allowed the delete." `chapter_snapshots` rows hold full TipTap JSON with the same `/api/images/<uuid>` srcs and are equally a restore path; nothing scans them. `restoreSnapshot` then fails closed, making the snapshot permanently unrestorable through supported endpoints.
+- **Evidence:** `packages/server/src/images/images.service.ts:156-197` (`deleteImage`, whose only scan source is `listAllChapterContentByProject`); `packages/server/src/snapshots/snapshots.service.ts:172-182` — `return "cross_project_image" as const;` → 409 `CROSS_PROJECT_IMAGE_REF`. Reachable sequence, all supported endpoints: insert image into chapter → snapshot the chapter → delete the image from the chapter → `DELETE /api/images/{id}` returns 204 → restore returns 409, permanently. Aggravators: the user copy is wrong for this case (`STRINGS.snapshots.restoreFailedCrossProjectImage`, `strings.ts:448`, says the images "no longer belong to this project"), and the image delete is irreversible (`images.service.ts:209`).
+- **Found by:** Integration & Data
+- **Note:** Not covered by accepted F-8, which is about upload idempotency, not the delete-side reference scan. Contrast the outtakes decision recorded in the steering file: outtakes solve the same "table invisible to the ref-counter" problem by stripping images on capture. Snapshots chose neither strip nor scan.
+
+### [F-06] Unmatched `/api/*` routes return an HTML body, not the documented error envelope
+- **Category:** 24 (Inconsistent API contracts)
+- **Impact:** Medium
+- **Explanation:** `createApp()` mounts thirteen routers and `/api/health`, then registers `globalErrorHandler` with no catch-all in between, so Express's `finalhandler` serves its default HTML 404 for any unmatched API path.
+- **Evidence:** `packages/server/src/app.ts:41-69` — no `app.use("/api", …)` fallthrough exists. Confirmed empirically by a specialist booting `createApp()` on an ephemeral port from a scratchpad script (no repo file touched): `GET /api/does-not-exist` → `404 text/html`, `<pre>Cannot GET /api/does-not-exist</pre>`. Client-side this lands in `apiFetch`'s `!res.ok` branch (`packages/client/src/api/client.ts:164-198`) where `res.json()` throws `SyntaxError`, so the error arrives with `code: undefined` — the discriminating `error.code` the whole scope registry is built on is absent. No test asserts unknown-path behavior.
+- **Found by:** Integration & Data
+- **Forward hazard:** when the SPA catch-all lands (flagged in the steering file's Tech Stack section), unmatched `/api/*` will start returning `index.html` with a 200 unless the API 404 is closed first.
+
+### [F-07] `useEditorMutation`'s committed path deliberately leaves the state machine mid-transition
+- **Category:** 27 (Temporal coupling)
+- **Impact:** Medium *(down from High)*
+- **Explanation:** The `finally` block dispatches nothing when `reloadFailed` is set, leaving the machine at `{editable:false, busy:true}` and requiring every `stage === "committed_but_unreloaded"` consumer to complete the transition. Nothing in the type system or lint enforces it — a returned `MutationResult` is a plain value a caller may ignore.
+- **Evidence:** `packages/client/src/hooks/useEditorMutation.ts:500-519`:
+  ```ts
+  if (reloadFailed) {
+    // no-op: consumer owns COMMITTED_UNRELOADED
+  }
+  ```
+  This has already produced a live defect: `useFindReplaceController.ts:150-160` documents the OOSI1 fix for the stale-chapter sub-case that stranded an unrelated chapter's editor read-only. The fix was a patch at one consumer, not at the seam.
+- **Found by:** Coupling & Dependencies
+- **Downgrade rationale:** both current consumers handle it correctly today, and the failure mode is a stranded read-only editor recoverable by refresh, not data loss. The risk is a future third consumer.
+
+### [F-08] `useEditorMutationMachine.busy` / `isBusy()` / `getState()` are unconsumed, and `busy` is documented as knowingly wrong
+- **Category:** 31 (Dead code) *(re-typed from 7)*
+- **Impact:** Medium
+- **Explanation:** Two identically-named `isBusy()` probes sit on sibling objects wired into the same save-pipeline-critical component, one authoritative and one documented-incorrect — a foot-gun for the next author who autocompletes the wrong one.
+- **Evidence:** `packages/client/src/hooks/useEditorMutationMachine.ts:13-22` — the `busy` doc says *"Do NOT gate on `machine.busy`; read `mutation.isBusy()` until a future phase … closes that gap."* `:85-95`, `:108-109` declare `isBusy`/`getState`; grep confirms zero production call sites for `machine.isBusy()` or `machine.getState()` — the only non-test hit is `useEditorMutationMachine.test.tsx:108`.
+- **Found by:** Coupling & Dependencies
+
+### [F-09] `eslint-plugin-import` is registered but the cycle rule is off
+- **Category:** 5 (Circular dependencies — unguarded)
+- **Impact:** Medium
+- **Explanation:** The plugin is imported, registered, and already parsing the tree, but the only rule enabled from it is `import/first`. The repo's strongest structural property ([S-02]) and its dependency-declaration hygiene ([F-11]) are both protected by review alone.
+- **Evidence:** `eslint.config.js:5` (import), `:15` (plugin registration), `:22` — `grep "import/" eslint.config.js` returns exactly one hit, `"import/first": "error"`. `import/no-cycle` and `import/no-extraneous-dependencies` are configured nowhere.
+- **Found by:** Coupling & Dependencies
+
+### [F-10] The chapter read-path corruption gate uses a predicate its two siblings explicitly rejected
+- **Category:** 13 (Inconsistent boundaries) *(re-typed from 6)*
+- **Impact:** Medium
+- **Explanation:** Chapters — the manuscript table, and the one with a designed `CORRUPT_CONTENT` route — gates on `isTipTapNode`, which its two siblings independently determined is insufficient. A stored `{"foo":1}` is served as healthy and that route cannot fire.
+- **Evidence:** `packages/server/src/chapters/chapters.repository.ts:34` — `if (!isTipTapNode(parsed))`. `packages/server/src/outtakes/outtakes.repository.ts:22-32` says of exactly that predicate: *"gate on the SCHEMA, not on isTipTapNode … `{"foo":1}` … passed it and listed as an empty card"*, and uses `TipTapDocSchema`; `snapshots/snapshots.service.ts:149` also uses `TipTapDocSchema`. `search.service.ts:149,264` inherits the weaker gate. The outtakes comment is dated later (2026-08-05) than the chapters comment's dedup review (2026-07-26), so the in-code rationale at `chapters.repository.ts:29-33` — which argues the shared predicate is the right extraction — has since been contradicted by two of its three sites.
+- **Found by:** Coupling & Dependencies
+
+### [F-11] Unused `@tiptap/*` deps in server and client, plus undeclared `zod` and `@tiptap/core`
+- **Category:** 31 (Dead code / unused dependencies), with the undeclared half closer to 4 (High/unstable dependencies)
+- **Impact:** Medium
+- **Explanation:** Two directions of drift, both unguarded because only `import/first` is enabled ([F-09]) — declared-but-unused packages, and *phantom* dependencies that resolve only through npm hoisting.
+- **Evidence:**
+  - `grep -rn "@tiptap" packages/server/src` → **zero matches**, yet `packages/server/package.json:14-19` declares six `@tiptap/*` runtime deps. `docs/dependency-licenses.md:42-47`'s rationale ("server-side HTML generation", "Heading extension for `generateHTML()`") is now factually stale — the server reaches TipTap only transitively via `@smudge/shared/editor-extensions`.
+  - Client imports exactly `@tiptap/core`, `@tiptap/extension-placeholder`, `@tiptap/pm/state`, `@tiptap/react` but also declares `extension-heading`, `extension-image`, `html`, `starter-kit`.
+  - **Phantom:** `zod` is imported by *production* server code at `validateUuidParam.ts:2` (the UUID trust boundary) and `search/search.routes.ts:2`, and is absent from `packages/server/package.json` entirely. Likewise `@tiptap/core` at `client/src/components/Editor.tsx:2` is absent from `packages/client/package.json`. Both work only because `@smudge/shared` hoists them to root `node_modules`.
+  - Minor: `snapshots/content-hash.ts:1` uses bare `import { createHash } from "crypto"` rather than `node:crypto`, unlike every other site in the repo.
+- **Found by:** Security & Code Quality, Coupling & Dependencies (agreed)
+- **Consequence:** the same `^2.27.2` range is triplicated across three manifests that must be bumped in lockstep; a partial bump silently installs two TipTap trees, which for a ProseMirror editor means two `prosemirror-model` schemas.
+
+### [F-12] Read-after-insert failure has two taxonomies; three modules emit the generic one
+- **Category:** 34 (Inconsistent error/logging conventions)
+- **Impact:** Medium
+- **Explanation:** `projects` converts this exact condition into a discriminating `AppError` the client's committed-UX machinery understands; three other modules throw a bare `Error` that gets clamped to a generic 500 — telling the writer their text was lost when the row is in fact committed.
+- **Evidence:** `packages/server/src/projects/projects.routes.ts:65-71` → `InternalError(…, "READ_AFTER_CREATE_FAILURE")`, wired to `scopes.ts` `committedCodes`. But `packages/server/src/outtakes/outtakes.repository.ts:75` — `if (!row) throw new Error(\`Outtake ${data.id} not found after insert\`);` — plus `snapshots.repository.ts:18` and `images.repository.ts:7`. For outtakes the user sees `STRINGS.error.createOuttakeFailed` ("Failed to save outtake") while the row is committed, in a hard-delete table with no trash; `scopes.ts:496-511` (`outtake.create`) declares `committed` copy and 404/413 arms but carries **no** `committedCodes`, so the committed UX cannot fire and a re-capture mints an invisible duplicate.
+- **Found by:** Error Handling & Observability
+
+### [F-13] Keyboard chapter nav announces success that may not have happened
+- **Category:** 20 (Weak error handling strategy) *(re-typed from 34)*
+- **Impact:** Medium
+- **Explanation:** The screen-reader announcement fires synchronously and unconditionally on a voided promise, so on the editor-lock path a screen-reader user is told "Navigated to \<chapter\>" while nothing moved and no other signal exists. WCAG 2.1 AA is a first-class constraint in this project.
+- **Evidence:** `packages/client/src/hooks/useKeyboardShortcuts.ts:190-193`:
+  ```ts
+  void handleSelectChapterWithFlushRef.current(nextChapter.id).catch(() => {});
+  deps.setNavAnnouncement(STRINGS.sidebar.navigatedToChapter(nextChapter.title));
+  ```
+  `handleSelectChapterWithFlush` (`EditorPage.tsx:904-936`) returns early when `switchToView("editor")` is false — the busy latch (`:755-758`, info banner), the editor lock (`:767-769`, **deliberately no banner**), and flush-save failure (`:814-818`, save-failed banner). Commit `3b95a804` fixed the gating *inside* the function and left this call site's announcement outside it. The sibling Alt+Up/Down reorder path is unaffected.
+- **Found by:** Error Handling & Observability
+
+### [F-14] The "lying central directory" byte-budget guard in `runRestore` is never exercised
+- **Category:** 32 (Missing test coverage for critical paths)
+- **Impact:** Medium
+- **Explanation:** The final decompression-bomb defense — an archive whose central directory *under-declares* sizes, slipping past `checkDeclaredSizes` — is dead in the coverage report, so Smudge's own guard is verified only by inspection.
+- **Evidence:** `packages/server/src/backup/backup-core.ts:292-305`. Uncovered lines computed independently from `coverage/coverage-final.json`: `239, 298-305` — precisely the `written > declaredTotal + 1MiB` branch and its `RestorePartialError` throw, while the surrounding extraction loop is covered. The targeting test (`backup-core.test.ts:891`, "T-1") concedes in its own comment that it accepts either outcome — "causes either JSZip's own size-mismatch throw **or** our byte-budget overrun" — and JSZip fires first, so the assertion passes through the catch-all at `:313`.
+- **Found by:** Security & Code Quality
+
+### [F-15] Auto-backup rotation failure is swallowed, defeating a deliberate re-throw that has its own test
+- **Category:** 20 (Weak error handling strategy)
+- **Impact:** Medium
+- **Explanation:** `rotateAutoBackups` goes out of its way to narrow — ENOENT returns "nothing to prune", everything else is re-thrown — and its sole production caller swallows exactly that, with no log, no `warning` field, and `status: "ok"`.
+- **Evidence:** `packages/server/src/backup/backup-core.ts:359-361`:
+  ```ts
+  await rotateAutoBackups({ backupsDir: o.backupsDir, keep: o.keep }).catch(() => {
+    /* rotation is best-effort */
+  });
+  ```
+  The re-throw it defeats is at `:373-381` — *"A permission/IO error … would otherwise be masked as 'nothing to prune'; re-throw it"* — and has a dedicated test (`backup-core.test.ts:1106`). The return type has a `warning` field one line away, used by the sibling failure arm. Reachable independently of a backup-write failure: `readdir` succeeds but a per-file `rm` at `:397` hits EACCES/EPERM, so `backups/smudge-auto-*.zip` grows on every `make dev` forever, silently. Compare the convention at `db/purge.ts:65` and `images.reaper.ts:53`.
+- **Found by:** Error Handling & Observability
+
+### [F-16] Two chapter-domain methods live in the `ImagesStore` slice
+- **Category:** 11 (Low cohesion)
+- **Impact:** Low
+- **Explanation:** The slice header states each slice "owns the data operations for one domain, so a new operation edits only that slice", but `ImagesStore` ends with two chapter queries whose consumers are mostly non-image code.
+- **Evidence:** `packages/server/src/stores/project-store.types.ts:110-117` — `listChapterContentByProject` / `listAllChapterContentByProject` inside `interface ImagesStore`, implemented by delegating to `chaptersRepo` (`sqlite-project-store.ts:247-259`), consumed by `search.service.ts:131,245` and `projects.service.ts:169` as well as the two image callers.
+- **Found by:** Structure & Boundaries
+- **Note:** Distinct from accepted F-4, which accepted the slice *structure* — the slice decomposition is exactly what F-4's acceptance cites as the interface's justifying value.
+
+### [F-17] "One create, two producers, sync by nonce" is an established idiom rather than a boundary
+- **Category:** 13 (Inconsistent boundaries)
+- **Impact:** Low *(down from Medium)*
+- **Explanation:** `api.outtakes.create` has two call sites at two layers, each with its own project-drift guard, possibly-committed recovery, and error scope, reconciled through a nonce prop drilled `EditorPage → EditorMainContent → OuttakesPanel`. The same shape already existed for image upload, so outtakes copied it — meaning the next list-plus-outside-writer feature will copy it again.
+- **Evidence:** `packages/client/src/components/OuttakesPanel.tsx:204-215` — *"Neither producer re-checks the project after its await — the capture POST lives in EditorPage and the blank-note POST in handleCreate below"* — forcing a defensive third guard in `applyServerRow`. Call sites: `OuttakesPanel.tsx:265` + `EditorPage.tsx:1070`; same shape at `Editor.tsx:354` + `ImageGallery.tsx:206`.
+- **Found by:** Structure & Boundaries
+- **Downgrade rationale:** the panel's `applyServerRow` funnel already catches the cross-project failure mode centrally and documents why.
+
+### [F-18] `EditorMainContent` is a 71-prop pass-through with duplicated banner markup
+- **Category:** 11 (Low cohesion)
+- **Impact:** Low *(down from Medium)*
+- **Explanation:** 71 props grouped into eight comment sections, most forwarded verbatim to six child components; the component's own contribution is a view-switch ternary chain and two inline banners.
+- **Evidence:** `packages/client/src/components/EditorMainContent.tsx:42-138` (interface), `:233-264` — two inline banners reimplementing the shape of the extracted `ActionErrorBanner` used on the very next line.
+- **Found by:** Structure & Boundaries
+- **Downgrade rationale:** the prop count is the direct, *accepted* consequence of F-1's rendering extraction (state deliberately stays in `EditorPage`), and the prop list is a monitored surface (`editorEntryPointSurface.test.ts`). The residual concrete issue is the duplicated banner markup.
+
+### [F-19] The steering file has drifted from the tree
+- **Category:** 13 (Inconsistent boundaries)
+- **Impact:** Low
+- **Explanation:** The one artifact a newcomer reads to learn where code goes under-describes the server by more than half, and two other factual claims have gone stale. This matters more here than in most repos because `CLAUDE.md` is explicitly the mechanism by which architectural decisions reach future reviews.
+- **Evidence:** `CLAUDE.md:81-97` "Target Project Structure" lists five server domain modules; `ls packages/server/src` shows eleven directories — `outtakes/`, `snapshots/`, `images/`, `search/`, `export/`, `backup/`, `errors/`, `config/`, `utils/` are all absent from the map, and client `utils/` is missing too. `CLAUDE.md:77` says "React 18+" while `packages/client/package.json` declares `react: ^19.1.0` (installed 19.2.5) and hook comments still reason about React 18 StrictMode double-invoke semantics (`useAbortableAsyncOperation.ts:37-43`). `CLAUDE.md:356` cites `EditorPage.tsx` at "~1,330 lines"; `wc -l` says 1,356.
+- **Found by:** Structure & Boundaries, Coupling & Dependencies (agreed, merged)
+
+### [F-20] `@types/dompurify` is a stale stub over a self-typed package
+- **Category:** 31 (Dead code / unused dependencies)
+- **Impact:** Low
+- **Explanation:** DOMPurify 3.x ships its own typings, so the DefinitelyTyped stub for the pre-3.x API is never the resolution target — dead weight ambiently loaded into every client compilation, sitting on the codebase's most security-sensitive module.
+- **Evidence:** `packages/client/package.json` devDependencies declares `@types/dompurify: ^3.0.5`; `npx tsc --traceResolution -p packages/client/tsconfig.json` shows every `dompurify` import resolving to `dompurify/dist/purify.es.d.mts@3.4.0`, with `@types/dompurify` appearing only as a type-reference directive. `node_modules/@types/dompurify/README.md`: "Last updated: Mon, 06 Nov 2023".
+- **Found by:** Coupling & Dependencies, Security & Code Quality (agreed, merged)
+
+### [F-21] `initDb` and `initProjectStore` have asymmetric re-init contracts
+- **Category:** 27 (Temporal coupling)
+- **Impact:** Low *(down from Medium)*
+- **Explanation:** `initDb()` is silently re-callable and destroys the prior Knex handle; `initProjectStore()` throws on a second call; `SqliteProjectStore` captures `db` in its constructor. A second `initDb()` without an intervening `resetProjectStore()` leaves `getProjectStore()` bound to a destroyed connection with no error at the seam.
+- **Evidence:** `packages/server/src/db/connection.ts:39-41` vs `packages/server/src/stores/project-store.injectable.ts:29-34`, with the handle captured at `sqlite-project-store.ts:37`. Symmetrically, `closeDb()` does not reset the store and `resetProjectStore()` does not close the DB — `index.ts:84-85` must call both in the right order by hand.
+- **Found by:** Coupling & Dependencies
+- **Note:** Distinct from accepted F-3, which describes the *locator* and its "init once" contract, not the divergent re-init semantics between the two singletons it depends on. Downgraded to Low because production has exactly one `initDb` + one `initProjectStore` call (`index.ts:31,33`); the hazard is confined to test harnesses, which use `setDb`/`setProjectStore` instead.
+
+### [F-22] `content_corrupt` names two incompatible contracts
+- **Category:** 13 (Inconsistent boundaries)
+- **Impact:** Low *(down from Medium)*
+- **Explanation:** For chapters, the flag pairs with `content: null`, is internal, and is stripped at the wire boundary. For outtakes, the same field name pairs with a *valid empty doc* and is part of the public wire type. A helper written against one convention is wrong for the other.
+- **Evidence:** `packages/shared/src/types.ts:99-105` (`OuttakeRow.content_corrupt?: true`, checked with bare truthiness at `OuttakeCard.tsx:233,278` and `EditorPage.tsx:571`) vs `packages/server/src/chapters/chapters.types.ts:68-89` (`stripCorruptFlag`, predicate `isCorruptChapter()`).
+- **Found by:** Coupling & Dependencies
+- **Downgrade rationale:** both sites document the divergence and its reason, `shared/src/types.ts:99-105` cross-references chapters by name, and TypeScript keeps the two row types apart. The residual is a cognitive naming hazard, not a live defect.
+
+### [F-23] Sub-hooks receive the parent's raw `setState` dispatchers and mutable refs
+- **Category:** 3 (Tight coupling)
+- **Impact:** Low *(down from Medium)*
+- **Explanation:** The sub-hook can write any of the parent's state to any value, so `useProjectEditor` cannot enforce an invariant across its own state at the boundary — the compiler only checks that the setters were passed, never that they are used consistently.
+- **Evidence:** `packages/client/src/hooks/useProjectEditor.types.ts:30-67` — `ChapterCrudDeps` has 15 members (8 raw `Dispatch<SetStateAction<…>>`, 5 raw `MutableRefObject<…>`, 2 callbacks); `ChapterMetadataDeps` has 9 in the same shape.
+- **Found by:** Coupling & Dependencies
+- **Notes:** Not covered by accepted F-1 (different decomposition). Downgraded because handing dispatchers across a hook split is the standard React idiom, and the interface's own comment records this was a deliberate byte-for-byte mechanical extraction.
+
+### [F-24] The same `/api/projects/{x}` segment means "slug" for four sub-resources and "UUID" for two
+- **Category:** 24 (Inconsistent API contracts)
+- **Impact:** Low
+- **Explanation:** Six routers mount on the same `/api/projects` prefix; `GET /api/projects/{slug}/dashboard` and `GET /api/projects/{uuid}/outtakes` are both valid, and swapping the identifier gives a 404 on one and a 400 on the other. Nothing in code or the steering file records this as a decision.
+- **Evidence:** Slug — `projects.routes.ts` (`/:slug`, `/:slug/chapters`, `/:slug/dashboard`, `/:slug/trash`, `/:slug/velocity`), `export/export.routes.ts:10`, `search/search.routes.ts:66,89`. UUID — `images.routes.ts:38` (`requireUuidParam("projectId")`), `outtakes.routes.ts:42,72`. All mounted at `app.ts:41,45,46,50,52`.
+- **Found by:** Integration & Data
+- **Downgrade rationale:** the client is internally consistent (`api.outtakes.create(project.id, …)` vs `api.projects.dashboard(slug, …)`); the trap is for future route authors.
+
+### [F-25] `.strict()` is applied to the three newest request schemas and none of the older ones
+- **Category:** 24 (Inconsistent API contracts)
+- **Impact:** Low
+- **Explanation:** A typo'd field on the older endpoints answers 200 having changed nothing; the same stray key on an outtake answers 400.
+- **Evidence:** `grep "strict()" packages/shared/src/schemas.ts` returns exactly three — `CreateSnapshotSchema:227`, `CreateOuttakeSchema:234`, `UpdateOuttakeSchema:240` (plus the inline `SearchSchema`/`ReplaceSchema` at `search.routes.ts:13-59`). Non-strict: `CreateProjectSchema:13`, `UpdateProjectSchema:18`, `UpdateChapterSchema:67`, `ExportSchema:97`, `UpdateImageSchema:104`, `UpdateSettingsSchema:116`. So `PATCH /api/projects/{slug}` with `{"taget_word_count": 50000}` silently succeeds. `outtakes.routes.ts:9-23` documents `.strict()` as "a second producer" of 400s for that surface, so the divergence is known locally but was never propagated.
+- **Found by:** Integration & Data
+
+### [F-26] `POST /api/chapters/{id}/snapshots` returns two status codes with two body shapes, and the 200 ships server-authored user copy
+- **Category:** 24 (Inconsistent API contracts)
+- **Impact:** Low
+- **Explanation:** The only endpoint whose success response is a discriminated union the client must branch on, and its `message` field is user-facing English produced by the server — which the steering file forbids for the sibling success contract ("the client owns the toast, the server ships no success copy").
+- **Evidence:** `packages/server/src/snapshots/snapshots.routes.ts:26-33` — `res.status(200).json({ status: "duplicate", message: "Snapshot skipped — content unchanged since last snapshot." })` vs `res.status(201).json({ status: "created", snapshot })`. Client branch at `api/client.ts:536-542` and `SnapshotPanel.tsx:321`; it correctly ignores the field and renders `STRINGS.snapshots.duplicateSkipped` — so today it is dead weight that invites a future caller to display it.
+- **Found by:** Integration & Data
+
+### [F-27] `updateImageMetadata` runs check → update → re-read as three unwrapped statements
+- **Category:** 26 (Poor transactional boundaries)
+- **Impact:** Low
+- **Explanation:** Every structurally identical mutation in the codebase wraps this exact shape in one `store.transaction()` and says why; the image path is the lone holdout, so its response body can reflect a different writer's state.
+- **Evidence:** `packages/server/src/images/images.service.ts:125-145` — `findImageById` → `updateImage` → `findImageById`, no transaction. Siblings: `outtakes.service.ts:67-78`, `chapters.service.ts:99-120` ("so the response body reflects exactly what this request wrote"), `snapshots.service.ts:226-231`.
+- **Found by:** Integration & Data
+
+### [F-28] Read-after-write on two write paths sits outside the transaction the codebase elsewhere insists on
+- **Category:** 26 (Poor transactional boundaries)
+- **Impact:** Low
+- **Explanation:** Two write paths close their transaction and then re-read, which is exactly the window a sibling's comment describes as a defect — and these are the paths that produce the documented `RESTORE_READ_FAILURE` / `READ_AFTER_CREATE_FAILURE` codes.
+- **Evidence:** `packages/server/src/chapters/chapters.service.ts:269` (tx closes) then `:306-312` (re-read); `packages/server/src/projects/projects.service.ts:217` then `:219-222`. The rule they diverge from is at `chapters.service.ts:93-119` — "without this, a concurrent writer landing between commit and a post-tx `findChapterById` would let the other writer's content ride back in this response" — and is repeated at `snapshots.service.ts:226-229`.
+- **Found by:** Integration & Data
+
+### [F-29] Parent-liveness check and child read split across two round trips
+- **Category:** 26 (Poor transactional boundaries)
+- **Impact:** Low
+- **Explanation:** Three read paths check the parent project's liveness and then read the children outside any transaction, after the identical bug was found and fixed for outtakes.
+- **Evidence:** `packages/server/src/snapshots/snapshots.service.ts:79-84` (`listSnapshots`), `:86-96` (`getSnapshot`), `packages/server/src/images/images.service.ts:100-105` (`listImages`). The fix and its reason live at `outtakes.service.ts:54-65`: *"S8: the liveness check and the read are ONE transaction… Split across two round trips, a project soft-delete landing between them answered 200-with-data where this file's own header says 404."* `deleteSnapshot` (`:98-113`) also wraps both.
+- **Found by:** Integration & Data
+
+### [F-30] Duplicate project title is a 400 where the codebase's other conflict cases are 409
+- **Category:** 24 (Inconsistent API contracts)
+- **Impact:** Low
+- **Explanation:** The steering file defines 409 as "conflict cases where the request is well-formed but violates a constraint the client needs to resolve" — which describes a uniqueness collision exactly — and the sibling conflicts both use it.
+- **Evidence:** `packages/server/src/projects/projects.service.ts:39-44` — `class ProjectTitleExistsError extends BadRequestError`, code `PROJECT_TITLE_EXISTS`. Compare `IMAGE_IN_USE` (`images.routes.ts:155`) and `RESTORE_CONFLICT` (`chapters.routes.ts:91`), both 409.
+- **Found by:** Integration & Data (self-flagged marginal at 62 confidence)
+- **Counter-argument, kept for honesty:** from the writer's view the title *field* is the invalid input and is fixed in place, which is a defensible 400; the client routes on `error.code`, so nothing is user-visibly wrong today. Kept because it is a deviation from the project's own written rule and cheap to state.
+
+### [F-31] Bare `catch {}` on the auto-save path, where its sibling logs
+- **Category:** 34 (Inconsistent error/logging conventions)
+- **Impact:** Low *(down from Low-Medium)*
+- **Explanation:** A persistent `chapter_statuses` lookup failure would silently degrade `status_label` on every save in the app, forever, with zero log lines — on the hottest endpoint in the app.
+- **Evidence:** `packages/server/src/chapters/chapters.service.ts:145-154`:
+  ```ts
+  } catch {
+    enriched = { ...stripCorruptFlag(updated), status_label: updated.status };
+  }
+  ```
+  The identical degrade in `snapshots.service.ts:254-268` logs it with `{err, project_id, chapter_id}`, and [S-18] establishes that shape as near-universal.
+- **Found by:** Error Handling & Observability
+- **Note:** Distinct from accepted F-19, whose whole premise is that best-effort failures are "logged, not swallowed."
+
+### [F-32] Three different live-region clear durations, two of them inline literals
+- **Category:** 28 (Magic numbers/strings)
+- **Impact:** Low
+- **Explanation:** Announcement dwell time is an a11y-relevant value with three uncoordinated owners — a duplicated 3000 for the same concept in two components, and an undocumented 1000 for a third.
+- **Evidence:** `packages/client/src/components/ImageGallery.tsx:19,90` (`ANNOUNCEMENT_DURATION = 3000`); `packages/client/src/pages/EditorPage.tsx:1302` (`setTimeout(() => setImageAnnouncement(""), 3000)` — same image-announcement concept, different component); `packages/client/src/hooks/useKeyboardShortcuts.ts:193` (inline `1000`).
+- **Found by:** Error Handling & Observability
+
+### [F-33] No configuration inventory; eight runtime env vars, `LOG_LEVEL` documented nowhere
+- **Category:** 22 (Configuration sprawl)
+- **Impact:** Low
+- **Explanation:** The *owners* are clean ([S-19]), but discoverability is not: there is no `.env.example`, no `docs/configuration.md`, and no Configuration section in `CLAUDE.md` or `CONTRIBUTING.md`.
+- **Evidence:** Live set: `DATA_DIR`, `DB_PATH` (`config/paths.ts:15,25`), `LOG_LEVEL`, `NODE_ENV` (`logger.ts:6,14`), `SMUDGE_PORT` (`index.ts:17`, `scripts/restore.ts:25`, `vite.config.ts:103`), `SMUDGE_CLIENT_PORT` (`vite.config.ts:102`), `SMUDGE_BACKUP_KEEP` / `SMUDGE_SKIP_AUTO_BACKUP` (`scripts/auto-backup.ts:4,10`), `DEP_COOLDOWN_DAYS`. `docs/backup.md` covers two; `LOG_LEVEL` — the one knob an operator diagnosing a problem would reach for — appears in no doc, only in a `requestContext.ts:32` code comment.
+- **Found by:** Error Handling & Observability
+- **Note:** Already tracked as backlog id `afcaee1c` ("re-seen") — this is a re-confirmation, not a new discovery.
+
+### [F-34] Snapshot label cap gets none of the three treatments its sibling outtake label got
+- **Category:** 34 (Inconsistent error/logging conventions)
+- **Impact:** Low
+- **Explanation:** Both paths share the same `LABEL_MAX_UNITS = 500`, but only the outtake path has the input cap, the discriminating server code, and the scope copy that review added because "the consumer REVERTS the visible label field on a definite failure."
+- **Evidence:** Shared base at `packages/shared/src/schemas.ts:202,209-214`. Outtake: `maxLength={LABEL_MAX_UNITS}` (`OuttakeCard.tsx:263`), `OUTTAKE_LABEL_TOO_LONG` (`outtakes.routes.ts:24-35`), scope copy (`scopes.ts:524-527`). Snapshot: `SnapshotPanel.tsx:416-422` has no `maxLength`, the route emits no discriminating code, and `scopes.ts:477-481` has only fallback/network/committed — so an over-cap label fails with generic copy.
+- **Found by:** Error Handling & Observability
+
+### [F-35] Render-failure catches discard the error object entirely
+- **Category:** 21 (No observability plan)
+- **Impact:** Low
+- **Explanation:** Both render-failure paths surface correct user copy but neither logs. A `renderEditorHtml` throw means a mark or node the shared extension set cannot render — exactly the class of bug the `editorExtensions.test.ts` forcing pause exists to catch — and it is invisible even in dev.
+- **Evidence:** `packages/client/src/components/PreviewMode.tsx:47-54` (`catch { return null; }`) and `packages/client/src/hooks/useSnapshotController.ts:46-52` (`catch { return \`<p>${STRINGS.snapshots.renderError}</p>\`; }`). This is a deviation from the codebase's own convention — `clientWarn` is used at 64 sites — not merely an instance of the DEV-only logging policy.
+- **Found by:** Error Handling & Observability
+
+---
+
+## Coverage Checklist
+
+### Flaw/Risk Types 1–34
+
+| # | Type | Status | Finding |
+|---|------|--------|---------|
+| 1 | Global mutable state | Not observed (decided) | — (accepted trade-off F-3 covers the process-global store/db singletons) |
+| 2 | God object | Not observed (decided) | — (accepted trade-off F-1; the premise drift is [F-04], typed 13) |
+| 3 | Tight coupling | Observed | [F-23] |
+| 4 | High/unstable dependencies | Observed | [F-11] (the phantom-dependency half) |
+| 5 | Circular dependencies | Observed (unguarded, not present) | [F-09]; actual cycles: none, see [S-02] |
+| 6 | Leaky abstractions | Not observed | — (candidates re-typed to 13: [F-10], [F-22]) |
+| 7 | Over-abstraction | Not observed | — ([F-08] re-typed to 31; the slice-interface candidate dropped as accepted F-4) |
+| 8 | Premature optimization | Not observed | — (candidate adjudicated in favour of the strength, [S-17]) |
+| 9 | Shotgun surgery | Observed | [F-03] |
+| 10 | Feature envy / anemic domain model | Not observed (decided) | — (accepted trade-off F-18) |
+| 11 | Low cohesion | Observed | [F-16], [F-18] |
+| 12 | Hidden side effects | Not observed (decided) | — (accepted trade-off F-19) |
+| 13 | Inconsistent boundaries | Observed | [F-04], [F-10], [F-17], [F-19], [F-22] |
+| 14 | Distributed monolith | Not applicable | Single Express process, one SQLite handle, one SPA — verified, not assumed |
+| 15 | Chatty service calls | Not applicable | No second service |
+| 16 | Synchronous-only integration | Not applicable | No message bus / RPC surface |
+| 17 | No clear ownership of data | Observed | [F-05] (intra-process form) |
+| 18 | Shared database across services | Not applicable | One process owns the DB |
+| 19 | Lack of idempotency | Not observed (decided) | — (accepted trade-off F-8; the retry partitioning is a strength, [S-12]) |
+| 20 | Weak error handling strategy | Observed | [F-13], [F-15] |
+| 21 | No observability plan | Observed | [F-35] |
+| 22 | Configuration sprawl | Observed | [F-33] |
+| 23 | Dependency injection misuse | Not observed | — |
+| 24 | Inconsistent API contracts | Observed | [F-06], [F-24], [F-25], [F-26], [F-30] |
+| 25 | Business logic in the UI | Not observed | — |
+| 26 | Poor transactional boundaries | Observed | [F-27], [F-28], [F-29] |
+| 27 | Temporal coupling | Observed | [F-07], [F-21] |
+| 28 | Magic numbers/strings everywhere | Observed | [F-32] |
+| 29 | "Utility" dumping ground | Not observed | — |
+| 30 | Security as an afterthought | Observed | [F-01] |
+| 31 | Dead code / unused dependencies | Observed | [F-08], [F-11], [F-20] |
+| 32 | Missing/inadequate test coverage for critical paths | Observed | [F-02], [F-14] |
+| 33 | Hard-coded credentials or secrets in source | Not observed | — (see [S-25]) |
+| 34 | Inconsistent error/logging conventions | Observed | [F-12], [F-31], [F-34] |
+
+### Strength Categories S1–S14
+
+| # | Category | Status | Finding |
+|---|----------|--------|---------|
+| S1 | Clear modular boundaries | Observed | [S-01], [S-04] |
+| S2 | High cohesion | Observed | [S-06] |
+| S3 | Loose coupling | Observed | [S-02], [S-08] |
+| S4 | Dependency direction is stable | Observed | [S-03], [S-01] |
+| S5 | Dependency management hygiene | Observed | [S-09] |
+| S6 | Consistent API contracts | Observed | [S-10], [S-11] |
+| S7 | Robust error handling | Observed | [S-14], [S-15], [S-10] |
+| S8 | Observability present | Observed | [S-16], [S-17], [S-18] |
+| S9 | Configuration discipline | Observed | [S-19], [S-20] |
+| S10 | Security built-in | Observed | [S-13], [S-21], [S-22], [S-25] |
+| S11 | Testability & coverage | Observed | [S-23], [S-24] |
+| S12 | Resilience patterns | Observed | [S-12] |
+| S13 | Domain modeling strength | Observed | [S-05] |
+| S14 | Simple, pragmatic abstractions | Observed | [S-07] |
+
+---
+
+## Hotspots
+
+1. **`packages/server/src/db/purge.ts` + the `runRestore` DB-payload boundary in `packages/server/src/backup/backup-core.ts`** — the only High-impact security finding ([F-01]) lives in the seam between them: the archive is validated exhaustively, the DB inside it not at all, and the purge trusts a DB-sourced string as a filesystem path for a recursive delete. Review the two together, not separately.
+
+2. **`packages/client/src/hooks/useSnapshotController.ts`** — 68.4% statements / 48.9% branches, no dedicated test file, and the uncovered set is precisely the `committed_but_unreloaded` / lock / stale-chapter fan that the save-pipeline invariants exist to protect ([F-02]). It is also the second consumer of the `useEditorMutation` seam whose contract is convention-only ([F-07]), so the two findings compound.
+
+3. **`packages/server/src/outtakes/` as the reference implementation, and its five un-upgraded siblings** — outtakes is a genuine strength ([S-05], [S-11]) and simultaneously the yardstick that exposes [F-10] (chapters' weaker corruption gate), [F-25] (`.strict()` on new schemas only), [F-29] (single-transaction liveness reads), [F-34] (label-cap treatment), and [F-12] (its own read-after-insert taxonomy gap). The hotspot is not the module — it is the delta between it and `chapters/`, `snapshots/`, `images/`.
+
+Runner-up worth naming: **`packages/client/src/pages/EditorPage.tsx`**, where the accepted F-1 trade-off's stated premise no longer describes the residual ([F-04]).
+
+---
+
+## Next Questions
+
+1. Does the backup-restore threat model intend to cover a hostile `smudge.db` payload, or only a hostile archive envelope? The zip defenses are exhaustive and the DB payload is uninspected — which of those two is the deliberate line?
+
+2. When outtakes established a stricter pattern (schema-based corruption gate, `.strict()` request schemas, single-transaction liveness reads, discriminating label-length codes), was propagating it to the older domain modules considered and deferred, or not considered?
+
+3. `eslint-plugin-import` is installed, registered, and already parsing the tree with one rule enabled. What kept `import/no-cycle` and `import/no-extraneous-dependencies` off — a known false-positive problem, or simply that nobody reached for them?
+
+4. Is the `useEditorMutation` → `COMMITTED_UNRELOADED` handoff meant to stay a consumer obligation, given that the one time a third code path met it (`useFindReplaceController`, OOSI1) it was patched at the consumer rather than at the seam?
+
+5. `CLAUDE.md`'s structure diagram is now roughly half the server's modules out of date while its per-decision prose is meticulously current. Is the diagram still meant to be load-bearing, or has its role been superseded by the decision logs in `docs/roadmap-decisions/`?
+
+---
+
+## Analysis Metadata
+
+- **Agents dispatched:** 5 specialists in parallel — Structure & Boundaries (flaw types 1, 2, 9, 10, 11, 13, 29; strengths S1, S2, S13, S14) · Coupling & Dependencies (3, 4, 5, 6, 7, 8, 23, 27; S3, S4, S5) · Integration & Data (14–19, 24, 26; S6, S12) · Error Handling & Observability (12, 20, 21, 22, 25, 28, 34; S7, S8, S9) · Security & Code Quality (30, 31, 32, 33; S10, S11). Followed by 2 verifier agents (flaws / strengths), split from the single-verifier default because 72 raw findings exceeded what one agent could confirm by reading code for each.
+- **Scope:** ~180 non-test source files across `packages/{shared,server,client}/src`, `packages/server/scripts/`, `scripts/`, `e2e/`, plus root config. Excluded: `packages/*/dist/` (build output), `.devcontainer/` (project policy).
+- **Raw findings:** 72 (43 flaws, 29 strengths)
+- **Verified findings:** 60 (35 flaws, 25 strengths)
+- **Filtered out:** 12 — 5 dropped (4 flaws, 1 strength) and 7 merged as cross-specialist duplicates
+- **By impact:** 11 High (2 flaws, 9 strengths), 26 Medium (13 flaws, 13 strengths), 23 Low (20 flaws, 3 strengths)
+- **Dropped, with reasons:** `content-hash.ts` LRU as premature optimization (adjudicated in favour of the strength, [S-17]) · `ProjectStore` slice interfaces as over-abstraction (restatement of accepted F-4) · `useContentCache` partial-clear loop (the realistic `localStorage` throw fires on the first iteration, not the k-th, so the described failure mode is unreachable) · DEV-only client logging as an observability gap (a deliberate, documented, lint-enforced decision correct for the single-user localhost threat model) · "three parallel registries keyed the same way" as a strength (the key alignment is thematic and unenforced — `outtake.update`↔`api.outtakes.updateLabel`, `findReplace.search`↔`api.search.find`, and `chapter.flushBeforeNavigate` has no `api` twin at all)
+- **Steering files consulted:** `CLAUDE.md` (read in full by all seven agents, including its "Accepted Architectural Trade-offs" section — findings claiming an accepted premise had changed were scrutinized specifically), `CONTRIBUTING.md`, `docs/roadmap.md`, `docs/dependency-licenses.md`, `docs/backup.md`, `paad/architecture-reviews/2026-07-11-smudge-architecture-report.md`
+- **Corrections the verifiers applied to specialist claims (claim kept, number fixed):** `getDb` has 2 production call sites, not 3 · 5+ shared parity tests read sibling sources as text, not 3 · `dep-cooldown-core.mjs` exports 19 symbols, not 20 · `mapApiError` is used at 66 call sites, not 122 · there are 2 unlogged deviations from the best-effort logging shape, not 1 · "exactly one `generateHTML` call site" is true for production only (2 test files call it directly, one deliberately to prove the leak) · the coverage-surface claim was re-derived independently (145 expected source files, 0 missing; the remaining 15 entries are `db/migrations/*.js`)
