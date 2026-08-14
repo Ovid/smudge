@@ -313,6 +313,25 @@ describe("Ctrl+Shift+Arrow chapter navigation", () => {
     );
   });
 
+  it("announces the destination chapter in the nav live region on a successful navigation", async () => {
+    renderEditorPage();
+    await waitFor(
+      () => {
+        expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
+
+    fireEvent.keyDown(document, { key: "ArrowDown", ctrlKey: true, shiftKey: true });
+
+    await waitFor(
+      () => {
+        expect(screen.getByTestId("nav-announcement")).toHaveTextContent("Navigated to Chapter Two");
+      },
+      { timeout: 3000 },
+    );
+  });
+
   it("Ctrl+Shift+ArrowUp navigates to previous chapter", async () => {
     renderEditorPage();
     await waitFor(
