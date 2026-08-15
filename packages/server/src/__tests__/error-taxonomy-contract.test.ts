@@ -85,6 +85,35 @@ describe("error envelope contract (F-3 safety net)", () => {
     expect(res.body.error.code).toBe("PROJECT_TITLE_EXISTS");
     expect(res.body.error.message).toBe("A project with that title already exists");
   });
+
+  // F-06: with no catch-all between the routers and globalErrorHandler,
+  // Express's finalhandler answered unmatched /api/* with an HTML body, so the
+  // discriminating `error.code` the whole client scope registry keys on arrived
+  // undefined (apiFetch's res.json() throws SyntaxError on `<!DOCTYPE html>`).
+  it("GET /api/<unknown> — 404 UNKNOWN_ENDPOINT in the documented envelope", async () => {
+    const res = await request(t.app).get("/api/does-not-exist");
+    expect(res.status).toBe(404);
+    expect(res.type).toBe("application/json");
+    expect(res.body).toEqual({
+      error: { code: "UNKNOWN_ENDPOINT", message: "Unknown API endpoint." },
+    });
+  });
+
+  // A path that exists for another method was equally unmatched, and equally HTML.
+  it("DELETE /api/health — 404 UNKNOWN_ENDPOINT, not an HTML body", async () => {
+    const res = await request(t.app).delete("/api/health");
+    expect(res.status).toBe(404);
+    expect(res.type).toBe("application/json");
+    expect(res.body.error.code).toBe("UNKNOWN_ENDPOINT");
+  });
+
+  // The catch-all is scoped to /api on purpose. When static/SPA serving lands it
+  // takes this surface over; it must not be routed through the API envelope.
+  it("leaves non-/api paths alone — the catch-all does not claim them", async () => {
+    const res = await request(t.app).get("/totally-outside-api");
+    expect(res.status).toBe(404);
+    expect(res.body?.error?.code).toBeUndefined();
+  });
 });
 
 describe("no endpoint emits a status outside the allowlist (I4)", () => {
