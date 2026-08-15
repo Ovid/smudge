@@ -1,8 +1,7 @@
 import type { Knex } from "knex";
 import fs from "node:fs/promises";
-import path from "node:path";
 import { TRASH_RETENTION_MS } from "@smudge/shared";
-import { getDataDir, getImagesDir } from "../config/paths";
+import { containedPath, getDataDir, getImagesDir } from "../config/paths";
 import { logger } from "../logger";
 
 export async function purgeOldTrash(
@@ -58,8 +57,10 @@ export async function purgeOldTrash(
 
   // Best-effort cleanup of image directories on disk
   for (const projectId of purgedProjectIds) {
-    const imageDir = path.join(getImagesDir(resolvedDataDir), projectId);
     try {
+      // Inside the try: containedPath throws on an id that escapes the image
+      // root (F-01), and one hostile row must not abort cleanup for the rest.
+      const imageDir = containedPath(getImagesDir(resolvedDataDir), projectId);
       await fs.rm(imageDir, { recursive: true, force: true });
     } catch (err) {
       logger.warn({ err, projectId }, "Failed to clean up image directory during purge");
