@@ -220,7 +220,7 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
 - **Status:** Fixed
 - **Status reason:** Added `containedPath(root, ...segments)` to `config/paths.ts` — resolves the join and refuses any result not strictly inside `root`. Routed both DB-sourced path builders through it: `purgeOldTrash`'s image-dir join (moved inside the per-project try/catch, so one hostile row degrades to a logged warning instead of aborting cleanup) and `getImagePath`, which covers the other five call sites, where 5 of 6 pass a raw `row.project_id`. Chose containment over a UUID-shape check deliberately: containment is the security property, and a shape check would have inverted two passing tests whose fixtures use safe non-UUID ids (`p-disk`, `proj-id`). Verified by `/paad:rethink`, which also established by experiment that a DB `CHECK` constraint (the third option considered) cannot work — a restored hostile `smudge.db` carries its own populated `knex_migrations`, so `migrate.latest()` runs nothing (`ran: []`) and the constraint is never created.
 - **Status date:** 2026-08-15 09:45 UTC
-- **Status commit:** e49e95c5
+- **Status commit:** c4a858e3
 
 ### [F-02] `useSnapshotController` has no dedicated test; its data-loss-adjacent branches are uncovered
 - **Category:** 32 (Missing test coverage for critical paths)
