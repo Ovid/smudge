@@ -264,6 +264,34 @@ describe("images.service", () => {
       );
       expect(result).toHaveProperty("notFound", true);
     });
+
+    it("returns notFound when the row disappears between the update and the re-read", async () => {
+      const projectId = await createTestProject();
+      const uploadResult = await imagesService.uploadImage(projectId, {
+        buffer: TEST_PNG,
+        originalname: "test.png",
+        mimetype: "image/png",
+        size: TEST_PNG.length,
+      });
+      const imageId = (uploadResult as { image: { id: string } }).image.id;
+
+      // Drive the re-read-returns-nothing arm from the DB rather than by
+      // spying on a store method: the service's read-after-write may run on
+      // the outer store or on a transaction's txStore, and a trigger fires
+      // for both. Keeps this test shape-independent.
+      await t.db.raw(
+        `CREATE TRIGGER images_vanish_after_update AFTER UPDATE ON images
+         BEGIN DELETE FROM images WHERE id = NEW.id; END;`,
+      );
+      try {
+        const result = await imagesService.updateImageMetadata(imageId, {
+          alt_text: "A test image",
+        });
+        expect(result).toHaveProperty("notFound", true);
+      } finally {
+        await t.db.raw("DROP TRIGGER images_vanish_after_update;");
+      }
+    });
   });
 
   describe("deleteImage()", () => {
