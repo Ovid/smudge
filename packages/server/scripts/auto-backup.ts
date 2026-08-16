@@ -9,8 +9,14 @@ const r = await runAutoBackup({
   keep,
   skip: process.env.SMUDGE_SKIP_AUTO_BACKUP === "1",
 });
-if (r.status === "ok") console.log(`Auto-backup: ${r.outFile}`);
-else if (r.status === "skipped-no-db") console.log("Auto-backup: no database yet — skipping.");
+if (r.status === "ok") {
+  console.log(`Auto-backup: ${r.outFile}`);
+  // F-15: the archive succeeded but pruning did not, so backups/ is growing.
+  // Read on the ok path too — this branch previously ignored `warning`, which
+  // is why a rotation failure was invisible however loudly backup-core reported it.
+  if (r.warning) console.error(`WARNING: auto-backup ${r.warning}`);
+} else if (r.status === "skipped-no-db")
+  console.log("Auto-backup: no database yet — skipping.");
 else if (r.status === "skipped-optout")
   console.log("Auto-backup skipped (SMUDGE_SKIP_AUTO_BACKUP).");
 else console.error(`WARNING: auto-backup failed: ${r.warning} — starting Smudge anyway.`);

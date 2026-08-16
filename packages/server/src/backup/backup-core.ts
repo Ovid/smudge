@@ -356,10 +356,27 @@ export async function runAutoBackup(o: {
       mode: "auto",
       now: o.now,
     });
-    await rotateAutoBackups({ backupsDir: o.backupsDir, keep: o.keep }).catch(() => {
-      /* rotation is best-effort */
-    });
-    return { status: "ok", outFile };
+    // F-15: rotation is best-effort for the ARCHIVE's success, but its failure
+    // must not vanish. rotateAutoBackups goes out of its way to narrow — ENOENT
+    // is "nothing to prune", everything else re-throws (see its comment, and the
+    // test that pins it) — and a bare `.catch(() => {})` here defeated exactly
+    // that: a per-file rm hitting EACCES/EPERM/EISDIR meant backups/ grew on
+    // every `make dev` forever, with no log line and status "ok".
+    //
+    // Reported as a warning under status "ok", not as "failed": the archive
+    // genuinely landed, and the caller must still exit 0 (this must never block
+    // `make dev`). scripts/auto-backup.ts prints this on the ok path — populating
+    // the field alone would be invisible, since it previously read `warning`
+    // only in the failed branch.
+    let warning: string | undefined;
+    try {
+      await rotateAutoBackups({ backupsDir: o.backupsDir, keep: o.keep });
+    } catch (e) {
+      warning = `rotation failed, old auto-backups were not pruned: ${
+        e instanceof Error ? e.message : String(e)
+      }`;
+    }
+    return { status: "ok", outFile, warning };
   } catch (e) {
     return { status: "failed", warning: e instanceof Error ? e.message : String(e) };
   }
