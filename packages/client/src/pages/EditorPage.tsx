@@ -919,8 +919,11 @@ export function EditorPage() {
       try {
         const switched = await switchToView("editor");
         if (!switched) return false;
-        await handleSelectChapter(chapterId);
-        return true;
+        // I1 (review 2026-08-16): return handleSelectChapter's own verdict
+        // rather than a hardcoded `true`. It swallows its errors into a banner
+        // and returns early on abort/supersede, so `true` here announced a
+        // navigation that had not happened whenever the chapter GET failed.
+        return await handleSelectChapter(chapterId);
       } catch (err) {
         clientWarn("handleSelectChapterWithFlush failed", err);
         // S2 (agentic-review 2026-05-26): this outer catch is defensive

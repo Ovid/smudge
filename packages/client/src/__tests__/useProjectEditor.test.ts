@@ -906,6 +906,68 @@ describe("useProjectEditor", () => {
     warn.calledWith(expect.stringContaining("Failed to load chapter:"), expect.any(Error));
   });
 
+  // I1 (review 2026-08-16). F-13 made the Ctrl+Shift+Arrow screen-reader
+  // announcement conditional on handleSelectChapterWithFlush resolving true,
+  // but that function returned a hardcoded `true` after awaiting a
+  // `Promise<void>`. handleSelectChapter swallows its own errors, so on a
+  // failed chapter GET — offline, or a 500 — the live region still announced
+  // "Navigated to Chapter Two" while the editor showed Chapter One. That is
+  // the false announcement F-13 exists to remove, on a path MORE reachable
+  // than the editor-lock refusal it did fix.
+  describe("I1: handleSelectChapter reports whether the switch happened", () => {
+    it("resolves true when the chapter loads", async () => {
+      vi.mocked(api.chapters.get)
+        .mockResolvedValueOnce(mockChapter1) // initial load
+        .mockResolvedValueOnce(mockChapter2);
+
+      const { result } = renderHook(() => useProjectEditor("test-project"));
+      await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+      let switched: boolean | undefined;
+      await act(async () => {
+        switched = await result.current.handleSelectChapter("ch2");
+      });
+
+      expect(switched).toBe(true);
+      expect(result.current.activeChapter?.id).toBe("ch2");
+    });
+
+    it("resolves false when the chapter GET rejects", async () => {
+      const warn = expectConsole("warn");
+      vi.mocked(api.chapters.get)
+        .mockResolvedValueOnce(mockChapter1) // initial load
+        .mockRejectedValueOnce(new Error("select boom"));
+
+      const { result } = renderHook(() => useProjectEditor("test-project"));
+      await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+      let switched: boolean | undefined;
+      await act(async () => {
+        switched = await result.current.handleSelectChapter("ch2");
+      });
+
+      expect(switched).toBe(false);
+      // The user is still on the old chapter — which is the whole point.
+      expect(result.current.activeChapter?.id).toBe("ch1");
+      warn.calledWith(expect.stringContaining("Failed to load chapter:"), expect.any(Error));
+    });
+
+    it("resolves false when already on the requested chapter", async () => {
+      vi.mocked(api.chapters.get).mockResolvedValue(mockChapter1);
+
+      const { result } = renderHook(() => useProjectEditor("test-project"));
+      await waitFor(() => expect(result.current.activeChapter?.id).toBe("ch1"));
+
+      let switched: boolean | undefined;
+      await act(async () => {
+        switched = await result.current.handleSelectChapter("ch1");
+      });
+
+      // Nothing moved, so nothing should be announced as having moved.
+      expect(switched).toBe(false);
+    });
+  });
+
   it("calls onError callback when handleDeleteChapter fails (does not set full-page error)", async () => {
     const warn = expectConsole("warn");
     vi.mocked(api.chapters.delete).mockRejectedValue(new Error("delete boom"));

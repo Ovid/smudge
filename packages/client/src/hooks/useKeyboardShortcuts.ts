@@ -24,10 +24,12 @@ interface KeyboardShortcutDeps {
   setShortcutHelpOpen: React.Dispatch<React.SetStateAction<boolean>>;
   toggleSidebar: () => void;
   handleCreateChapter: () => void;
-  // Resolves true only if the chapter switch actually happened. False means
-  // switchToView refused (busy latch / editor lock / failed flush-save) and
-  // the user is still on the old chapter — callers must not report success
-  // (F-13).
+  // Resolves true only if `activeChapter` actually became `id`. False covers
+  // both halves: switchToView refused (busy latch / editor lock / failed
+  // flush-save), or the switch was permitted but the chapter never loaded —
+  // GET rejected, request aborted, or superseded by a newer selection (I1).
+  // Either way the user is still on the old chapter, so callers must not
+  // report success (F-13).
   handleSelectChapterWithFlush: (id: string) => Promise<boolean>;
   setWordCountAnnouncement: React.Dispatch<React.SetStateAction<string>>;
   setNavAnnouncement: React.Dispatch<React.SetStateAction<string>>;
@@ -196,10 +198,11 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
         if (!nextChapter) return;
         // F-13: announce only once the navigation has actually happened.
         // handleSelectChapterWithFlush resolves false when switchToView
-        // refused — the busy latch, the editor lock, or a failed flush-save.
-        // The editor-lock path shows no banner by design, so announcing
-        // unconditionally told a screen-reader user the one thing they had to
-        // go on, and told them the opposite of the truth.
+        // refused — the busy latch, the editor lock, or a failed flush-save —
+        // and (I1) when the switch was permitted but the chapter GET failed,
+        // aborted, or was superseded. The editor-lock path shows no banner by
+        // design, so announcing unconditionally told a screen-reader user the
+        // one thing they had to go on, and told them the opposite of the truth.
         void handleSelectChapterWithFlushRef
           .current(nextChapter.id)
           .then((navigated) => {
