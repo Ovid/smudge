@@ -52,9 +52,15 @@ export default tseslint.config(
   // One block per workspace so `packageDir` is [repo root, that workspace]:
   // root catches shared tooling (eslint, vitest), the workspace catches its
   // own deps, and a package declared only in a *sibling* workspace still
-  // errors. That cross-workspace precision is the point — F-11 was exactly
-  // that drift (server declaring @tiptap/* it never imported, client importing
-  // an undeclared @tiptap/core that resolved only via hoisting).
+  // errors. That cross-workspace precision is the point.
+  //
+  // S1 (review 2026-08-16) — scope, precisely: this rule reports IMPORTS THAT
+  // ARE NOT DECLARED. It never reports the mirror image, a declaration nothing
+  // imports. F-11 was both halves (server declaring `@tiptap/*` it never
+  // imported, client importing an undeclared `@tiptap/core` that resolved only
+  // via hoisting); only the second half is guarded here. A stale declaration
+  // still has to be caught by review — as one was in this pass, `@tiptap/pm` in
+  // `packages/shared`, since removed.
   // The JSDoc cast is load-bearing: inside `.map()` the object literal gets no
   // contextual type, so `["error", {...}]` widens to `(string | {...})[]` and
   // no longer satisfies `RuleEntry`'s tuple. The sibling blocks below are
