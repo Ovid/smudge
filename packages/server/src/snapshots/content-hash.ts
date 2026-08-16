@@ -1,4 +1,4 @@
-import { createHash } from "crypto";
+import { createHash } from "node:crypto";
 import { MAX_TIPTAP_DEPTH, CANONICAL_UNSAFE_KEYS } from "@smudge/shared";
 import { logger } from "../logger";
 

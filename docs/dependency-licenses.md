@@ -39,18 +39,12 @@ or other strong-copyleft licenses are present.
 | helmet                    | MIT     |                                                  |
 | knex                      | MIT     |                                                  |
 | multer                    | MIT     | Multipart form-data handling for image uploads   |
-| @tiptap/core              | MIT     | TipTap editor core (server-side HTML generation) |
-| @tiptap/extension-heading | MIT     | Heading extension for generateHTML()             |
-| @tiptap/extension-image   | MIT     | Image node support for generateHTML()            |
-| @tiptap/html              | MIT     | Server-side HTML generation from TipTap JSON     |
-| @tiptap/pm                | MIT     | ProseMirror peer dependency for TipTap           |
-| @tiptap/starter-kit       | MIT     | Standard extension bundle for generateHTML()     |
 | pino                      | MIT     | Structured logging                               |
 | docx                      | MIT     | Programmatic Word (.docx) generation             |
 | epub-gen-memory           | MIT     | EPUB generation from HTML content                |
 | jszip                     | MIT OR GPL-3.0-or-later | We elect **MIT**. Promoted devDep→dep in Phase 4b.14 for backup/restore zipping. See [JSZip](#jszip) |
 | turndown                  | MIT     | HTML-to-Markdown conversion for export           |
-| uuid                      | MIT     |                                                  |
+| zod                       | MIT     | Request validation at the UUID/route trust boundary |
 
 ### packages/client
 
@@ -62,13 +56,10 @@ or other strong-copyleft licenses are present.
 | @dnd-kit/utilities             | MIT                   |                                                      |
 | @fontsource/cormorant-garamond | OFL-1.1               | See [Fonts](#fonts)                                  |
 | @fontsource-variable/dm-sans   | OFL-1.1               | See [Fonts](#fonts)                                  |
-| @tiptap/extension-heading      | MIT                   |                                                      |
-| @tiptap/extension-image        | MIT                   | Image node support for editor and export             |
+| @tiptap/core                   | MIT                   | `Extension` base class for the editor's custom extensions |
 | @tiptap/extension-placeholder  | MIT                   |                                                      |
-| @tiptap/html                   | MIT                   |                                                      |
-| @tiptap/pm                     | MIT                   |                                                      |
+| @tiptap/pm                     | MIT                   | ProseMirror access (`@tiptap/pm/state`)              |
 | @tiptap/react                  | MIT                   |                                                      |
-| @tiptap/starter-kit            | MIT                   |                                                      |
 | dompurify                      | MPL-2.0 OR Apache-2.0 | We elect **Apache-2.0**. See [DOMPurify](#dompurify) |
 | react                          | MIT                   |                                                      |
 | react-dom                      | MIT                   |                                                      |
