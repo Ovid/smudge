@@ -403,7 +403,7 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
 - **Status:** Fixed
 - **Status reason:** Dropped `@types/dompurify` from `packages/client` devDependencies. Verified stronger than by `--traceResolution`: after `npm install` removed the stub from `node_modules` entirely, `tsc -b --force` (non-incremental, so no stale `.tsbuildinfo` could mask it) still passes across all three packages — the pre-3.x stub was never the resolution target, `dompurify@3.4.0`'s own `./dist/purify.cjs.d.ts` is. No `docs/dependency-licenses.md` row to remove: the stub was covered by the generic `@types/*` dev-only row, and the runtime `dompurify` entry with its Apache-2.0 election is untouched.
 - **Status date:** 2026-08-16 16:29 UTC
-- **Status commit:** &lt;pending&gt;
+- **Status commit:** 2e4a0b10
 
 ### [F-21] `initDb` and `initProjectStore` have asymmetric re-init contracts
 - **Category:** 27 (Temporal coupling)
