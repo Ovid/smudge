@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { sanitizeEditorHtml } from "../sanitizer";
 import type { Chapter } from "@smudge/shared";
 import { renderEditorHtml } from "@smudge/shared/editor-extensions";
+import { clientWarn } from "../errors";
 import { STRINGS } from "../strings";
 
 interface PreviewModeProps {
@@ -48,7 +49,13 @@ export function PreviewMode({ chapters, onNavigateToChapter }: PreviewModeProps)
     if (!content) return "";
     try {
       return renderEditorHtml(content);
-    } catch {
+    } catch (err) {
+      // F-35: see renderSnapshotContent, the sibling degrade — the null return
+      // is the user-facing half and is correct; this is the developer-facing
+      // half that was missing. Only a throw reaches here (the `!content` guard
+      // above owns the empty case), so this never fires for an untouched
+      // chapter.
+      clientWarn("renderChapterHtml: renderEditorHtml threw", err);
       return null;
     }
   }

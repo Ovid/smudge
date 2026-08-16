@@ -24,6 +24,7 @@ import {
 import { renderHtml, renderMarkdown, renderPlainText } from "../export/export.renderers";
 import { renderDocx } from "../export/docx.renderer";
 import { renderEpub } from "../export/epub.renderer";
+import { logger } from "../logger";
 import type { ExportProjectInfo, ExportChapter } from "../export/export.renderers";
 
 vi.mock("../logger", () => ({
@@ -186,6 +187,16 @@ describe("resolveImage", () => {
     });
     const result = await resolveImage(missingId, imageSrc);
     expect(result).toBeNull();
+    // The row is in the DB but the bytes are gone: an operator-actionable
+    // anomaly (restore the file) that the export otherwise reports as success.
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        err: expect.anything(),
+        image_id: missingId,
+        project_id: projectId,
+      }),
+      expect.stringContaining("missing on disk"),
+    );
   });
 });
 
@@ -338,6 +349,14 @@ describe("resolveImagesForEpub", () => {
     expect(resolved).not.toContain("file://");
     expect(resolved).toContain("before");
     expect(resolved).toContain("after");
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        err: expect.anything(),
+        image_id: missingId,
+        project_id: projectId,
+      }),
+      expect.stringContaining("missing on disk"),
+    );
   });
 });
 
@@ -651,6 +670,14 @@ describe("renderEpub with images", () => {
     expect(buf).toBeInstanceOf(Buffer);
     expect(buf[0]).toBe(0x50);
     expect(buf[1]).toBe(0x4b);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        err: expect.anything(),
+        image_id: missingCoverId,
+        project_id: projectId,
+      }),
+      expect.stringContaining("missing on disk"),
+    );
   });
 });
 

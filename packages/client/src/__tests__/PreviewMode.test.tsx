@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeAll, afterAll } from "vitest
 import { render, screen, cleanup, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { PreviewMode } from "../components/PreviewMode";
+import { expectConsole } from "./expectConsole";
 import type { Chapter } from "@smudge/shared";
 
 const mockObserve = vi.fn();
@@ -191,6 +192,7 @@ describe("PreviewMode", () => {
   });
 
   it("renders error message when generateHTML throws on malformed content", () => {
+    const warn = expectConsole("warn");
     const chaptersWithBadContent: Chapter[] = [
       {
         ...chapters[0]!,
@@ -203,5 +205,8 @@ describe("PreviewMode", () => {
     expect(screen.getByRole("heading", { name: "Chapter One" })).toBeInTheDocument();
     // The render error fallback should appear
     expect(screen.getByText("Unable to render content")).toBeInTheDocument();
+    // F-35: the writer sees correct copy either way; the developer needs the
+    // throw itself, since it names the unrenderable node or mark.
+    warn.calledWith(expect.stringContaining("renderChapterHtml"), expect.any(Error));
   });
 });

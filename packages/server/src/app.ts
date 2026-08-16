@@ -11,7 +11,7 @@ import { imagesRouter, imagesDirectRouter } from "./images/images.routes";
 import { snapshotChapterRouter, snapshotDirectRouter } from "./snapshots/snapshots.routes";
 import { projectOuttakesRouter, outtakeDirectRouter } from "./outtakes/outtakes.routes";
 import { searchRouter } from "./search/search.routes";
-import { AppError, ERROR_STATUS_ALLOWLIST } from "./errors/appError";
+import { AppError, ERROR_STATUS_ALLOWLIST, NotFoundError } from "./errors/appError";
 import { requestContext } from "./requestContext";
 import { MAX_CHAPTER_CONTENT_BYTES } from "./constants";
 
@@ -64,6 +64,25 @@ export function createApp(): express.Express {
       logger.error({ err }, "Health check DB probe failed");
       res.status(503).json({ status: "error" });
     }
+  });
+
+  // F-06: unmatched /api/* must answer the documented error envelope. Without
+  // this, Express's finalhandler served its default HTML 404, which lands in
+  // apiFetch's !res.ok branch where res.json() throws SyntaxError — so the
+  // discriminating `error.code` the whole client scope registry keys on arrived
+  // `undefined`. UNKNOWN_ENDPOINT distinguishes "no such endpoint" (always a
+  // caller bug) from NOT_FOUND's "no such row"; no scope maps either by code, so
+  // the user-facing copy is identical and this costs the reader nothing.
+  //
+  // MUST stay synchronous. Express 4 does not await handlers, so an `async`
+  // arrow here rejects unhandled and Node 22 terminates the process — every
+  // mistyped URL would crash the server. Use asyncHandler if this ever awaits.
+  //
+  // Scoped to /api deliberately: when static/SPA serving lands, its catch-all
+  // mounts AFTER this one, or unmatched /api/* starts answering index.html
+  // with a 200.
+  app.use("/api", () => {
+    throw new NotFoundError("Unknown API endpoint.", "UNKNOWN_ENDPOINT");
   });
 
   app.use(globalErrorHandler);

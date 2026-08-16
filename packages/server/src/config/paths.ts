@@ -38,6 +38,36 @@ export function getImagesDir(dataDir?: string): string {
 }
 
 /**
+ * Join `segments` beneath `root` and assert the result stays inside it (F-01).
+ *
+ * Every caller builds a path out of strings that arrive from the `projects` or
+ * `images` tables, and those strings are attacker-controlled under this
+ * project's stated threat model: `runRestore` validates the backup *archive*
+ * (zip-slip, declared sizes, free space) and then writes `smudge.db` to disk
+ * verbatim with zero payload inspection, after which `index.ts` runs
+ * `purgeOldTrash` unconditionally on the next boot. `purgeOldTrash` recursive-
+ * `rm`s what it is handed, so a row whose id is `../../somewhere` turns into
+ * arbitrary directory deletion.
+ *
+ * Containment is the property that matters here, not UUID-shape. Rejecting
+ * anything that escapes `root` closes the traversal completely while leaving
+ * the readable non-UUID project ids used throughout the fixtures working — a
+ * shape check would buy only the ability to refuse burrowing *within* the
+ * image store, and would cost a rewrite of tests that were never unsafe.
+ *
+ * Equality with `root` is refused too: an empty segment must not resolve to
+ * "the whole image store" and hand that to a recursive delete.
+ */
+export function containedPath(root: string, ...segments: string[]): string {
+  const resolvedRoot = path.resolve(root);
+  const full = path.resolve(resolvedRoot, ...segments);
+  if (!full.startsWith(resolvedRoot + path.sep)) {
+    throw new Error(`Path escapes ${resolvedRoot}: ${segments.join(path.sep)}`);
+  }
+  return full;
+}
+
+/**
  * Directory holding backup archives: `<cwd>/backups`.
  *
  * S7 (dedup review 2026-07-26): the one persistence location that never joined

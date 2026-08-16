@@ -214,6 +214,54 @@ describe("purgeOldTrash", () => {
     await db.destroy();
   });
 
+  // F-01: a restored backup's smudge.db is written to disk verbatim — runRestore
+  // validates the archive (zip-slip, bomb limits, free space) but never inspects
+  // the DB payload, and index.ts runs purgeOldTrash unconditionally on the next
+  // boot. So a hostile row controls the string that becomes a recursive-rm path.
+  it("refuses to purge an image directory that escapes the images root", async () => {
+    const db = knex(createTestKnexConfig());
+    await db.raw("PRAGMA foreign_keys = ON");
+    await db.migrate.latest();
+
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "smudge-purge-"));
+
+    const now = new Date();
+    const old = new Date(now.getTime() - 31 * 24 * 60 * 60 * 1000).toISOString();
+
+    // Escapes `<tmpDir>/images` into `<tmpDir>` — still inside the fixture, so
+    // a regression destroys only the temp dir, never a real directory.
+    await db("projects").insert({
+      id: "../victim",
+      title: "Hostile Project",
+      mode: "fiction",
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+      deleted_at: old,
+    });
+
+    const victimDir = path.join(tmpDir, "victim");
+    await fs.mkdir(victimDir, { recursive: true });
+    await fs.writeFile(path.join(victimDir, "irreplaceable.txt"), "the manuscript");
+
+    const warnSpy = vi
+      .spyOn((await import("../logger")).logger, "warn")
+      .mockImplementation(() => {});
+
+    await purgeOldTrash(db, tmpDir);
+
+    // The victim directory and its contents survive untouched.
+    await expect(fs.access(path.join(victimDir, "irreplaceable.txt"))).resolves.toBeUndefined();
+    // Refused loudly, not skipped silently.
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: "../victim" }),
+      expect.stringContaining("image directory"),
+    );
+
+    warnSpy.mockRestore();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+    await db.destroy();
+  });
+
   it("deletes chapter snapshots when a standalone chapter is purged", async () => {
     const db = knex(createTestKnexConfig());
     await db.raw("PRAGMA foreign_keys = ON");

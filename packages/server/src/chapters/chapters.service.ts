@@ -144,12 +144,20 @@ export async function updateChapter(
   let enriched: ChapterWithLabel;
   try {
     enriched = await enrichChapterWithLabel(store, updated);
-  } catch {
+  } catch (err: unknown) {
     // Enrichment failed but the save succeeded — fall back to status as label
     // so the client sees a successful save, not a false 500.
     // I5: route through the shared helper. This inline twin was re-introduced
     // by b694a86 six days after e6fd38b consolidated the strips, and survived
     // bdb6c99's fix to the identical shape in snapshots.service.ts.
+    // F-31: log it. This is the app's hottest endpoint, so a persistent
+    // chapter_statuses lookup failure would degrade status_label on every save
+    // forever with zero log lines. Matches the level and field shape of the
+    // identical degrade in snapshots.service.restoreSnapshot.
+    logger.error(
+      { err, project_id: projectId, chapter_id: id },
+      "enrichChapterWithLabel failed after save; returning status as label",
+    );
     enriched = { ...stripCorruptFlag(updated), status_label: updated.status };
   }
   return { chapter: enriched };

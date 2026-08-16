@@ -5,6 +5,7 @@ import { chapterContentToHtml } from "./export.renderers";
 import { escapeHtml } from "./html-escape";
 import { mimeToExt, getImagePath } from "../images/images.paths";
 import { resolveImagesForEpub, type ImageSource } from "./image-resolver";
+import { logger } from "../logger";
 import type { ExportProjectInfo, ExportChapter, RenderOptions } from "./export.renderers";
 
 export interface EpubRenderOptions extends RenderOptions {
@@ -91,8 +92,14 @@ export async function renderEpub(
         try {
           await fs.access(filePath);
           coverFileUrl = pathToFileURL(filePath).href;
-        } catch {
-          // Cover image file not found — proceed without cover
+        } catch (err: unknown) {
+          // Cover image file not found — proceed without cover. The writer
+          // explicitly chose this cover, so its silent absence is worse here
+          // than for an inline image; see resolveImage for the full rationale.
+          logger.warn(
+            { err, image_id: row.id, project_id: row.project_id },
+            "EPUB cover image file missing on disk; rendering without a cover",
+          );
         }
       }
     }

@@ -331,6 +331,43 @@ describe("applyImageRefDiff()", () => {
     },
   );
 
+  it("warns but still diffs when oldContent JSON is unparseable", async () => {
+    // The old image set degrades to empty, which over-counts additions rather
+    // than under-counting — deliberate and safe (see the comment at the catch).
+    // But an unreadable chapter row is still an anomaly, and its sibling guard
+    // one branch down already warns; silence here was the odd one out.
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const incrementCalls: Array<[string, number]> = [];
+    const imageId = "44444444-4444-4444-4444-444444444444";
+    const projectId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    const newContent = JSON.stringify({
+      type: "doc",
+      content: [{ type: "image", attrs: { src: `/api/images/${imageId}` } }],
+    });
+
+    await applyImageRefDiff(
+      {
+        findImagesByIds: async () => [
+          { id: imageId, project_id: projectId, reference_count: 0 } as unknown as ImageRow,
+        ],
+        incrementImageReferenceCount: async (id, delta) => {
+          incrementCalls.push([id, delta]);
+        },
+      },
+      "{not valid json",
+      newContent,
+      projectId,
+    );
+
+    // Behaviour unchanged: the diff still runs and the new reference counts.
+    expect(incrementCalls).toEqual([[imageId, 1]]);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.anything(), project_id: projectId }),
+      expect.stringContaining("oldContent"),
+    );
+    warnSpy.mockRestore();
+  });
+
   it("skips increment and warns when the referenced image belongs to a different project", async () => {
     const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
     const incrementCalls: Array<[string, number]> = [];

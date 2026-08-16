@@ -217,6 +217,10 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
   The full reachability chain was verified: (a) nothing touches `projectId` between the `trx("projects").select("id")` read at `:20-40` and the `fs.rm`; (b) `grep CHECK packages/server/src/db/migrations/` returns nothing — `001_create_projects_and_chapters.js:4` is `table.uuid("id").primary()`, an unconstrained `char(36)` in SQLite; (c) `runRestore` (`backup-core.ts:190-203`) validates the *archive* meticulously — `validateEntryPaths` for zip-slip, `checkDeclaredSizes` for bombs, free-space, typed-filename confirmation — then installs `smudge.db` **verbatim with zero payload inspection**; (d) `index.ts:35` runs the purge on every server start, and the crafted row controls `deleted_at`, so it fires on the first boot after restore — exactly what the restore CLI tells the operator to do next; (e) `grep "fs.rm"` across `packages/server/src` confirms this is the only recursive rm — `deleteProject` never unlinks directories and `deleteImage` (`images.service.ts:207`) unlinks a single file. Secondary sites of the same class (read/unlink, not recursive rm): `images.service.ts:115,207` and `export/image-resolver.ts` via `getImagePath(image.project_id, …)`.
 - **Found by:** Security & Code Quality
 - **Note:** The specialist confirmed this empirically with a harness run entirely outside the repo (a `projects` row with `id = "../../VICTIM_DIR"` deleted the victim directory; `git status --porcelain` clean afterward). What makes this more than theoretical is that the codebase's own defenses concede the vector — the archive is already treated as hostile, and the DB payload is the one part of it that gets no inspection.
+- **Status:** Fixed
+- **Status reason:** Added `containedPath(root, ...segments)` to `config/paths.ts` — resolves the join and refuses any result not strictly inside `root`. Routed both DB-sourced path builders through it: `purgeOldTrash`'s image-dir join (moved inside the per-project try/catch, so one hostile row degrades to a logged warning instead of aborting cleanup) and `getImagePath`, which covers the other five call sites, where 5 of 6 pass a raw `row.project_id`. Chose containment over a UUID-shape check deliberately: containment is the security property, and a shape check would have inverted two passing tests whose fixtures use safe non-UUID ids (`p-disk`, `proj-id`). Verified by `/paad:rethink`, which also established by experiment that a DB `CHECK` constraint (the third option considered) cannot work — a restored hostile `smudge.db` carries its own populated `knex_migrations`, so `migrate.latest()` runs nothing (`ran: []`) and the constraint is never created.
+- **Status date:** 2026-08-15 09:45 UTC
+- **Status commit:** c4a858e3
 
 ### [F-02] `useSnapshotController` has no dedicated test; its data-loss-adjacent branches are uncovered
 - **Category:** 32 (Missing test coverage for critical paths)
@@ -256,6 +260,11 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
 - **Evidence:** `packages/server/src/app.ts:41-69` — no `app.use("/api", …)` fallthrough exists. Confirmed empirically by a specialist booting `createApp()` on an ephemeral port from a scratchpad script (no repo file touched): `GET /api/does-not-exist` → `404 text/html`, `<pre>Cannot GET /api/does-not-exist</pre>`. Client-side this lands in `apiFetch`'s `!res.ok` branch (`packages/client/src/api/client.ts:164-198`) where `res.json()` throws `SyntaxError`, so the error arrives with `code: undefined` — the discriminating `error.code` the whole scope registry is built on is absent. No test asserts unknown-path behavior.
 - **Found by:** Integration & Data
 - **Forward hazard:** when the SPA catch-all lands (flagged in the steering file's Tech Stack section), unmatched `/api/*` will start returning `index.html` with a 200 unless the API 404 is closed first.
+- **Status:** Fixed
+- **Status reason:** Added a synchronous `app.use("/api", …)` catch-all between `/api/health` and `globalErrorHandler`, throwing `NotFoundError("Unknown API endpoint.", "UNKNOWN_ENDPOINT")`. **The synchronous shape is load-bearing:** `/paad:rethink` established by experiment that Express 4.22.1 does not await handlers, so an `async` catch-all rejects unhandled and Node 22 terminates the process — every mistyped URL would have crashed the server. Verified by differential test (16 real endpoints byte-identical patched vs unpatched) that the catch-all shadows nothing, including the six routers sharing the `/api/projects` prefix that fall through one another. Scoped to `/api`, pinned by a test, so the future SPA catch-all must mount after it.
+- **Status caveat:** `UNKNOWN_ENDPOINT` buys **less** than the original justification claimed. Verified over all 37 client scopes: `UNKNOWN_ENDPOINT` and `NOT_FOUND` map identically (no scope has a `byCode["NOT_FOUND"]` entry, so both fall to `byStatus[404]`/fallback) — the user-facing copy is byte-identical. And `globalErrorHandler` returns before logging for any `AppError`, so this code reaches **no server log**; its only visibility is the response body in a network panel. Kept because it correctly names the fault at the one moment anyone reads it, and costs nothing. It is the first 404 discriminator in the codebase with no client `byCode` entry (the other three — `PROJECT_PURGED`, `CHAPTER_PURGED`, `SCOPE_NOT_FOUND` — all have one).
+- **Status date:** 2026-08-15 10:40 UTC
+- **Status commit:** 7673b161
 
 ### [F-07] `useEditorMutation`'s committed path deliberately leaves the state machine mid-transition
 - **Category:** 27 (Temporal coupling)
@@ -342,6 +351,12 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
   ```
   The re-throw it defeats is at `:373-381` — *"A permission/IO error … would otherwise be masked as 'nothing to prune'; re-throw it"* — and has a dedicated test (`backup-core.test.ts:1106`). The return type has a `warning` field one line away, used by the sibling failure arm. Reachable independently of a backup-write failure: `readdir` succeeds but a per-file `rm` at `:397` hits EACCES/EPERM, so `backups/smudge-auto-*.zip` grows on every `make dev` forever, silently. Compare the convention at `db/purge.ts:65` and `images.reaper.ts:53`.
 - **Found by:** Error Handling & Observability
+- **Correction to this finding:** the suggested fix ("the return type has a `warning` field one line away") is **insufficient on its own**. The sole production consumer, `scripts/auto-backup.ts`, read `warning` only in its `failed` branch, so populating it under `status: "ok"` would have changed nothing an operator ever sees. The fix necessarily spans both files. The finding's pointer to the `db/purge.ts` / `images.reaper.ts` logging convention also does not transfer: those run inside the server process, whereas `runAutoBackup` only ever runs from a standalone `tsx` script, and `backup-core.ts` contains zero logging calls by design — it reports through return values and the scripts own all operator output.
+- **Status:** Fixed
+- **Status reason:** Replaced the bare `.catch(() => {})` with a try/catch that captures the rotation error into `warning` while keeping `status: "ok"` (the archive genuinely landed; `"failed"` would be a lie and the caller must still exit 0). Taught `scripts/auto-backup.ts` to print it on the ok path. Red test: a stale auto-backup that is really a non-empty directory makes the per-file `rm(..., {force:true})` throw EISDIR — the same post-`readdir` failure shape as the EACCES/EPERM case the narrowing exists to preserve.
+- **Status caveat:** the half that delivers the value — the message reaching a terminal — lives in `packages/server/scripts/auto-backup.ts`, which is **coverage-excluded by design** (`vitest.config.ts:36-41`, the `ensure-native.mjs` precedent), so no test guards it. Verified instead by one end-to-end run against a `backups/` directory containing an un-prunable entry: archive written, `WARNING: auto-backup rotation failed, old auto-backups were not pruned: … EISDIR …` on stderr, exit code 0, stale entry still present. A future edit to that script can silently re-break the visibility without any test going red.
+- **Status date:** 2026-08-16 08:55 UTC
+- **Status commit:** 3fd18b0f
 
 ### [F-16] Two chapter-domain methods live in the `ImagesStore` slice
 - **Category:** 11 (Low cohesion)
@@ -469,6 +484,11 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
   The identical degrade in `snapshots.service.ts:254-268` logs it with `{err, project_id, chapter_id}`, and [S-18] establishes that shape as near-universal.
 - **Found by:** Error Handling & Observability
 - **Note:** Distinct from accepted F-19, whose whole premise is that best-effort failures are "logged, not swallowed."
+- **Status:** Fixed
+- **Status reason:** `catch` now binds `err` and calls `logger.error({ err, project_id, chapter_id }, "enrichChapterWithLabel failed after save; returning status as label")` — the same level, field shape, and message form as the restore-path twin the finding cites, so the two degrades are now greppable as one class. The fallback behaviour is unchanged and still routed through `stripCorruptFlag` (I5): this adds a log line, it does not change what the client receives. Pinned by extending the existing `chapters.service.test.ts` fallback test rather than adding a second test of the same scenario.
+- **Status caveat:** The finding was reported as fixed in an earlier session but **never landed** — no `fix(architecture)` commit and no status block existed, while `chapters.service.ts` still held the bare `catch`. Worth knowing that the report's silence, not the code, was the thing that drifted.
+- **Status date:** 2026-08-16 07:26 UTC
+- **Status commit:** 3284d365
 
 ### [F-32] Three different live-region clear durations, two of them inline literals
 - **Category:** 28 (Magic numbers/strings)
@@ -498,6 +518,11 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
 - **Explanation:** Both render-failure paths surface correct user copy but neither logs. A `renderEditorHtml` throw means a mark or node the shared extension set cannot render — exactly the class of bug the `editorExtensions.test.ts` forcing pause exists to catch — and it is invisible even in dev.
 - **Evidence:** `packages/client/src/components/PreviewMode.tsx:47-54` (`catch { return null; }`) and `packages/client/src/hooks/useSnapshotController.ts:46-52` (`catch { return \`<p>${STRINGS.snapshots.renderError}</p>\`; }`). This is a deviation from the codebase's own convention — `clientWarn` is used at 64 sites — not merely an instance of the DEV-only logging policy.
 - **Found by:** Error Handling & Observability
+- **Status:** Fixed
+- **Status reason:** Both catches now bind `err` and call `clientWarn(...)` — `renderSnapshotContent` (`useSnapshotController.ts`) and `renderChapterHtml` (`PreviewMode.tsx`). `clientWarn` is the convention the finding cites and is DEV-gated, so production behaviour is unchanged and the user-facing copy in both paths is untouched. Pinned by extending the two existing render-failure tests rather than adding new scenarios; both route through `expectConsole` per the zero-warnings rule, so the new logs both assert and stay out of the test output.
+- **Status caveat:** This restores the *developer's* signal only. Neither path tells the reader why the render failed, and neither should — the finding's premise is that the user copy was already correct. Note also that `PreviewMode`'s `!content` guard still owns the empty case, so the new warn cannot fire for an untouched chapter (the I3 conflation this file already fixed).
+- **Status date:** 2026-08-16 15:59 UTC
+- **Status commit:** 666872ca
 
 ---
 

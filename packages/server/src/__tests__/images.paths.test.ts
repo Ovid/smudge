@@ -98,6 +98,21 @@ describe("images.paths", () => {
       expect(p).toContain("proj-id");
       expect(p).toContain("img-id.png");
     });
+
+    // F-01: both segments are DB-sourced (5 of 6 call sites pass a raw
+    // `row.project_id`), and a restored backup's smudge.db reaches disk with
+    // zero payload inspection — so a hostile row controls these strings.
+    it("refuses a project id that escapes the images directory", () => {
+      expect(() => getImagePath("../../etc", "img-id", "png")).toThrow(/escapes/);
+    });
+
+    it("refuses an image id that escapes the images directory", () => {
+      expect(() => getImagePath("proj-id", "../../../etc/passwd", "png")).toThrow(/escapes/);
+    });
+
+    it("refuses an absolute project id, which would discard the images root", () => {
+      expect(() => getImagePath("/etc", "img-id", "png")).toThrow(/escapes/);
+    });
   });
 
   describe("getDataDir()", () => {

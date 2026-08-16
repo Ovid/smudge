@@ -112,10 +112,20 @@ export async function applyImageRefDiff(
   if (oldContentJson) {
     try {
       oldContent = JSON.parse(oldContentJson);
-    } catch {
+    } catch (err: unknown) {
       // Old content corrupt: treat old image set as empty. This only
       // affects *additions* (images newly referenced), which we're happy
-      // to over-count rather than under-count.
+      // to over-count rather than under-count — so the degrade is safe and
+      // deliberate, and the diff below still runs.
+      //
+      // Safe is not the same as unremarkable: a chapter row whose stored JSON
+      // will not parse is an anomaly worth a line, and the newContent guard
+      // one branch down has always warned about its own version of it. This
+      // arm was the silent one.
+      logger.warn(
+        { err, project_id: projectId },
+        "applyImageRefDiff: oldContent is unparseable; treating the old image set as empty",
+      );
     }
   }
   let newContent: Record<string, unknown> | null = null;

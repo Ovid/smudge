@@ -1161,6 +1161,40 @@ it("produces a smudge-auto archive and rotates, status ok", async () => {
   expect(r.outFile).toContain("smudge-auto-2026-05-26T080000Z.zip");
 });
 
+// F-15: rotateAutoBackups deliberately narrows — ENOENT is "nothing to prune",
+// everything else re-throws (and that re-throw has its own test above) — and the
+// sole production caller swallowed exactly that with a bare `.catch(() => {})`.
+// A per-file rm that keeps failing means backups/ grows on every `make dev`
+// forever, with no log line, no warning field, and status: "ok".
+it("reports a rotation failure as a warning while the backup itself stays ok", async () => {
+  const { dataDir, dbPath } = await makeFixture();
+  const backupsDir = join(dataDir, "backups");
+  await mkdir(backupsDir, { recursive: true });
+
+  // A stale auto-backup that is really a non-empty DIRECTORY. rotateAutoBackups
+  // prunes with rm(path, { force: true }) and no `recursive`, so this throws
+  // EISDIR/ERR_FS_EISDIR — the same post-readdir per-file failure shape as the
+  // EACCES/EPERM case the narrowing exists to preserve.
+  const undeletable = join(backupsDir, "smudge-auto-2020-01-01T000000Z.zip");
+  await mkdir(undeletable, { recursive: true });
+  await writeFile(join(undeletable, "blocker"), "x");
+
+  const r = await runAutoBackup({
+    dataDir,
+    dbPath,
+    backupsDir,
+    keep: 1, // forces the stale entry out of the survivor set
+    now: () => new Date(Date.UTC(2026, 4, 26, 8, 0, 0)),
+  });
+
+  // The archive genuinely succeeded — this must not masquerade as a failure.
+  expect(r.status).toBe("ok");
+  expect(r.outFile).toContain("smudge-auto-2026-05-26T080000Z.zip");
+  // ...but the operator is told pruning did not happen.
+  expect(r.warning).toBeTruthy();
+  expect(r.warning).toMatch(/rotat/i);
+});
+
 it("is best-effort: returns 'failed' with a warning instead of throwing", async () => {
   const { dataDir, dbPath } = await makeFixture();
   // point backupsDir at a path whose parent is a FILE, so mkdir fails
