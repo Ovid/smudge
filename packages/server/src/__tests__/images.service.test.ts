@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import { mkdtemp, rm, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -14,6 +14,18 @@ const TEST_PNG = Buffer.from(
 );
 
 const t = setupTestDb();
+
+// S4 (review 2026-08-16): one test plants a trigger that deletes an image row
+// on UPDATE, to drive a read-after-write miss. `setupTestDb` builds ONE
+// `:memory:` DB per file in `beforeAll` and never resets schema between tests,
+// so a trigger that outlives its test silently rewrites every later
+// `UPDATE images` — six deleteImage() tests break, pointing at the wrong place.
+// A `finally` in the planting test is not enough: a timeout or an unhandled
+// rejection skips it. Dropping unconditionally here is the only placement that
+// survives an abandoned test body.
+afterEach(async () => {
+  await t.db.raw("DROP TRIGGER IF EXISTS images_vanish_after_update;");
+});
 
 let tempDir: string;
 let originalDataDir: string | undefined;
@@ -283,14 +295,10 @@ describe("images.service", () => {
         `CREATE TRIGGER images_vanish_after_update AFTER UPDATE ON images
          BEGIN DELETE FROM images WHERE id = NEW.id; END;`,
       );
-      try {
-        const result = await imagesService.updateImageMetadata(imageId, {
-          alt_text: "A test image",
-        });
-        expect(result).toHaveProperty("notFound", true);
-      } finally {
-        await t.db.raw("DROP TRIGGER images_vanish_after_update;");
-      }
+      const result = await imagesService.updateImageMetadata(imageId, {
+        alt_text: "A test image",
+      });
+      expect(result).toHaveProperty("notFound", true);
     });
   });
 
