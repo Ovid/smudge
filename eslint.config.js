@@ -14,12 +14,61 @@ export default tseslint.config(
     plugins: {
       import: importPlugin,
     },
+    settings: {
+      // Both entries are load-bearing for `import/no-cycle` on TypeScript, and
+      // each fails SILENTLY when missing — the rule reports nothing and looks
+      // like a clean bill of health (F-09). Verified by fixture:
+      //   - no resolver:  `import/no-unresolved` fires on a *valid*
+      //     extensionless relative TS import, so the cycle walk never starts.
+      //   - resolver but no `import/parsers`: resolution succeeds, but the
+      //     plugin cannot parse the *imported* .ts file to read its own
+      //     imports, so a real two-file cycle goes undetected.
+      // Only with both does a planted cycle report "Dependency cycle detected."
+      // `eslintImportCycleRule.test.ts` plants exactly that fixture so this
+      // cannot silently regress to a false green.
+      "import/resolver": { typescript: true },
+      "import/parsers": { "@typescript-eslint/parser": [".ts", ".tsx"] },
+    },
     rules: {
       "@typescript-eslint/no-unused-vars": [
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
       "import/first": "error",
+      // S-02 (acyclic module graph) was protected by review alone. Zero cycles
+      // exist today — re-measured after the detection above was made to work.
+      "import/no-cycle": "error",
+    },
+  },
+  // One block per workspace so `packageDir` is [repo root, that workspace]:
+  // root catches shared tooling (eslint, vitest), the workspace catches its
+  // own deps, and a package declared only in a *sibling* workspace still
+  // errors. That cross-workspace precision is the point — F-11 was exactly
+  // that drift (server declaring @tiptap/* it never imported, client importing
+  // an undeclared @tiptap/core that resolved only via hoisting).
+  ...["shared", "server", "client"].map((workspace) => ({
+    files: [`packages/${workspace}/**/*.{ts,tsx}`],
+    rules: {
+      "import/no-extraneous-dependencies": [
+        "error",
+        {
+          packageDir: [".", `packages/${workspace}`],
+          // Production source may not import a devDependency (it would ship
+          // broken); tests and local config may.
+          devDependencies: [
+            "**/__tests__/**",
+            "**/*.test.{ts,tsx}",
+            "**/*.spec.{ts,tsx}",
+            "**/*.config.{ts,mts}",
+          ],
+        },
+      ],
+    },
+  })),
+  {
+    files: ["e2e/**/*.ts", "scripts/**/*.{ts,mjs}", "*.config.{ts,js}", "*.config.{mts,mjs}"],
+    rules: {
+      "import/no-extraneous-dependencies": ["error", { packageDir: ".", devDependencies: true }],
     },
   },
   {

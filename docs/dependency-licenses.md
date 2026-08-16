@@ -69,7 +69,7 @@ or other strong-copyleft licenses are present.
 
 ## Dev-only dependencies (not shipped to users)
 
-All dev dependencies are MIT or Apache-2.0, with one exception:
+All dev dependencies are MIT, ISC, or Apache-2.0, with one exception:
 
 | Package                                                  | License                 | Notes                                                                                                                                            |
 | -------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -79,6 +79,7 @@ All dev dependencies are MIT or Apache-2.0, with one exception:
 | jszip                                                    | MIT OR GPL-3.0-or-later | Promoted to production dep in Phase 4b.14 (see packages/server above). We elect **MIT**. See [JSZip](#jszip)                                     |
 | globals                                                  | MIT                     | Node/browser globals lists for ESLint flat config; promoted from transitive to direct devDependency because eslint.config.js imports it directly |
 | eslint, prettier, vitest, vite, tailwindcss, jsdom, etc. | MIT                     |                                                                                                                                                  |
+| eslint-import-resolver-typescript                        | ISC                     | Dev-only. Required for `import/no-cycle` to resolve TypeScript imports at all (F-09) — without it the rule silently reports nothing. **Pinned exact to `3.8.7`**, the last release on the pure-JS `enhanced-resolve` line: `>=3.9` switched to the native `unrs-resolver`, pulling an `@napi-rs/*` tree whose freshly-published versions trip the dependency-cooldown gate. |
 | pino-pretty                                              | MIT                     | Dev-only (structured log formatting)                                                                                                             |
 | @types/multer                                            | MIT                     | TypeScript types for multer (dev-only)                                                                                                           |
 | @testing-library/\*, @types/\*, @vitejs/\*               | MIT                     |                                                                                                                                                  |

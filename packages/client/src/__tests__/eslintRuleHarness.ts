@@ -22,6 +22,20 @@ function createLinter(): ESLint {
   linter ??= new ESLint({
     cwd: REPO_ROOT,
     overrideConfigFile: resolve(REPO_ROOT, "eslint.config.js"),
+    overrideConfig: {
+      rules: {
+        // FIXTURE_PATH is a *virtual* path — lintText never writes it to disk.
+        // `import/no-cycle` (enabled repo-wide by F-09) builds a module graph
+        // from the file on disk and throws `Cannot read properties of null`
+        // when there isn't one. Nothing to do with the rules under test here,
+        // and it does not affect real linting: `make lint-check` runs over
+        // files that exist. Off for the harness only.
+        //
+        // This is why eslintImportCycleRule.test.ts plants REAL files instead
+        // of using this harness.
+        "import/no-cycle": "off",
+      },
+    },
   });
   return linter;
 }
