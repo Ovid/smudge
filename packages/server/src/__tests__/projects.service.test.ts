@@ -1,6 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { randomUUID } from "crypto";
 import { setupTestDb } from "./test-helpers";
+import { logger } from "../logger";
 import {
   createProject,
   getProject,
@@ -157,11 +158,19 @@ describe("projects.service", () => {
       const projectId = created.project.id;
       const chapter = await t.db("chapters").where({ project_id: projectId }).first();
       await t.db("chapters").where({ id: chapter.id }).update({ content: "{not valid json" });
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
 
       // The unparseable chapter must be skipped, not abort the whole delete.
       await expect(deleteProject(created.project.slug)).resolves.toBe(true);
       const project = await t.db("projects").where({ id: projectId }).first();
       expect(project.deleted_at).not.toBeNull();
+      // Skipped, but not in silence — the release path routes through
+      // applyImageRefDiff's old-content arm, which now records the anomaly.
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ err: expect.anything(), project_id: projectId }),
+        expect.stringContaining("oldContent"),
+      );
+      warnSpy.mockRestore();
     });
   });
 });
