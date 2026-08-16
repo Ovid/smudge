@@ -488,7 +488,7 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
 - **Status reason:** `catch` now binds `err` and calls `logger.error({ err, project_id, chapter_id }, "enrichChapterWithLabel failed after save; returning status as label")` — the same level, field shape, and message form as the restore-path twin the finding cites, so the two degrades are now greppable as one class. The fallback behaviour is unchanged and still routed through `stripCorruptFlag` (I5): this adds a log line, it does not change what the client receives. Pinned by extending the existing `chapters.service.test.ts` fallback test rather than adding a second test of the same scenario.
 - **Status caveat:** The finding was reported as fixed in an earlier session but **never landed** — no `fix(architecture)` commit and no status block existed, while `chapters.service.ts` still held the bare `catch`. Worth knowing that the report's silence, not the code, was the thing that drifted.
 - **Status date:** 2026-08-16 07:26 UTC
-- **Status commit:** see follow-up commit
+- **Status commit:** 3284d365
 
 ### [F-32] Three different live-region clear durations, two of them inline literals
 - **Category:** 28 (Magic numbers/strings)
