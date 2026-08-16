@@ -326,7 +326,9 @@ describe("Ctrl+Shift+Arrow chapter navigation", () => {
 
     await waitFor(
       () => {
-        expect(screen.getByTestId("nav-announcement")).toHaveTextContent("Navigated to Chapter Two");
+        expect(screen.getByTestId("nav-announcement")).toHaveTextContent(
+          "Navigated to Chapter Two",
+        );
       },
       { timeout: 3000 },
     );
