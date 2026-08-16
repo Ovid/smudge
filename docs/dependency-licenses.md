@@ -4,7 +4,12 @@ All direct dependencies used by Smudge are compatible with commercial
 use. This document catalogs every license in the project and explains
 any that need special attention.
 
-Last audited: 2026-06-01
+Last audited: 2026-08-16
+
+Coverage of the three "Production dependencies by workspace" tables below is
+enforced by `scripts/__tests__/dependency-licenses-doc.test.mjs`: each table
+must list exactly the `dependencies` of its workspace manifest. The dev-only
+table is not machine-checked.
 
 ---
 
@@ -26,44 +31,52 @@ or other strong-copyleft licenses are present.
 
 ### packages/shared
 
-| Package | License | Notes |
-| ------- | ------- | ----- |
-| zod     | MIT     |       |
+Imported by BOTH the server (export/preview HTML generation) and the client
+(the live editor), so every row here ships in production twice over.
+
+| Package                   | License | Notes                                                         |
+| ------------------------- | ------- | ------------------------------------------------------------- |
+| @tiptap/core              | MIT     | Extension/mark primitives behind `renderEditorHtml()`         |
+| @tiptap/extension-heading | MIT     | Heading node in the shared extension set                      |
+| @tiptap/extension-image   | MIT     | Image node in the shared extension set                        |
+| @tiptap/html              | MIT     | `generateHTML()` — TipTap JSON to HTML for preview and export |
+| @tiptap/starter-kit       | MIT     | Standard extension bundle for the shared editor schema        |
+| zod                       | MIT     | Schemas shared across the client/server boundary              |
 
 ### packages/server
 
-| Package                   | License | Notes                                            |
-| ------------------------- | ------- | ------------------------------------------------ |
-| better-sqlite3            | MIT     |                                                  |
-| express                   | MIT     |                                                  |
-| helmet                    | MIT     |                                                  |
-| knex                      | MIT     |                                                  |
-| multer                    | MIT     | Multipart form-data handling for image uploads   |
-| pino                      | MIT     | Structured logging                               |
-| docx                      | MIT     | Programmatic Word (.docx) generation             |
-| epub-gen-memory           | MIT     | EPUB generation from HTML content                |
-| jszip                     | MIT OR GPL-3.0-or-later | We elect **MIT**. Promoted devDep→dep in Phase 4b.14 for backup/restore zipping. See [JSZip](#jszip) |
-| turndown                  | MIT     | HTML-to-Markdown conversion for export           |
-| zod                       | MIT     | Request validation at the UUID/route trust boundary |
+| Package         | License                 | Notes                                                                                                |
+| --------------- | ----------------------- | ---------------------------------------------------------------------------------------------------- |
+| better-sqlite3  | MIT                     |                                                                                                      |
+| express         | MIT                     |                                                                                                      |
+| helmet          | MIT                     |                                                                                                      |
+| knex            | MIT                     |                                                                                                      |
+| multer          | MIT                     | Multipart form-data handling for image uploads                                                       |
+| pino            | MIT                     | Structured logging                                                                                   |
+| docx            | MIT                     | Programmatic Word (.docx) generation                                                                 |
+| epub-gen-memory | MIT                     | EPUB generation from HTML content                                                                    |
+| jszip           | MIT OR GPL-3.0-or-later | We elect **MIT**. Promoted devDep→dep in Phase 4b.14 for backup/restore zipping. See [JSZip](#jszip) |
+| turndown        | MIT                     | HTML-to-Markdown conversion for export                                                               |
+| zod             | MIT                     | Request validation at the UUID/route trust boundary                                                  |
 
 ### packages/client
 
-| Package                        | License               | Notes                                                |
-| ------------------------------ | --------------------- | ---------------------------------------------------- |
-| @dnd-kit/core                  | MIT                   |                                                      |
-| @dnd-kit/modifiers             | MIT                   |                                                      |
-| @dnd-kit/sortable              | MIT                   |                                                      |
-| @dnd-kit/utilities             | MIT                   |                                                      |
-| @fontsource/cormorant-garamond | OFL-1.1               | See [Fonts](#fonts)                                  |
-| @fontsource-variable/dm-sans   | OFL-1.1               | See [Fonts](#fonts)                                  |
+| Package                        | License               | Notes                                                     |
+| ------------------------------ | --------------------- | --------------------------------------------------------- |
+| @dnd-kit/core                  | MIT                   |                                                           |
+| @dnd-kit/modifiers             | MIT                   |                                                           |
+| @dnd-kit/sortable              | MIT                   |                                                           |
+| @dnd-kit/utilities             | MIT                   |                                                           |
+| @fontsource/cormorant-garamond | OFL-1.1               | See [Fonts](#fonts)                                       |
+| @fontsource-variable/dm-sans   | OFL-1.1               | See [Fonts](#fonts)                                       |
 | @tiptap/core                   | MIT                   | `Extension` base class for the editor's custom extensions |
-| @tiptap/extension-placeholder  | MIT                   |                                                      |
-| @tiptap/pm                     | MIT                   | ProseMirror access (`@tiptap/pm/state`)              |
-| @tiptap/react                  | MIT                   |                                                      |
-| dompurify                      | MPL-2.0 OR Apache-2.0 | We elect **Apache-2.0**. See [DOMPurify](#dompurify) |
-| react                          | MIT                   |                                                      |
-| react-dom                      | MIT                   |                                                      |
-| react-router-dom               | MIT                   |                                                      |
+| @tiptap/extension-placeholder  | MIT                   |                                                           |
+| @tiptap/pm                     | MIT                   | ProseMirror access (`@tiptap/pm/state`)                   |
+| @tiptap/react                  | MIT                   |                                                           |
+| dompurify                      | MPL-2.0 OR Apache-2.0 | We elect **Apache-2.0**. See [DOMPurify](#dompurify)      |
+| react                          | MIT                   |                                                           |
+| react-dom                      | MIT                   |                                                           |
+| react-router-dom               | MIT                   |                                                           |
 
 ---
 
@@ -71,18 +84,18 @@ or other strong-copyleft licenses are present.
 
 All dev dependencies are MIT, ISC, or Apache-2.0, with one exception:
 
-| Package                                                  | License                 | Notes                                                                                                                                            |
-| -------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| @axe-core/playwright                                     | MPL-2.0                 | Dev-only (a11y testing). See [axe-core](#axe-core)                                                                                               |
-| @playwright/test                                         | Apache-2.0              |                                                                                                                                                  |
-| typescript                                               | Apache-2.0              |                                                                                                                                                  |
-| jszip                                                    | MIT OR GPL-3.0-or-later | Promoted to production dep in Phase 4b.14 (see packages/server above). We elect **MIT**. See [JSZip](#jszip)                                     |
-| globals                                                  | MIT                     | Node/browser globals lists for ESLint flat config; promoted from transitive to direct devDependency because eslint.config.js imports it directly |
-| eslint, prettier, vitest, vite, tailwindcss, jsdom, etc. | MIT                     |                                                                                                                                                  |
+| Package                                                  | License                 | Notes                                                                                                                                                                                                                                                                                                                                                                       |
+| -------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| @axe-core/playwright                                     | MPL-2.0                 | Dev-only (a11y testing). See [axe-core](#axe-core)                                                                                                                                                                                                                                                                                                                          |
+| @playwright/test                                         | Apache-2.0              |                                                                                                                                                                                                                                                                                                                                                                             |
+| typescript                                               | Apache-2.0              |                                                                                                                                                                                                                                                                                                                                                                             |
+| jszip                                                    | MIT OR GPL-3.0-or-later | Promoted to production dep in Phase 4b.14 (see packages/server above). We elect **MIT**. See [JSZip](#jszip)                                                                                                                                                                                                                                                                |
+| globals                                                  | MIT                     | Node/browser globals lists for ESLint flat config; promoted from transitive to direct devDependency because eslint.config.js imports it directly                                                                                                                                                                                                                            |
+| eslint, prettier, vitest, vite, tailwindcss, jsdom, etc. | MIT                     |                                                                                                                                                                                                                                                                                                                                                                             |
 | eslint-import-resolver-typescript                        | ISC                     | Dev-only. Required for `import/no-cycle` to resolve TypeScript imports at all (F-09) — without it the rule silently reports nothing. **Pinned exact to `3.8.7`**, the last release on the pure-JS `enhanced-resolve` line: `>=3.9` switched to the native `unrs-resolver`, pulling an `@napi-rs/*` tree whose freshly-published versions trip the dependency-cooldown gate. |
-| pino-pretty                                              | MIT                     | Dev-only (structured log formatting)                                                                                                             |
-| @types/multer                                            | MIT                     | TypeScript types for multer (dev-only)                                                                                                           |
-| @testing-library/\*, @types/\*, @vitejs/\*               | MIT                     |                                                                                                                                                  |
+| pino-pretty                                              | MIT                     | Dev-only (structured log formatting)                                                                                                                                                                                                                                                                                                                                        |
+| @types/multer                                            | MIT                     | TypeScript types for multer (dev-only)                                                                                                                                                                                                                                                                                                                                      |
+| @testing-library/\*, @types/\*, @vitejs/\*               | MIT                     |                                                                                                                                                                                                                                                                                                                                                                             |
 
 ---
 
