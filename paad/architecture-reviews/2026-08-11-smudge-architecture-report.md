@@ -299,7 +299,7 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
 - **Status caveat — new dependency:** required `eslint-import-resolver-typescript`, dev-only, ISC (on the acceptable list). **Pinned exact to `3.8.7`**, the last release on the pure-JS `enhanced-resolve` line: `>=3.9` switches to the native `unrs-resolver`, whose `@napi-rs/*` tree included a 4.5-day-old version that fails `make dep-cooldown`. Taking `^3.8.7` silently floats to 3.10.1 and reintroduces it, so the exact pin is load-bearing, not fussiness. `make dep-cooldown` passes (849 versions). Also declared `vitest` in the root manifest — the new rule caught it as a fourth phantom (root config and `scripts/` import it while only the workspaces declared it).
 - **Status note:** two pre-existing tests (`eslintSequenceRule`, `eslintAbortControllerRule`) broke on this change: `import/no-cycle` throws on a *virtual* `lintText` path with no file on disk. Fixed in `eslintRuleHarness.ts` by disabling that one rule for the harness — no assertion or expected value in those tests was altered. Real linting is unaffected (files exist). `eslintImportCycleRule.test.ts` deliberately plants **real** files for this reason, and is the forcing pause: it was verified to go red when `import/parsers` is removed, so the rule cannot regress to silence.
 - **Status date:** 2026-08-16 16:43 UTC
-- **Status commit:** &lt;pending&gt;
+- **Status commit:** 945decab
 
 ### [F-10] The chapter read-path corruption gate uses a predicate its two siblings explicitly rejected
 - **Category:** 13 (Inconsistent boundaries) *(re-typed from 6)*
