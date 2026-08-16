@@ -20,12 +20,26 @@ const UuidSchema = z.string().uuid();
  * minutes after it was written — chapters calls this helper at all four of its
  * `:id` handlers.
  *
- * The images holdout is a DEFERRAL, not an oversight, and stays: its
- * `router.use()` form is structurally STRONGER than the per-handler form here
- * (it cannot be forgotten on a new handler), and the two accepted domains
- * genuinely differ — Zod enforces the UUID version and variant nibbles, while
- * the regex accepts any 32 hex nibbles. Unifying them is a client-observable
- * contract change, not a drive-by.
+ * The images holdout is a DEFERRAL, not an oversight, and stays — but for ONE
+ * reason, not two: its `router.use()` form is structurally STRONGER than the
+ * per-handler form here (it cannot be forgotten on a new handler).
+ *
+ * I4 (review 2026-08-16): this paragraph used to add that "the two accepted
+ * domains genuinely differ — Zod enforces the UUID version and variant nibbles,
+ * while the regex accepts any 32 hex nibbles". That is no longer true in either
+ * clause. Declaring `zod: ^3.24.3` in packages/server/package.json (the F-11
+ * phantom-dependency fix) changed which copy this file resolves — from the
+ * hoisted root zod 4.x to packages/server's own zod 3.x — and zod 3's `.uuid()`
+ * is a pure hex-shape check. It now accepts exactly what `UUID_PATTERN`
+ * (`images/images.paths.ts`, applied case-insensitively) accepts.
+ *
+ * Consequences worth knowing before touching this: the widened set is still
+ * hex-only in fixed shape, every consumer feeds it to a parameterized Knex
+ * query, and the one filesystem-path consumer is gated by images.routes.ts's
+ * own regex — so the practical change is that a handful of previously-400
+ * requests are now 404s. `__tests__/validateUuidParam.test.ts` pins both the
+ * accepted domain and the agreement with `UUID_PATTERN`, so a zod upgrade that
+ * re-tightens either one surfaces there instead of in a browser.
  */
 type UuidParamLabel = "chapter" | "snapshot" | "outtake" | "project";
 
