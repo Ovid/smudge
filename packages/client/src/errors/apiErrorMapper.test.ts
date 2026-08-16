@@ -1422,6 +1422,21 @@ describe("MappedError<S> phantom propagation", () => {
   });
 });
 
+describe("image.updateMetadata committed-codes scope-level configuration", () => {
+  // S2 (review 2026-08-16). The server's PATCH /api/images/:id now emits
+  // UPDATE_READ_FAILURE when the row updated but the read-after-write came
+  // back empty, matching chapters' PATCH. Without a byCode entry it fell
+  // through to `fallback` ("Save failed. Your changes have not been saved.")
+  // — the exact opposite of what happened.
+  it("UPDATE_READ_FAILURE sets possiblyCommitted and its own copy", () => {
+    const err = new ApiRequestError("read-back failed", 500, "UPDATE_READ_FAILURE");
+    const result = mapApiError(err, "image.updateMetadata");
+    expect(result.possiblyCommitted).toBe(true);
+    expect(result.message).toBe(STRINGS.imageGallery.saveCommittedUnreadable);
+    expect(result.message).not.toBe(STRINGS.imageGallery.saveFailed);
+  });
+});
+
 describe("chapter.save terminal-codes scope-level configuration", () => {
   it("UPDATE_READ_FAILURE on chapter.save sets terminal:true (in terminalCodes)", () => {
     const err = new ApiRequestError("update read failure", 500, "UPDATE_READ_FAILURE");

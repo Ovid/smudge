@@ -21,10 +21,16 @@ export type UploadResult =
   | { validationError: string; image?: undefined; notFound?: undefined }
   | { notFound: true; image?: undefined; validationError?: undefined };
 
+// S2 (review 2026-08-16): `readFailure` is a distinct arm from `notFound` on
+// purpose. `notFound` means the row was never there; `readFailure` means the
+// UPDATE committed and the read-after-write came back empty. Collapsing them
+// tells the client "this image does not exist" about a write that landed.
+// Mirrors chapters.service.updateChapter's "read_failure".
 type UpdateResult =
-  | { image: ImageRow; validationError?: undefined; notFound?: undefined }
-  | { validationError: string; image?: undefined; notFound?: undefined }
-  | { notFound: true; image?: undefined; validationError?: undefined };
+  | { image: ImageRow; validationError?: undefined; notFound?: undefined; readFailure?: undefined }
+  | { validationError: string; image?: undefined; notFound?: undefined; readFailure?: undefined }
+  | { notFound: true; image?: undefined; validationError?: undefined; readFailure?: undefined }
+  | { readFailure: true; image?: undefined; validationError?: undefined; notFound?: undefined };
 
 type DeleteResult =
   | { deleted: true; notFound?: undefined; referenced?: undefined }
@@ -147,7 +153,11 @@ export async function updateImageMetadata(id: string, body: unknown): Promise<Up
     await txStore.updateImage(id, parsed.data as UpdateImageData);
     const updated = await txStore.findImageById(id);
     if (!updated) {
-      return { notFound: true };
+      // Unreachable in production — the existence check above passed and the
+      // UPDATE ran in this same transaction. Defensive, and it must NOT reuse
+      // `notFound`: the write committed, so the honest signal is the same
+      // read-after-write failure chapters reports (F-12's taxonomy).
+      return { readFailure: true };
     }
     return { image: updated };
   });

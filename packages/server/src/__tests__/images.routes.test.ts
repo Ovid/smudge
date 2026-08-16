@@ -1,9 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { setupTestDb } from "./test-helpers";
+import * as imagesService from "../images/images.service";
+import { logger } from "../logger";
 
 const TEST_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
@@ -233,6 +235,27 @@ describe("PATCH /api/images/:id", () => {
 
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe("NOT_FOUND");
+  });
+
+  // S2 (review 2026-08-16): a read-after-write miss is NOT a 404. The row was
+  // there and the UPDATE committed; reporting "not found" tells the client to
+  // stop retrying about a write that landed. Same taxonomy as chapters' PATCH
+  // (chapters.test.ts, "maps read_after_update_failure → 500
+  // UPDATE_READ_FAILURE"), which the client maps to committed-UX copy.
+  it("maps a read-after-update miss → 500 UPDATE_READ_FAILURE", async () => {
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    const spy = vi
+      .spyOn(imagesService, "updateImageMetadata")
+      .mockResolvedValue({ readFailure: true });
+
+    const res = await request(t.app)
+      .patch("/api/images/00000000-0000-0000-0000-000000000000")
+      .send({ alt_text: "test" });
+
+    expect(res.status).toBe(500);
+    expect(res.body.error.code).toBe("UPDATE_READ_FAILURE");
+    spy.mockRestore();
+    errorSpy.mockRestore();
   });
 });
 

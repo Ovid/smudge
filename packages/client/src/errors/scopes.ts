@@ -444,6 +444,15 @@ export const SCOPES = {
     fallback: STRINGS.imageGallery.saveFailed,
     network: STRINGS.imageGallery.saveFailedNetwork,
     committed: STRINGS.error.possiblyCommitted,
+    // S2 (review 2026-08-16): the server emits UPDATE_READ_FAILURE when the
+    // metadata UPDATE committed but the read-after-write came back empty —
+    // same taxonomy as chapters' PATCH. Without these two entries it fell to
+    // `fallback` ("Your changes have not been saved."), which is the opposite
+    // of what happened, and possiblyCommitted stayed false so the committed-UX
+    // path never fired. `committedCodes` only takes effect on a byCode match,
+    // so both are required.
+    byCode: { UPDATE_READ_FAILURE: STRINGS.imageGallery.saveCommittedUnreadable },
+    committedCodes: ["UPDATE_READ_FAILURE"],
   },
   "snapshot.restore": {
     fallback: STRINGS.snapshots.restoreFailed,

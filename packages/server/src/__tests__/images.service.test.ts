@@ -298,7 +298,13 @@ describe("images.service", () => {
       const result = await imagesService.updateImageMetadata(imageId, {
         alt_text: "A test image",
       });
-      expect(result).toHaveProperty("notFound", true);
+      // S2 (review 2026-08-16): NOT `notFound`. The existence check already
+      // passed and the UPDATE already ran inside this transaction, so "not
+      // found" would tell the client the image never existed when the write
+      // in fact landed. Mirrors chapters.service.updateChapter's
+      // "read_failure" → 500 UPDATE_READ_FAILURE, which the client's
+      // committed-UX machinery understands.
+      expect(result).toHaveProperty("readFailure", true);
     });
   });
 

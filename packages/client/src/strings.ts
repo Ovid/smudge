@@ -403,6 +403,11 @@ export const STRINGS = {
     deleteSuccess: (filename: string) => `Image deleted: ${filename}`,
     saveFailed: "Save failed. Your changes have not been saved.",
     saveFailedNetwork: "Save failed — check your connection and try again.",
+    // S2: distinct from saveFailed because the opposite is true — the server
+    // committed the metadata and only the read-back failed, so "have not been
+    // saved" would be wrong and a retry is not what the user needs.
+    saveCommittedUnreadable:
+      "The image details may have been saved but the server response was unreadable. Refresh the gallery to see the current state before trying again.",
     deleteBlockedLoading: "This image is in use. Loading details...",
     inTrash: "in trash",
     loadFailed: "Failed to load images.",
