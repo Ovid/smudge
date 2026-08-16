@@ -5,6 +5,15 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import importPlugin from "eslint-plugin-import";
 import prettierConfig from "eslint-config-prettier";
 import globals from "globals";
+import { resolve } from "node:path";
+
+// S5 (review 2026-08-16): `packageDir` entries are resolved with
+// `path.resolve()`, i.e. against `process.cwd()`. With a two-element array
+// `import/no-extraneous-dependencies` reads each manifest with throwAtRead
+// off, so any ESLint run whose cwd is not the repo root silently finds no
+// package.json and reports nothing at all — a false green, not an error.
+// Anchor to this config file's own directory instead.
+const REPO_ROOT = import.meta.dirname;
 
 export default tseslint.config(
   { ignores: ["**/dist/", "**/node_modules/", "**/*.d.ts"] },
@@ -52,7 +61,7 @@ export default tseslint.config(
       "import/no-extraneous-dependencies": [
         "error",
         {
-          packageDir: [".", `packages/${workspace}`],
+          packageDir: [REPO_ROOT, resolve(REPO_ROOT, "packages", workspace)],
           // Production source may not import a devDependency (it would ship
           // broken); tests and local config may.
           devDependencies: [
@@ -68,7 +77,10 @@ export default tseslint.config(
   {
     files: ["e2e/**/*.ts", "scripts/**/*.{ts,mjs}", "*.config.{ts,js}", "*.config.{mts,mjs}"],
     rules: {
-      "import/no-extraneous-dependencies": ["error", { packageDir: ".", devDependencies: true }],
+      "import/no-extraneous-dependencies": [
+        "error",
+        { packageDir: REPO_ROOT, devDependencies: true },
+      ],
     },
   },
   {
