@@ -131,17 +131,26 @@ export async function updateImageMetadata(id: string, body: unknown): Promise<Up
   }
 
   const store = getProjectStore();
-  const existing = await store.findImageById(id);
-  if (!existing) {
-    return { notFound: true };
-  }
+  // Existence check + update + read-after-write in ONE transaction, matching
+  // every structurally identical mutation in the codebase (outtakes.service
+  // updateOuttakeLabel, chapters.service updateChapter, snapshots.service
+  // restoreSnapshot). Split across three round trips, a concurrent writer
+  // landing between the update and the re-read would ride back in this
+  // response — the response body must reflect exactly what this request
+  // wrote.
+  return store.transaction(async (txStore) => {
+    const existing = await txStore.findImageById(id);
+    if (!existing) {
+      return { notFound: true };
+    }
 
-  await store.updateImage(id, parsed.data as UpdateImageData);
-  const updated = await store.findImageById(id);
-  if (!updated) {
-    return { notFound: true };
-  }
-  return { image: updated };
+    await txStore.updateImage(id, parsed.data as UpdateImageData);
+    const updated = await txStore.findImageById(id);
+    if (!updated) {
+      return { notFound: true };
+    }
+    return { image: updated };
+  });
 }
 
 export async function deleteImage(id: string): Promise<DeleteResult> {

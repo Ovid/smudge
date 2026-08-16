@@ -470,6 +470,12 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
 - **Explanation:** Every structurally identical mutation in the codebase wraps this exact shape in one `store.transaction()` and says why; the image path is the lone holdout, so its response body can reflect a different writer's state.
 - **Evidence:** `packages/server/src/images/images.service.ts:125-145` — `findImageById` → `updateImage` → `findImageById`, no transaction. Siblings: `outtakes.service.ts:67-78`, `chapters.service.ts:99-120` ("so the response body reflects exactly what this request wrote"), `snapshots.service.ts:226-231`.
 - **Found by:** Integration & Data
+- **Status:** Fixed
+- **Status reason:** All three statements now run inside one `store.transaction(txStore => …)`, with a comment naming the three sibling sites it now matches. Behaviour is otherwise unchanged: the same three outcomes (`validationError`, `notFound`, `image`) in the same order, with validation still outside the transaction since it touches no store.
+- **Status note:** the Safety Net phase found the `notFound`-on-re-read arm (`:141-143`) genuinely uncovered — statements 142-143 dead, branch 141 partial — inside the exact code this fix restructures, so a test was written first (commit `32938d20`). It drives the vanishing row with a SQLite `AFTER UPDATE` trigger rather than a store-method spy, specifically so it would survive the read moving from the outer store to a `txStore`. It did: it passed unmodified after this change, which is the point of having chosen that shape.
+- **Status caveat:** this is consistency and future-proofing, not a live bug fix. The interleaving it prevents requires a concurrent writer, and Smudge is single-user, single-process — the same premise under which F-3 and F-2 were *accepted* as trade-offs. Justified on the narrower ground that every structurally identical mutation already does this and says why, so the holdout is a trap for the next author, not because the race is reachable today.
+- **Status date:** 2026-08-16 16:52 UTC
+- **Status commit:** &lt;pending&gt;
 
 ### [F-28] Read-after-write on two write paths sits outside the transaction the codebase elsewhere insists on
 - **Category:** 26 (Poor transactional boundaries)
