@@ -522,7 +522,7 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
 - **Status reason:** Both catches now bind `err` and call `clientWarn(...)` — `renderSnapshotContent` (`useSnapshotController.ts`) and `renderChapterHtml` (`PreviewMode.tsx`). `clientWarn` is the convention the finding cites and is DEV-gated, so production behaviour is unchanged and the user-facing copy in both paths is untouched. Pinned by extending the two existing render-failure tests rather than adding new scenarios; both route through `expectConsole` per the zero-warnings rule, so the new logs both assert and stay out of the test output.
 - **Status caveat:** This restores the *developer's* signal only. Neither path tells the reader why the render failed, and neither should — the finding's premise is that the user copy was already correct. Note also that `PreviewMode`'s `!content` guard still owns the empty case, so the new warn cannot fire for an untouched chapter (the I3 conflation this file already fixed).
 - **Status date:** 2026-08-16 15:59 UTC
-- **Status commit:** see follow-up commit
+- **Status commit:** 666872ca
 
 ---
 
