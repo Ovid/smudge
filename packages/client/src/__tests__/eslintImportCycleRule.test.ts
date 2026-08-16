@@ -25,13 +25,24 @@ import { dirname, resolve } from "node:path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "../../../..");
-const SRC = resolve(REPO_ROOT, "packages/client/src");
 
 // Distinctive prefix so a stray file from an interrupted run is obvious and
 // greppable, and cannot collide with real modules.
-const A = resolve(SRC, "__cycle_fixture_a.ts");
-const B = resolve(SRC, "__cycle_fixture_b.ts");
-const ACYCLIC = resolve(SRC, "__cycle_fixture_acyclic.ts");
+//
+// I2 (review 2026-08-16): the fixtures live inside `__tests__`, NOT in
+// `packages/client/src` itself. `collectTsSources`
+// (migrationStructuralCheck.test.ts) walks the client source tree and skips
+// only `__tests__` and `*.test.ts[x]` — a bare `__cycle_fixture_a.ts` one level
+// up matches neither, so that sibling would readdir it and then `statSync` it
+// after this file's `afterEach` had already removed it (vitest runs test FILES
+// in parallel: root vitest.config.ts sets maxForks 4 and never disables
+// fileParallelism). It also means an abnormally-terminated run leaves stray
+// `.ts` files that `make lint` reports as a cycle in nobody's code, and
+// `.gitignore` only covers `packages/client/src/**/*.js`.
+const FIXTURE_DIR = __dirname;
+const A = resolve(FIXTURE_DIR, "__cycle_fixture_a.ts");
+const B = resolve(FIXTURE_DIR, "__cycle_fixture_b.ts");
+const ACYCLIC = resolve(FIXTURE_DIR, "__cycle_fixture_acyclic.ts");
 
 async function cleanup() {
   await Promise.all([A, B, ACYCLIC].map((f) => rm(f, { force: true })));
@@ -48,6 +59,16 @@ async function cycleMessagesFor(file: string) {
 }
 
 describe("import/no-cycle is actually wired up (not silently no-opping)", () => {
+  it("plants its fixtures where collectTsSources will not walk them", () => {
+    // Pins the I2 fix. `collectTsSources` skips `__tests__` wholesale, so a
+    // fixture inside it can never be readdir'd by the sibling suite and then
+    // vanish under its statSync. Moving these back up to
+    // `packages/client/src` reintroduces that cross-file race.
+    expect(dirname(A)).toBe(resolve(REPO_ROOT, "packages/client/src/__tests__"));
+    expect(dirname(B)).toBe(dirname(A));
+    expect(dirname(ACYCLIC)).toBe(dirname(A));
+  });
+
   it("reports a planted two-file TypeScript cycle", async () => {
     await writeFile(A, 'import { b } from "./__cycle_fixture_b";\nexport const a = () => b();\n');
     await writeFile(B, 'import { a } from "./__cycle_fixture_a";\nexport const b = () => a();\n');
