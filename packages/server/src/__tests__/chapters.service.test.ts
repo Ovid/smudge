@@ -94,13 +94,27 @@ describe("chapters.service", () => {
       const labelSpy = vi
         .spyOn(store, "getStatusLabel")
         .mockRejectedValue(new Error("status label lookup down"));
+      const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
       try {
         const result = await updateChapter(chapterId, { content: DOC_JSON });
         expect(result).toHaveProperty("chapter");
         const chapter = (result as { chapter: { status: string; status_label: string } }).chapter;
         expect(chapter.status_label).toBe(chapter.status);
+        // F-31: the degrade is silent otherwise, and this is the hottest
+        // endpoint in the app — a persistent lookup failure would downgrade
+        // every save's label forever with nothing in the log to say so. The
+        // identical degrade after restore (snapshots.service) already logs.
+        expect(errorSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            err: expect.anything(),
+            project_id: expect.any(String),
+            chapter_id: chapterId,
+          }),
+          expect.stringContaining("enrichChapterWithLabel failed"),
+        );
       } finally {
         labelSpy.mockRestore();
+        errorSpy.mockRestore();
       }
     });
 
