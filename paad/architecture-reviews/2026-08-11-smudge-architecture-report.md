@@ -400,6 +400,10 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
 - **Explanation:** DOMPurify 3.x ships its own typings, so the DefinitelyTyped stub for the pre-3.x API is never the resolution target — dead weight ambiently loaded into every client compilation, sitting on the codebase's most security-sensitive module.
 - **Evidence:** `packages/client/package.json` devDependencies declares `@types/dompurify: ^3.0.5`; `npx tsc --traceResolution -p packages/client/tsconfig.json` shows every `dompurify` import resolving to `dompurify/dist/purify.es.d.mts@3.4.0`, with `@types/dompurify` appearing only as a type-reference directive. `node_modules/@types/dompurify/README.md`: "Last updated: Mon, 06 Nov 2023".
 - **Found by:** Coupling & Dependencies, Security & Code Quality (agreed, merged)
+- **Status:** Fixed
+- **Status reason:** Dropped `@types/dompurify` from `packages/client` devDependencies. Verified stronger than by `--traceResolution`: after `npm install` removed the stub from `node_modules` entirely, `tsc -b --force` (non-incremental, so no stale `.tsbuildinfo` could mask it) still passes across all three packages — the pre-3.x stub was never the resolution target, `dompurify@3.4.0`'s own `./dist/purify.cjs.d.ts` is. No `docs/dependency-licenses.md` row to remove: the stub was covered by the generic `@types/*` dev-only row, and the runtime `dompurify` entry with its Apache-2.0 election is untouched.
+- **Status date:** 2026-08-16 16:29 UTC
+- **Status commit:** &lt;pending&gt;
 
 ### [F-21] `initDb` and `initProjectStore` have asymmetric re-init contracts
 - **Category:** 27 (Temporal coupling)
