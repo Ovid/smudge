@@ -348,7 +348,7 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
 - **Status caveat:** this makes the announcement *truthful*, not *complete*. On the editor-lock path the user now correctly hears nothing — but that path still shows no banner by design, so a screen-reader user gets no positive signal that the keypress was refused. Removing the false announcement was the finding's scope; giving the lock path its own announcement is a separate a11y question and was not decided here. Note also that `handleSelectChapter` swallows its own errors, so a chapter *load* failure after a successful `switchToView` still resolves true and still announces — the return value tracks "the switch was permitted and attempted", which is exactly the axis this finding is about.
 - **Status note:** covered by a new hook-level test (`hooks/__tests__/useKeyboardShortcuts.test.tsx`, three cases: announces on success, silent on refusal, silent on throw) rather than through `EditorPage` — driving a refusal through the component means reproducing a busy latch or a mid-flush save failure, machinery unrelated to the announcement decision. The pre-existing success-path assertion in `KeyboardShortcuts.test.tsx:316` was the safety net and still passes untouched.
 - **Status date:** 2026-08-16 16:50 UTC
-- **Status commit:** &lt;pending&gt;
+- **Status commit:** bdbbbafc
 
 ### [F-14] The "lying central directory" byte-budget guard in `runRestore` is never exercised
 - **Category:** 32 (Missing test coverage for critical paths)
