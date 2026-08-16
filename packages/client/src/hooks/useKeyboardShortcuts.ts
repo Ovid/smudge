@@ -24,7 +24,11 @@ interface KeyboardShortcutDeps {
   setShortcutHelpOpen: React.Dispatch<React.SetStateAction<boolean>>;
   toggleSidebar: () => void;
   handleCreateChapter: () => void;
-  handleSelectChapterWithFlush: (id: string) => Promise<void>;
+  // Resolves true only if the chapter switch actually happened. False means
+  // switchToView refused (busy latch / editor lock / failed flush-save) and
+  // the user is still on the old chapter — callers must not report success
+  // (F-13).
+  handleSelectChapterWithFlush: (id: string) => Promise<boolean>;
   setWordCountAnnouncement: React.Dispatch<React.SetStateAction<string>>;
   setNavAnnouncement: React.Dispatch<React.SetStateAction<string>>;
   switchToView: (mode: ViewMode) => Promise<boolean>;
@@ -72,6 +76,9 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
 
   useEffect(() => {
     let navAnnouncementTimer: ReturnType<typeof setTimeout> | null = null;
+    // The nav announcement now resolves after an await (F-13), so it can land
+    // after unmount. Nothing else in this effect is async.
+    let unmounted = false;
 
     function handleKeyDown(e: KeyboardEvent) {
       const ctrl = e.ctrlKey || e.metaKey;
@@ -187,16 +194,30 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
         if (nextIndex < 0 || nextIndex >= chapters.length) return;
         const nextChapter = chapters[nextIndex];
         if (!nextChapter) return;
-        void handleSelectChapterWithFlushRef.current(nextChapter.id).catch(() => {});
-        deps.setNavAnnouncement(STRINGS.sidebar.navigatedToChapter(nextChapter.title));
-        if (navAnnouncementTimer !== null) clearTimeout(navAnnouncementTimer);
-        navAnnouncementTimer = setTimeout(() => deps.setNavAnnouncement(""), 1000);
+        // F-13: announce only once the navigation has actually happened.
+        // handleSelectChapterWithFlush resolves false when switchToView
+        // refused — the busy latch, the editor lock, or a failed flush-save.
+        // The editor-lock path shows no banner by design, so announcing
+        // unconditionally told a screen-reader user the one thing they had to
+        // go on, and told them the opposite of the truth.
+        void handleSelectChapterWithFlushRef
+          .current(nextChapter.id)
+          .then((navigated) => {
+            if (!navigated || unmounted) return;
+            deps.setNavAnnouncement(STRINGS.sidebar.navigatedToChapter(nextChapter.title));
+            if (navAnnouncementTimer !== null) clearTimeout(navAnnouncementTimer);
+            navAnnouncementTimer = setTimeout(() => deps.setNavAnnouncement(""), 1000);
+          })
+          .catch(() => {
+            // Navigation failed outright — say nothing, same as a refusal.
+          });
         return;
       }
     }
 
     document.addEventListener("keydown", handleKeyDown);
     return () => {
+      unmounted = true;
       document.removeEventListener("keydown", handleKeyDown);
       if (navAnnouncementTimer !== null) clearTimeout(navAnnouncementTimer);
     };
