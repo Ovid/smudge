@@ -232,6 +232,12 @@ export const STRINGS = {
     statusLabel: (label: string) => `Chapter status: ${label}`,
     statusChanged: (label: string) => `Chapter status changed to ${label}`,
     resizeHandle: "Resize sidebar",
+    // S3: fires at keypress, replaced by navigatedToChapter on arrival. The
+    // arrival announcement waits on flushSave (which can sit in save-retry
+    // backoff for seconds) plus a chapter GET, and in that window a
+    // screen-reader user would otherwise get nothing — the keypress reads as
+    // ignored.
+    navigatingToChapter: (title: string) => `Navigating to ${title}...`,
     navigatedToChapter: (title: string) => `Navigated to ${title}`,
   },
   preview: {

@@ -203,16 +203,31 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
         // aborted, or was superseded. The editor-lock path shows no banner by
         // design, so announcing unconditionally told a screen-reader user the
         // one thing they had to go on, and told them the opposite of the truth.
+        // S3: the outcome announcement below waits on flushSave — seconds, if
+        // a save is in retry backoff — and then on a chapter GET. Announce the
+        // keypress now so the user knows it registered; the outcome replaces
+        // this string, or clears it if nothing moved.
+        if (navAnnouncementTimer !== null) clearTimeout(navAnnouncementTimer);
+        deps.setNavAnnouncement(STRINGS.sidebar.navigatingToChapter(nextChapter.title));
+        const settle = (navigated: boolean) => {
+          if (unmounted) return;
+          if (!navigated) {
+            // Retract the pending state. This does not un-speak it — it stops
+            // the live region asserting a navigation that is still "in
+            // progress" forever.
+            deps.setNavAnnouncement("");
+            return;
+          }
+          deps.setNavAnnouncement(STRINGS.sidebar.navigatedToChapter(nextChapter.title));
+          if (navAnnouncementTimer !== null) clearTimeout(navAnnouncementTimer);
+          navAnnouncementTimer = setTimeout(() => deps.setNavAnnouncement(""), 1000);
+        };
         void handleSelectChapterWithFlushRef
           .current(nextChapter.id)
-          .then((navigated) => {
-            if (!navigated || unmounted) return;
-            deps.setNavAnnouncement(STRINGS.sidebar.navigatedToChapter(nextChapter.title));
-            if (navAnnouncementTimer !== null) clearTimeout(navAnnouncementTimer);
-            navAnnouncementTimer = setTimeout(() => deps.setNavAnnouncement(""), 1000);
-          })
+          .then(settle)
           .catch(() => {
-            // Navigation failed outright — say nothing, same as a refusal.
+            // Navigation failed outright — same as a refusal.
+            settle(false);
           });
         return;
       }

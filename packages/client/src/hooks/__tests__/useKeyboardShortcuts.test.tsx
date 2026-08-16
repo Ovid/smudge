@@ -77,19 +77,32 @@ function setup(navigationResult: boolean) {
   return { setNavAnnouncement, handleSelectChapterWithFlush };
 }
 
+// S3 (review 2026-08-16). Making the announcement conditional (F-13) also made
+// it LATE: it now waits on flushSave — which can sit in save-retry backoff for
+// seconds — and then on a chapter GET. In that window a screen-reader user got
+// nothing at all, so the keypress read as ignored. A pending announcement fires
+// at keypress and is replaced by the outcome.
+const PENDING = STRINGS.sidebar.navigatingToChapter("Chapter Two");
+const ARRIVED = STRINGS.sidebar.navigatedToChapter("Chapter Two");
+
 describe("Ctrl+Shift+Arrow chapter navigation announcement (F-13)", () => {
+  it("announces the keypress immediately, before the switch resolves", () => {
+    const { setNavAnnouncement } = setup(true);
+    // Synchronous — no await. The whole point is that it does not wait on
+    // flushSave or the GET.
+    expect(setNavAnnouncement).toHaveBeenCalledWith(PENDING);
+  });
+
   it("announces the destination once the navigation actually succeeded", async () => {
     const { setNavAnnouncement, handleSelectChapterWithFlush } = setup(true);
 
     await waitFor(() => {
-      expect(setNavAnnouncement).toHaveBeenCalledWith(
-        STRINGS.sidebar.navigatedToChapter("Chapter Two"),
-      );
+      expect(setNavAnnouncement).toHaveBeenCalledWith(ARRIVED);
     });
     expect(handleSelectChapterWithFlush).toHaveBeenCalledWith("ch-2");
   });
 
-  it("does NOT announce when the navigation was refused", async () => {
+  it("clears the pending announcement, and never claims arrival, on refusal", async () => {
     const { setNavAnnouncement, handleSelectChapterWithFlush } = setup(false);
 
     await waitFor(() => {
@@ -99,7 +112,9 @@ describe("Ctrl+Shift+Arrow chapter navigation announcement (F-13)", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(setNavAnnouncement).not.toHaveBeenCalled();
+    expect(setNavAnnouncement).toHaveBeenCalledWith(PENDING);
+    expect(setNavAnnouncement).toHaveBeenCalledWith("");
+    expect(setNavAnnouncement).not.toHaveBeenCalledWith(ARRIVED);
   });
 
   it("does not announce when the navigation throws", async () => {
@@ -135,6 +150,8 @@ describe("Ctrl+Shift+Arrow chapter navigation announcement (F-13)", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(setNavAnnouncement).not.toHaveBeenCalled();
+    expect(setNavAnnouncement).toHaveBeenCalledWith(PENDING);
+    expect(setNavAnnouncement).toHaveBeenCalledWith("");
+    expect(setNavAnnouncement).not.toHaveBeenCalledWith(ARRIVED);
   });
 });
