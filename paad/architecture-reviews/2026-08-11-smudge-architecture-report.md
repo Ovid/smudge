@@ -356,7 +356,7 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
 - **Status reason:** Replaced the bare `.catch(() => {})` with a try/catch that captures the rotation error into `warning` while keeping `status: "ok"` (the archive genuinely landed; `"failed"` would be a lie and the caller must still exit 0). Taught `scripts/auto-backup.ts` to print it on the ok path. Red test: a stale auto-backup that is really a non-empty directory makes the per-file `rm(..., {force:true})` throw EISDIR — the same post-`readdir` failure shape as the EACCES/EPERM case the narrowing exists to preserve.
 - **Status caveat:** the half that delivers the value — the message reaching a terminal — lives in `packages/server/scripts/auto-backup.ts`, which is **coverage-excluded by design** (`vitest.config.ts:36-41`, the `ensure-native.mjs` precedent), so no test guards it. Verified instead by one end-to-end run against a `backups/` directory containing an un-prunable entry: archive written, `WARNING: auto-backup rotation failed, old auto-backups were not pruned: … EISDIR …` on stderr, exit code 0, stale entry still present. A future edit to that script can silently re-break the visibility without any test going red.
 - **Status date:** 2026-08-16 08:55 UTC
-- **Status commit:** see follow-up commit
+- **Status commit:** 3fd18b0f
 
 ### [F-16] Two chapter-domain methods live in the `ImagesStore` slice
 - **Category:** 11 (Low cohesion)
