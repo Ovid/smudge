@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import type { ImageRow } from "@smudge/shared";
 import { mimeToExt, getImagePath, IMAGE_SRC_REGEX } from "../images/images.paths";
+import { logger } from "../logger";
 import { escapeHtml } from "./html-escape";
 
 /**
@@ -14,6 +15,12 @@ import { escapeHtml } from "./html-escape";
 export interface ImageSource {
   findImageById(id: string): Promise<ImageRow | null>;
 }
+
+/**
+ * Shared by both resolvers below so an operator grepping for this line finds
+ * every export path that dropped an image, and so the two cannot drift apart.
+ */
+const MISSING_IMAGE_FILE_MSG = "Export image file missing on disk; omitting it from the export";
 
 /**
  * Wrap an image lookup so it only ever yields images owned by `projectId`.
@@ -88,7 +95,13 @@ export async function resolveImage(
       source: row.source,
       license: row.license,
     };
-  } catch {
+  } catch (err: unknown) {
+    // The DB row outlived its bytes. The image silently disappears from the
+    // writer's manuscript and the export still reports success, so this is the
+    // only signal that it happened — and it is operator-actionable (restore the
+    // file from a backup). Degrading to null is correct; degrading in silence
+    // is not.
+    logger.warn({ err, image_id: row.id, project_id: row.project_id }, MISSING_IMAGE_FILE_MSG);
     return null;
   }
 }
@@ -237,7 +250,9 @@ export async function resolveImagesForEpub(html: string, source: ImageSource): P
     const filePath = getImagePath(row.project_id, row.id, ext);
     try {
       await fs.access(filePath);
-    } catch {
+    } catch (err: unknown) {
+      // Same anomaly as resolveImage above, on the EPUB path.
+      logger.warn({ err, image_id: row.id, project_id: row.project_id }, MISSING_IMAGE_FILE_MSG);
       return null;
     }
     const fileUrl = pathToFileURL(filePath).href;
