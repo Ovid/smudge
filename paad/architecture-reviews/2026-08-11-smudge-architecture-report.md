@@ -518,6 +518,11 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
 - **Explanation:** Both render-failure paths surface correct user copy but neither logs. A `renderEditorHtml` throw means a mark or node the shared extension set cannot render — exactly the class of bug the `editorExtensions.test.ts` forcing pause exists to catch — and it is invisible even in dev.
 - **Evidence:** `packages/client/src/components/PreviewMode.tsx:47-54` (`catch { return null; }`) and `packages/client/src/hooks/useSnapshotController.ts:46-52` (`catch { return \`<p>${STRINGS.snapshots.renderError}</p>\`; }`). This is a deviation from the codebase's own convention — `clientWarn` is used at 64 sites — not merely an instance of the DEV-only logging policy.
 - **Found by:** Error Handling & Observability
+- **Status:** Fixed
+- **Status reason:** Both catches now bind `err` and call `clientWarn(...)` — `renderSnapshotContent` (`useSnapshotController.ts`) and `renderChapterHtml` (`PreviewMode.tsx`). `clientWarn` is the convention the finding cites and is DEV-gated, so production behaviour is unchanged and the user-facing copy in both paths is untouched. Pinned by extending the two existing render-failure tests rather than adding new scenarios; both route through `expectConsole` per the zero-warnings rule, so the new logs both assert and stay out of the test output.
+- **Status caveat:** This restores the *developer's* signal only. Neither path tells the reader why the render failed, and neither should — the finding's premise is that the user copy was already correct. Note also that `PreviewMode`'s `!content` guard still owns the empty case, so the new warn cannot fire for an untouched chapter (the I3 conflation this file already fixed).
+- **Status date:** 2026-08-16 15:59 UTC
+- **Status commit:** see follow-up commit
 
 ---
 

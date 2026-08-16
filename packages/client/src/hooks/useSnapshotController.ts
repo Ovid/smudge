@@ -46,7 +46,14 @@ class RestoreFailedError extends Error {
 export function renderSnapshotContent(content: Record<string, unknown>): string {
   try {
     return sanitizeEditorHtml(renderEditorHtml(content));
-  } catch {
+  } catch (err) {
+    // F-35: the reader gets correct copy either way, but a throw here means the
+    // shared extension set cannot render some node or mark — the exact class of
+    // bug editorExtensions.test.ts's forcing pause exists to catch. Discarding
+    // `err` made that invisible even in dev. clientWarn is the codebase's
+    // convention for this (64 sites) and is DEV-gated, so it costs production
+    // nothing.
+    clientWarn("renderSnapshotContent: renderEditorHtml threw", err);
     return `<p>${STRINGS.snapshots.renderError}</p>`;
   }
 }

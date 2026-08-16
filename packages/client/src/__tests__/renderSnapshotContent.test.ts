@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { renderSnapshotContent } from "../hooks/useSnapshotController";
+import { expectConsole } from "./expectConsole";
 import { STRINGS } from "../strings";
 
 const notedDoc = {
@@ -35,8 +36,14 @@ describe("renderSnapshotContent", () => {
   });
 
   it("falls back to an error paragraph on malformed content", () => {
+    const warn = expectConsole("warn");
     expect(renderSnapshotContent({ type: "no_such_node" })).toContain(
       STRINGS.snapshots.renderError,
     );
+    // F-35: a throw here means a node or mark the shared extension set cannot
+    // render — the exact class editorExtensions.test.ts's forcing pause exists
+    // to catch. The user copy is correct either way; without this the cause is
+    // invisible even in dev.
+    warn.calledWith(expect.stringContaining("renderSnapshotContent"), expect.any(Error));
   });
 });
