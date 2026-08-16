@@ -55,25 +55,32 @@ export default tseslint.config(
   // errors. That cross-workspace precision is the point — F-11 was exactly
   // that drift (server declaring @tiptap/* it never imported, client importing
   // an undeclared @tiptap/core that resolved only via hoisting).
-  ...["shared", "server", "client"].map((workspace) => ({
-    files: [`packages/${workspace}/**/*.{ts,tsx}`],
-    rules: {
-      "import/no-extraneous-dependencies": [
-        "error",
-        {
-          packageDir: [REPO_ROOT, resolve(REPO_ROOT, "packages", workspace)],
-          // Production source may not import a devDependency (it would ship
-          // broken); tests and local config may.
-          devDependencies: [
-            "**/__tests__/**",
-            "**/*.test.{ts,tsx}",
-            "**/*.spec.{ts,tsx}",
-            "**/*.config.{ts,mts}",
+  // The JSDoc cast is load-bearing: inside `.map()` the object literal gets no
+  // contextual type, so `["error", {...}]` widens to `(string | {...})[]` and
+  // no longer satisfies `RuleEntry`'s tuple. The sibling blocks below are
+  // direct arguments to `tseslint.config()` and infer the tuple for free.
+  ...["shared", "server", "client"].map(
+    (workspace) =>
+      /** @type {import("typescript-eslint").ConfigWithExtends} */ ({
+        files: [`packages/${workspace}/**/*.{ts,tsx}`],
+        rules: {
+          "import/no-extraneous-dependencies": [
+            "error",
+            {
+              packageDir: [REPO_ROOT, resolve(REPO_ROOT, "packages", workspace)],
+              // Production source may not import a devDependency (it would ship
+              // broken); tests and local config may.
+              devDependencies: [
+                "**/__tests__/**",
+                "**/*.test.{ts,tsx}",
+                "**/*.spec.{ts,tsx}",
+                "**/*.config.{ts,mts}",
+              ],
+            },
           ],
         },
-      ],
-    },
-  })),
+      }),
+  ),
   {
     files: ["e2e/**/*.ts", "scripts/**/*.{ts,mjs}", "*.config.{ts,js}", "*.config.{mts,mjs}"],
     rules: {

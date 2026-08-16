@@ -19,8 +19,9 @@ describe("eslint.config.js packageDir entries", () => {
     .filter(([rule]) => rule === "import/no-extraneous-dependencies")
     .flatMap(([, value]) => (Array.isArray(value) ? value.slice(1) : []))
     .flatMap((options) => {
-      const dir = options?.packageDir;
-      return dir === undefined ? [] : Array.isArray(dir) ? dir : [dir];
+      const { packageDir } = /** @type {{ packageDir?: string | string[] }} */ (options);
+      if (packageDir === undefined) return [];
+      return Array.isArray(packageDir) ? packageDir : [packageDir];
     });
 
   it("finds the packageDir options it is meant to be guarding", () => {
