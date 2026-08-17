@@ -381,9 +381,16 @@ Re-flagging one is warranted only if its stated premise changes.
   owns the shared
   mutable busy/lock state and threads it into every editor-mutating entry point;
   the cross-hook invariant holds because this one component wires the same
-  objects consistently. Five prior decompositions already extracted rendering
-  and the controller hooks — the residual concentration is irreducible cross-hook
-  coordination, not accidental complexity. The only structural "fix" (a React
+  objects consistently. Six prior decompositions already extracted rendering
+  and the controller hooks — the sixth (F-04, `useOuttakeCapture`) carved out
+  the outtake-capture flow precisely because it participates in *none* of the
+  coordination: it writes no editor content, so it takes no busy/lock handle.
+  The residual concentration is irreducible cross-hook coordination, not
+  accidental complexity — but "irreducible" is a claim about the blocks that
+  genuinely thread `mutation` / `editorMachine` / `actionBusyRef`, and F-04
+  showed it had been over-applied to a block that threads none of them. A
+  future extraction is warranted on the same evidence and not on size alone.
+  The only structural "fix" (a React
   context/provider lift) would _hide_ invariant-critical mutable state and buy
   near-zero safety: the two controllers already receive that state via
   compile-checked typed deps interfaces, so mis-wiring them is already a compile
