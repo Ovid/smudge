@@ -4,6 +4,7 @@ import { mapApiError } from "../errors";
 import type { MappedError } from "../errors/apiErrorMapper";
 import type { AbortableAsyncOperation } from "./useAbortableAsyncOperation";
 import { makeStaleProjectGuard } from "./staleProjectGuard";
+import type { StaleProjectRef, StaleProjectSlugRef } from "./staleProjectGuard";
 
 export type RefreshTrashResult =
   | { kind: "ok"; trashed: Chapter[] }
@@ -33,8 +34,8 @@ export type RefreshTrashResult =
  */
 export async function refreshTrashList(
   project: ProjectWithChapters,
-  projectRef: { readonly current: ProjectWithChapters | null },
-  projectSlugRef: { readonly current: string | null | undefined },
+  projectRef: StaleProjectRef,
+  projectSlugRef: StaleProjectSlugRef,
   trashOp: AbortableAsyncOperation,
 ): Promise<RefreshTrashResult> {
   // I4 (agentic-review 2026-08-05): the OPERATION's project is the baseline.

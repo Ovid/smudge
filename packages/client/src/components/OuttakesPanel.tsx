@@ -205,7 +205,7 @@ export function OuttakesPanel({
     (row: OuttakeRow): boolean => {
       // I1 (review 2026-07-26): the row's OWN project is the authority on
       // whether it belongs here. Neither producer re-checks the project after
-      // its await — the capture POST lives in EditorPage and the blank-note
+      // its await — the capture POST lives in `useOuttakeCapture` and the blank-note
       // POST in handleCreate below — and this panel is not keyed on project, so
       // an A→B switch mid-POST delivers project A's row to a panel showing B.
       // The C1 ref seed only covers the MOUNT path; this covers the prop-change

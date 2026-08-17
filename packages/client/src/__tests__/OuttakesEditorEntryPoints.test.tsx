@@ -658,4 +658,42 @@ describe("F2: send selection to outtakes (non-destructive)", () => {
 
     expect(screen.queryByText(STRINGS.error.createOuttakeFailed)).not.toBeInTheDocument();
   });
+
+  it("does not announce project A's capture into project B (I1, success arm)", async () => {
+    // The sibling above drives the drift guard's CATCH arm. The SUCCESS arm
+    // carries the same guard and was uncovered: A→B mid-POST, and project B
+    // announces "captured" for a capture belonging to A.
+    //
+    // The assertion is the announcement, not the prepended row, and that is
+    // deliberate: the panel independently refuses a row whose project_id is
+    // not its own, so a row-based assertion passes even with this guard
+    // deleted and would pin the panel's belt-and-braces check instead of this
+    // one. setActionInfo has no such second line of defence.
+    const user = userEvent.setup();
+    mockControls.selection = { from: 1, to: 5 };
+    mockControls.sliceJson = [{ type: "paragraph", content: [{ type: "text", text: "x" }] }];
+    let resolveCreate!: (row: ReturnType<typeof outtake>) => void;
+    vi.mocked(api.outtakes.create).mockReturnValue(
+      new Promise((res) => {
+        resolveCreate = res;
+      }),
+    );
+
+    renderEditorPageWithNav();
+    await user.click(
+      await screen.findByRole("button", { name: STRINGS.outtakes.newFromSelection }),
+    );
+    await waitFor(() => expect(api.outtakes.create).toHaveBeenCalled());
+
+    // Same pre-load window as the sibling: B's GET never settles, so projectRef
+    // still holds A while the URL slug has already advanced.
+    vi.mocked(api.projects.get).mockReturnValue(new Promise(() => {}));
+    await user.click(screen.getByTestId("nav-to-b"));
+
+    resolveCreate(outtake({ id: "ot-new" }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(screen.queryByText(STRINGS.outtakes.capturedHidden)).not.toBeInTheDocument();
+    expect(screen.queryByText(STRINGS.outtakes.captured)).not.toBeInTheDocument();
+  });
 });

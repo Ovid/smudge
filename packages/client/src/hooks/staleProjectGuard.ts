@@ -36,9 +36,23 @@ import type { ProjectWithChapters } from "@smudge/shared";
  * predicate closes the strength gap as a side effect — which is the point:
  * nine copies is how four of them drifted to the weaker form unnoticed.
  */
+
+/**
+ * S3 (agentic-review 2026-08-17): the two ref shapes this guard consumes, named
+ * so a call site's deps interface imports the contract instead of re-spelling
+ * it. Hand-copying the predicate is how four of the nine sites drifted; the
+ * deps interfaces that re-declare its parameter types are the same drift
+ * surface one level up. Owners that WRITE their ref (`useProjectEditor.types.ts`)
+ * keep `MutableRefObject` — these aliases are the read-only consumer contract.
+ */
+export type StaleProjectRef = {
+  readonly current: Pick<ProjectWithChapters, "id" | "slug"> | null;
+};
+export type StaleProjectSlugRef = { readonly current: string | null | undefined };
+
 export function makeStaleProjectGuard(
-  projectRef: { readonly current: Pick<ProjectWithChapters, "id" | "slug"> | null },
-  projectSlugRef: { readonly current: string | null | undefined },
+  projectRef: StaleProjectRef,
+  projectSlugRef: StaleProjectSlugRef,
 ): () => boolean {
   const startedForProjectId = projectRef.current?.id;
   const startedForSlug = projectSlugRef.current;
