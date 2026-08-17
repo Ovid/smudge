@@ -561,7 +561,7 @@ export const STRINGS = {
     // S14: the delete re-entrancy latch used to refuse in silence. onConfirm
     // closes the dialog but the card stays until onDeleted, so a second
     // Delete -> Confirm during the in-flight DELETE is an ordinary gesture. Its
-    // twin (EditorPage's captureInFlightRef) has always announced.
+    // twin (useOuttakeCapture's captureInFlightRef) has always announced.
     deleteInFlight: "Still deleting that outtake — please wait.",
     // I2 (agentic-review 2026-08-04): the rename latch's twin. It returned bare,
     // so a second blur during an in-flight PATCH dropped the edit with no banner

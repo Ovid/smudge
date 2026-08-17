@@ -357,7 +357,7 @@ describe("OuttakeCard", () => {
   it("refuses a second delete confirm, and says so (S4, S14)", async () => {
     // Without the latch a second confirm fires a second DELETE against a row the
     // first may already have removed, 404ing under a banner claiming the delete
-    // failed. EditorPage latches the identical case with captureInFlightRef.
+    // failed. useOuttakeCapture latches the identical case with captureInFlightRef.
     //
     // S14 (agentic-review 2026-08-04): the latch used to refuse in SILENCE, and
     // this test asserted that silence as correct. onConfirm closes the dialog

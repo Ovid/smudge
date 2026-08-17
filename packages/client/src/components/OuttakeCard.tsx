@@ -82,7 +82,7 @@ export function OuttakeCard({
   // card down mid-rename (`visible` matches the row's OLD label). The cancelled
   // write may already have committed, and the post-await `if (signal.aborted)
   // return` swallowed it in silence. That is the exact semantic the S4 latch
-  // below and EditorPage's captureInFlightRef exist to refuse.
+  // below and useOuttakeCapture's captureInFlightRef exist to refuse.
   //
   // Nothing is lost by dropping the ops: the two latches serialise this card's
   // own repeats, and a per-card op could never abort a sibling anyway. Post-await
