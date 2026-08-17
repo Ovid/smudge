@@ -7,6 +7,7 @@ import { api } from "../api/client";
 import { mapApiError, applyMappedError } from "../errors";
 import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
 import { makeStaleProjectGuard } from "./staleProjectGuard";
+import type { StaleProjectRef, StaleProjectSlugRef } from "./staleProjectGuard";
 import { STRINGS } from "../strings";
 
 // Outtake-capture seam of EditorPage (F-04, architecture report 2026-08-11):
@@ -39,8 +40,8 @@ export interface OuttakeCaptureDeps {
   toolbarEditor: TipTapEditor | null;
   project: ProjectWithChapters | null;
   activeChapter: Chapter | null;
-  projectRef: { readonly current: Pick<ProjectWithChapters, "id" | "slug"> | null };
-  projectSlugRef: { readonly current: string | null | undefined };
+  projectRef: StaleProjectRef;
+  projectSlugRef: StaleProjectSlugRef;
   // Both are read only to pick the success announcement's wording — the
   // capture itself does not care whether the drawer is showing.
   panelOpen: boolean;
