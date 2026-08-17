@@ -155,6 +155,8 @@ Wait for `make e2e` to finish (or kill it) before running cleanup.
 
 **`make dev` auto-backs up.** Each `make dev` writes a rotated `backups/smudge-auto-<time>.zip` of the existing DB+images before starting (best-effort — never blocks the server). Keeps the newest `SMUDGE_BACKUP_KEEP` (default 10); `SMUDGE_SKIP_AUTO_BACKUP=1` skips it. Manual `make backup` archives are never auto-pruned. See `docs/backup.md`. These are operator tools run from a source checkout, an interim stopgap until Phase 8b.
 
+**Configuration.** Every environment variable Smudge reads is inventoried in `docs/configuration.md` — defaults, valid values, and which are validated fail-fast versus warn-and-fallback. There is deliberately **no `.env` support** (no `dotenv` dependency, no code path reads one), so variables must be set in the process environment. A new `process.env.X` read in production source turns `scripts/__tests__/configuration-doc.test.mjs` red until it has a row.
+
 ## Key Architecture Decisions
 
 **TipTap JSON as source of truth.** Chapter content is stored as TipTap's native JSON, not HTML. HTML is generated on-demand via `generateHTML()` for preview/export. This enables structured operations (word counting walks the JSON tree) and future custom node types.
