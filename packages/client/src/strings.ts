@@ -483,6 +483,15 @@ export const STRINGS = {
       count === 1
         ? "Snapshot restored. One image was left out because it has since been deleted."
         : `Snapshot restored. ${count} images were left out because they have since been deleted.`,
+    // S2 (agentic review 2026-08-17): same attribution problem as
+    // restoreResponseUnreadableOnOtherChapter below. On the stale-chapter arm
+    // this notice is the ONLY banner raised, and the user is reading a
+    // different chapter — unattributed, "2 images were left out" reads as a
+    // claim about what is on screen.
+    restoreDroppedImagesOnOtherChapter: (count: number, chapterTitle: string) =>
+      count === 1
+        ? `Snapshot restored into "${chapterTitle}". One image was left out because it has since been deleted.`
+        : `Snapshot restored into "${chapterTitle}". ${count} images were left out because they have since been deleted.`,
     restoreResponseUnreadable:
       "The restore may have completed, but the server response was unreadable. Refresh the page to see the current state — editing now could overwrite the restored content.",
     // I6 (review 2026-04-25): chapter-attributed copy for the case

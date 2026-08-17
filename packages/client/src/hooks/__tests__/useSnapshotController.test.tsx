@@ -128,7 +128,25 @@ function buildHarness(opts: HarnessOptions = {}) {
     // and maps a throw to stage:"mutate", exactly as the real hook does.
     run: vi.fn(async (cb: () => Promise<MutateSpec>): Promise<MutationResult<RestoreData>> => {
       if (opts.gate) await opts.gate;
-      if (opts.runResult) return opts.runResult;
+      // I2 (agentic review 2026-08-17): stage ORDER matters. "busy" and
+      // "flush" are reached BEFORE the mutate callback ever runs; every other
+      // stage is reached strictly AFTER it succeeded. Returning runResult
+      // unconditionally made the stand-in unfaithful for the post-mutate
+      // stages — the callback's side effects (droppedImageCount) were never
+      // assigned, so a bug that loses them shipped green. Run the callback
+      // first for those, mirroring the real hook.
+      if (opts.runResult) {
+        const preMutate =
+          opts.runResult.ok === false &&
+          (opts.runResult.stage === "busy" || opts.runResult.stage === "flush");
+        if (preMutate) return opts.runResult;
+        try {
+          mutateSpecs.push(await cb());
+        } catch (error) {
+          return { ok: false, stage: "mutate", error };
+        }
+        return opts.runResult;
+      }
       try {
         const spec = await cb();
         mutateSpecs.push(spec);
@@ -338,6 +356,50 @@ describe("useSnapshotController — handleRestoreSnapshot mutate callback", () =
     });
 
     expect(h.setActionInfo).toHaveBeenLastCalledWith(STRINGS.snapshots.restoreDroppedImages(1));
+  });
+
+  it("attributes the dropped-image notice to its chapter when the user moved away (S2)", async () => {
+    // The stale arm's notice is the only banner that arm raises, and the user
+    // is looking at a different chapter — unattributed, it reads as a claim
+    // about the chapter on screen.
+    const h = buildHarness({
+      restoreResult: { ok: true, staleChapterSwitch: true, droppedImageCount: 1 },
+      currentChapterId: "ch-2",
+    });
+
+    await act(async () => {
+      await h.result.current.handleRestoreSnapshot();
+    });
+
+    expect(h.setActionInfo).toHaveBeenLastCalledWith(
+      STRINGS.snapshots.restoreDroppedImagesOnOtherChapter(1, "Chapter ch-1"),
+    );
+  });
+
+  it("still announces dropped images when the reload could not confirm the restore (I2)", async () => {
+    // The server committed a restore that dropped images, then the follow-up
+    // GET failed. This is the arm where the user is LEAST able to see the
+    // change themselves — the editor is locked and they are told to refresh.
+    // Losing the notice here means they refresh into missing images with no
+    // explanation.
+    const h = buildHarness({
+      restoreResult: { ok: true, droppedImageCount: 2 },
+      runResult: {
+        ok: false,
+        stage: "committed_but_unreloaded",
+        data: { staleChapterSwitch: false },
+      },
+    });
+
+    await act(async () => {
+      await h.result.current.handleRestoreSnapshot();
+    });
+
+    expect(h.setActionInfo).toHaveBeenCalledWith(STRINGS.snapshots.restoreDroppedImages(2));
+    // ...and the lock banner still goes up; the two occupy separate slots.
+    expect(h.applyReloadFailedLock).toHaveBeenCalledWith(
+      STRINGS.snapshots.restoreSucceededReloadFailed,
+    );
   });
 
   it("skips the cache clear and the active-chapter reload on a stale chapter switch", async () => {
