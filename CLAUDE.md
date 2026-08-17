@@ -74,7 +74,7 @@ Smudge is a web-based writing application for long-form fiction and non-fiction,
 - **Monorepo:** npm workspaces with three packages: `shared`, `server`, `client`
 - **Language:** TypeScript everywhere (frontend + backend + shared)
 - **Backend:** Node.js 22 LTS (Jod; see CONTRIBUTING.md for the DEP0040 workaround), Express 4.x, better-sqlite3 (synchronous), Knex.js (migrations/queries), Zod (validation)
-- **Frontend:** React 18+, Vite, TipTap v2 (rich text editor, stores content as JSON not HTML), Tailwind CSS, @dnd-kit/sortable v10
+- **Frontend:** React 19, Vite, TipTap v2 (rich text editor, stores content as JSON not HTML), Tailwind CSS, @dnd-kit/sortable v10
 - **Testing:** Vitest (unit + integration with Supertest), Playwright (e2e + aXe-core a11y)
 - **Deployment (target — not yet implemented):** Single Docker container, Express serving the API + static frontend on port 3456, SQLite persisted via Docker volume. Today `createApp()` mounts `/api/*` (+ `/api/health`) only — no `express.static`/SPA catch-all and no `Dockerfile` yet. When static serving lands it introduces a new path-traversal/unsafe-serving surface that must ship with guardrails + tests (see architecture report F-19).
 
@@ -90,7 +90,16 @@ packages/
       velocity/           # routes, service, repository, types, injectable
       settings/           # routes, service, repository, types
       chapter-statuses/   # routes, service, repository, types
+      snapshots/          # routes, service, repository, types + auto-snapshot, content-hash, labels
+      outtakes/           # routes, service, repository, types
+      images/             # routes, service, repository + fs store, paths, reaper, reference scan
+      search/             # routes, service (find + project-wide replace)
+      export/             # routes, service + per-format renderers (html, epub, docx), image-resolver
+      backup/             # backup-core lifecycle + dependency-free backup-zip-format
       stores/             # SqliteProjectStore facade over the repositories (getProjectStore); injectable + tx seam
+      errors/             # AppError taxonomy (appError.ts), readAfterInsert
+      config/             # paths.ts — DATA_DIR/DB_PATH resolution + containedPath guard
+      utils/              # grapheme.ts
       db/                 # connection singleton, migrations/
   client/       # React SPA, components/, hooks/, pages/, api/, errors/, strings.ts
 e2e/            # Playwright tests
@@ -145,6 +154,8 @@ Wait for `make e2e` to finish (or kill it) before running cleanup.
 **`make ensure-native`** is a prerequisite of `make test/cover/e2e/dev`; you rarely invoke it directly. It probes whether better-sqlite3's `.node` binary loads under the active platform/Node ABI, and on failure rebuilds from source in place (no remote `.node` binary fetched). The rebuild path needs a working C++ toolchain — `build-essential` on Linux, Xcode Command Line Tools on macOS, plus `python3` for node-gyp. Common reason to need it: switching between host (macOS) and a Linux container/VM that share `node_modules` via a bind mount, leaving a wrong-platform binary in place. Direct `npm test` / `npm test -w packages/{shared,server,client}` / `npx playwright test` invocations bypass this check; prefer the `make` entry points after a host↔guest crossing.
 
 **`make dev` auto-backs up.** Each `make dev` writes a rotated `backups/smudge-auto-<time>.zip` of the existing DB+images before starting (best-effort — never blocks the server). Keeps the newest `SMUDGE_BACKUP_KEEP` (default 10); `SMUDGE_SKIP_AUTO_BACKUP=1` skips it. Manual `make backup` archives are never auto-pruned. See `docs/backup.md`. These are operator tools run from a source checkout, an interim stopgap until Phase 8b.
+
+**Configuration.** Every environment variable Smudge reads is inventoried in `docs/configuration.md` — defaults, valid values, and which are validated fail-fast versus warn-and-fallback. There is deliberately **no `.env` support** (no `dotenv` dependency, no code path reads one), so variables must be set in the process environment. A new `process.env.X` read in production source turns `scripts/__tests__/configuration-doc.test.mjs` red until it has a row.
 
 ## Key Architecture Decisions
 
@@ -204,7 +215,7 @@ a shared type (e.g. `toChapterStatus`).
 For mutation-via-server flows (snapshot restore, project-wide replace, and future similar operations), route through `useEditorMutation` in `packages/client/src/hooks/useEditorMutation.ts` — it enforces invariants 1–4 by construction. Hand-composing these steps is reserved for flows outside its scope (e.g. snapshot view, which does not mutate content). For any client flow whose response must be discarded when superseded by a newer request or an external epoch change (chapter switch, project switch, unmount), route through `useAbortableSequence` — it encodes the "bump before, check after" contract as tokens, auto-aborts on unmount, and is enforced by ESLint.
 
 **Editor operational state lives in one machine.** The editor's
-`{ editable, locked, busy }` operational state is owned by
+`{ editable, locked }` operational state is owned by
 `useEditorMutationMachine` (`packages/client/src/hooks/useEditorMutationMachine.ts`)
 — a pure `useReducer` driven by explicit events (`MUTATION_STARTED`,
 `MUTATION_SETTLED_OK` / `_SUPERSEDED`, `RELOADED`, `COMMITTED_UNRELOADED`,
@@ -214,6 +225,18 @@ calls kept in sync by hand. Do not reintroduce free-standing
 lock/unlock and re-enable intent through the machine. Two transitions stay
 synchronous-imperative for timing safety: the lock-down `setEditable(false)`
 (blocks input before the first `await`) and the `inFlightRef` re-entrancy latch.
+**Mutation-busy is deliberately not machine state (F-08).** The machine exposes
+exactly one synchronous probe, `isLocked()`; busy is `mutation.isBusy()`, backed
+by `inFlightRef`, and a reducer field cannot replace it because the latch must
+be readable *before* the first `await` while reducer state is visible only after
+React commits. The machine previously carried a `busy` mirror no consumer read,
+giving two same-named `isBusy()` probes on sibling objects — one authoritative,
+one documented as wrong. Do not re-add it; if a render-time busy indicator is
+ever wanted (a `disabled` prop rather than a callback check), add the field
+then, and not as a second `isBusy()`. Three events
+(`MUTATION_SETTLED_SUPERSEDED`, `RELOADED`, `EDITOR_REMOUNTED`) now produce an
+identical state — that is deliberate and pinned by a test; they are distinct
+facts dispatched from distinct sites, so do not merge them.
 `MutationResult` carries `committed_but_unreloaded` as the canonical "server
 committed, display unconfirmed" outcome (2xx `BAD_JSON` on replace/restore,
 reload-GET failure, race-only supersession); it routes to the persistent lock
@@ -326,10 +349,11 @@ Re-flagging one is warranted only if its stated premise changes.
   initialized", init throws "already initialized"). This IS the deliberate,
   tested seam that makes the single-process app injectable at all — the
   runtime-enforced init-order contract is the price of a locator that stays a
-  one-liner at 13 call sites instead of threading `db`/`store` through every
-  route→service→repository signature. "Fixing" it means a DI-container or
+  one-liner at every call site instead of threading `db`/`store` through every
+  route→service→repository signature — and the call sites have multiplied since
+  this was accepted, which strengthens the case rather than weakening it. "Fixing" it means a DI-container or
   parameter-threading rewrite that buys nothing for a single-process app.
-- **`ProjectStore` facade is 51 one-line pass-throughs (F-4).** Each
+- **`ProjectStore` facade is entirely one-line pass-throughs (F-4).** Each
   `SqliteProjectStore` method delegates to a repository function, and the
   `ProjectStore` interface has exactly one implementation (no fake implements
   it; tests construct the concrete class over a real DB). The three-edit-per-
@@ -353,7 +377,8 @@ Re-flagging one is warranted only if its stated premise changes.
   optimizations. Revisit only if Smudge ever ships a cloud / multi-writer
   deployment.
 - **`EditorPage` god-orchestrator, accepted with an enforcement net (F-1).**
-  `packages/client/src/pages/EditorPage.tsx` (~1,330 lines) owns the shared
+  `packages/client/src/pages/EditorPage.tsx` (the largest file in the client)
+  owns the shared
   mutable busy/lock state and threads it into every editor-mutating entry point;
   the cross-hook invariant holds because this one component wires the same
   objects consistently. Five prior decompositions already extracted rendering

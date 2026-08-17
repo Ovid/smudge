@@ -201,7 +201,7 @@ export async function createChapter(
   const chapterId = uuid();
   const now = new Date().toISOString();
 
-  await store.transaction(async (txStore) => {
+  const chapter = await store.transaction(async (txStore) => {
     const maxOrder = await txStore.getMaxChapterSortOrder(project.id);
     await txStore.insertChapter({
       id: chapterId,
@@ -214,11 +214,23 @@ export async function createChapter(
       updated_at: now,
     });
     await txStore.updateProjectTimestamp(project.id, now);
+    // F-28: read INSIDE the transaction so the response body reflects exactly
+    // what this request wrote — the rule stated at chapters.service.ts (updateChapter)
+    // and repeated in snapshots.service.ts, which this function used to be the
+    // exception to. Returning null here does NOT roll the insert back, and that is
+    // deliberate: the row stays committed, so chapter.create's
+    // committedCodes: ["READ_AFTER_CREATE_FAILURE"] entry stays truthful. Throwing
+    // instead would roll back and make that entry tell the writer "this may have
+    // saved, do not retry" for a chapter that provably was not (cf. F-12, which
+    // rejected exactly that inversion for outtakes).
+    return txStore.findChapterById(chapterId);
   });
-
-  const chapter = await store.findChapterById(chapterId);
   if (!chapter) return "read_after_create_failure";
 
+  // Enrichment stays OUTSIDE the transaction. It reaches the store for the
+  // chapter_statuses label, and Knex's better-sqlite3 pool is max:1 — a
+  // non-scoped store call from inside a transaction starves until timeout.
+  // Safe here regardless: the label comes from a seeded table no request mutates.
   return enrichChapterWithLabel(store, chapter);
 }
 

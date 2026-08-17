@@ -153,7 +153,7 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
         // editor is stranded read-only while the only signal is a dismissible
         // action error — recoverable only by another chapter switch or
         // refresh. reassertEditorEditable dispatches MUTATION_SETTLED_SUPERSEDED
-        // ({editable:true, busy:false, lock:null}), the same terminal state the
+        // ({editable:true, lock:null}), the same terminal state the
         // hook itself dispatches when IT detects supersession, and the same
         // editable:true that EDITOR_REMOUNTED will (eventually) apply on the
         // chapter switch — this just closes the timing gap deterministically.

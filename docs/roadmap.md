@@ -1233,7 +1233,7 @@ Pattern analysis across the six `ovid/architecture` code reviews (2026-04-19 to 
 
 ### Scope
 
-- One `EditorMutationState` primitive (shape decided at design time) that owns `{ editable, locked, busy }` as a machine driven by explicit events, not by independent setState calls.
+- One `EditorMutationState` primitive (shape decided at design time) that owns `{ editable, locked, busy }` as a machine driven by explicit events, not by independent setState calls. *(Superseded 2026-08-17 by architecture finding F-08: the `busy` field was a mirror no consumer ever read — the authoritative latch is `inFlightRef` in `useEditorMutation`, which must be readable before the first `await`. It was removed and the machine now owns `{ editable, locked }`. The rest of this phase's record stands as shipped.)*
 - Extend `MutationResult.stage` with a `"committed_but_unreloaded"` variant covering:
   - 2xx `BAD_JSON` on replace / restore response bodies.
   - `expectedChapterId` skip where the hook would otherwise treat skip as success.

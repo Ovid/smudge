@@ -66,8 +66,9 @@ export function EditorPage() {
   const navigate = useNavigate();
 
   // Phase 4b.5: the editor's operational state (lock banner, TipTap editable
-  // intent, mutation-busy) lives in ONE machine so the invariant pair can no
-  // longer drift by hand. The read-only lock is surfaced when a mutation
+  // intent) lives in ONE machine so the invariant pair can no longer drift by
+  // hand. Mutation-busy is NOT part of it — that is mutation.isBusy(), backed
+  // by inFlightRef, which must be readable before the first await (F-08). The read-only lock is surfaced when a mutation
   // succeeded server-side but the follow-up reload failed (I1); the Editor is
   // intentionally left setEditable(false) in that case to prevent the user
   // from typing over stale content. The lock banner is the only persistent
@@ -360,8 +361,8 @@ export function EditorPage() {
 
   // OOSI1 (agentic-review 2026-05-30): re-assert editor editability after a
   // committed_but_unreloaded replace that settled on a now-unrelated chapter.
-  // Dispatches MUTATION_SETTLED_SUPERSEDED ({editable:true, busy:false,
-  // lock:null}) — the same terminal state the mutation hook emits when IT
+  // Dispatches MUTATION_SETTLED_SUPERSEDED ({editable:true, lock:null})
+  // — the same terminal state the mutation hook emits when IT
   // detects supersession — so finalizeReplaceSuccess's stale branch can
   // re-enable the displayed editor instead of leaving it read-only with only a
   // dismissible action error. Deps mirror applyReloadFailedLock (the sibling
@@ -1161,23 +1162,26 @@ export function EditorPage() {
         await editorRef.current?.flushSave();
       } catch (err) {
         clientWarn("Ctrl+S: flushSave threw", err);
-        // I1 (review 2026-04-26, follow-up): the only reachable case here
-        // is a synchronous TipTap throw (e.g. editor.getJSON() during a
-        // mid-remount), which is NOT an ApiRequestError. Editor.flushSave's
-        // .catch (Editor.tsx:334) swallows every promise rejection and
-        // resolves false — the surrounding try/catch never sees an
-        // ApiRequestError, NETWORK or otherwise. Routing through
-        // mapApiError is therefore parity-with-prior-literal:
-        // non-ApiRequestError short-circuits to scope.fallback =
-        // STRINGS.editor.saveFailed, matching what the inline literal
-        // produced before this catch existed. Routing kept (rather than
-        // re-inlining the literal) for architectural consistency with
+        // I1 (review 2026-04-26, follow-up; corrected 2026-08-17): the live
+        // case is a SYNCHRONOUS throw out of Editor.flushSave. Its `.catch`
+        // guards only the promise onSave returns — `editor.getJSON()` and
+        // the onSave invocation itself run before it, so a TipTap
+        // mid-remount throw escapes rather than resolving false. (An earlier
+        // version of this comment claimed that `.catch` swallowed
+        // everything, citing a line number that had since drifted by ~100
+        // lines, which made this catch read as dead code. It is not.)
+        //
+        // A sync TipTap throw is not an ApiRequestError, so mapApiError
+        // short-circuits to scope.fallback = STRINGS.editor.saveFailed —
+        // the same copy the inline literal produced before this catch
+        // existed. Routing kept (rather than re-inlining the literal) for
         // the CLAUDE.md "user-visible API errors go through mapApiError"
-        // invariant — and to be future-proof if Editor.flushSave is ever
-        // changed to re-throw, at which point this catch would meaningfully
-        // surface saveFailedNetwork / byStatus / byCode copy. The
-        // ?? STRINGS.editor.saveFailed defends against ABORTED-only
-        // (mapApiError returns message: null).
+        // invariant, and so that a future flushSave which re-throws a real
+        // ApiRequestError gets saveFailedNetwork / byStatus / byCode copy
+        // without another edit here. The ?? STRINGS.editor.saveFailed
+        // defends against ABORTED-only (mapApiError returns message: null).
+        //
+        // Both arms are pinned by EditorPageCtrlSFlush.test.tsx.
         setActionError(mapApiErrorMessage(err, "chapter.save", STRINGS.editor.saveFailed));
       }
     },

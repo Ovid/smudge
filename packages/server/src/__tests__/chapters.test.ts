@@ -61,6 +61,44 @@ describe("POST /api/projects/:id/chapters", () => {
 
     expect(res.body.sort_order).toBe(2);
   });
+
+  // --- F-28 safety net (architecture report 2026-08-11) ---------------------
+  // createChapter's transaction does two things and then re-reads OUTSIDE the
+  // transaction; the F-28 fix moves that read inside. These two pin the parts
+  // of the observable result that the restructure could silently drop: the
+  // timestamp bump that happens beside the insert, and the status-label
+  // enrichment that happens after it. Neither was asserted anywhere.
+
+  it("bumps the parent project's updated_at", async () => {
+    const { projectSlug } = await createProjectWithChapter(t.app);
+
+    // Backdate directly so the comparison cannot turn on same-millisecond
+    // ISO timestamps — the API writes new Date().toISOString().
+    const stale = "2020-01-01T00:00:00.000Z";
+    await t.db("projects").where({ slug: projectSlug }).update({ updated_at: stale });
+
+    const res = await request(t.app).post(`/api/projects/${projectSlug}/chapters`).send();
+    expect(res.status).toBe(201);
+
+    const projectRes = await request(t.app).get(`/api/projects/${projectSlug}`);
+    expect(projectRes.body.updated_at).not.toBe(stale);
+    expect(new Date(projectRes.body.updated_at).getTime()).toBeGreaterThan(
+      new Date(stale).getTime(),
+    );
+  });
+
+  it("returns the new chapter enriched with its status_label", async () => {
+    const { projectSlug } = await createProjectWithChapter(t.app);
+
+    const res = await request(t.app).post(`/api/projects/${projectSlug}/chapters`).send();
+
+    expect(res.status).toBe(201);
+    // Default status is "outline" (migration 003); the label is looked up from
+    // chapter_statuses, so this fails if enrichment is dropped or fed the raw
+    // status as a fallback.
+    expect(res.body.status).toBe("outline");
+    expect(res.body.status_label).toBe("Outline");
+  });
 });
 
 describe("GET /api/chapters/:id", () => {
