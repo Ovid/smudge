@@ -1162,23 +1162,26 @@ export function EditorPage() {
         await editorRef.current?.flushSave();
       } catch (err) {
         clientWarn("Ctrl+S: flushSave threw", err);
-        // I1 (review 2026-04-26, follow-up): the only reachable case here
-        // is a synchronous TipTap throw (e.g. editor.getJSON() during a
-        // mid-remount), which is NOT an ApiRequestError. Editor.flushSave's
-        // .catch (Editor.tsx:334) swallows every promise rejection and
-        // resolves false — the surrounding try/catch never sees an
-        // ApiRequestError, NETWORK or otherwise. Routing through
-        // mapApiError is therefore parity-with-prior-literal:
-        // non-ApiRequestError short-circuits to scope.fallback =
-        // STRINGS.editor.saveFailed, matching what the inline literal
-        // produced before this catch existed. Routing kept (rather than
-        // re-inlining the literal) for architectural consistency with
+        // I1 (review 2026-04-26, follow-up; corrected 2026-08-17): the live
+        // case is a SYNCHRONOUS throw out of Editor.flushSave. Its `.catch`
+        // guards only the promise onSave returns — `editor.getJSON()` and
+        // the onSave invocation itself run before it, so a TipTap
+        // mid-remount throw escapes rather than resolving false. (An earlier
+        // version of this comment claimed that `.catch` swallowed
+        // everything, citing a line number that had since drifted by ~100
+        // lines, which made this catch read as dead code. It is not.)
+        //
+        // A sync TipTap throw is not an ApiRequestError, so mapApiError
+        // short-circuits to scope.fallback = STRINGS.editor.saveFailed —
+        // the same copy the inline literal produced before this catch
+        // existed. Routing kept (rather than re-inlining the literal) for
         // the CLAUDE.md "user-visible API errors go through mapApiError"
-        // invariant — and to be future-proof if Editor.flushSave is ever
-        // changed to re-throw, at which point this catch would meaningfully
-        // surface saveFailedNetwork / byStatus / byCode copy. The
-        // ?? STRINGS.editor.saveFailed defends against ABORTED-only
-        // (mapApiError returns message: null).
+        // invariant, and so that a future flushSave which re-throws a real
+        // ApiRequestError gets saveFailedNetwork / byStatus / byCode copy
+        // without another edit here. The ?? STRINGS.editor.saveFailed
+        // defends against ABORTED-only (mapApiError returns message: null).
+        //
+        // Both arms are pinned by EditorPageCtrlSFlush.test.tsx.
         setActionError(mapApiErrorMessage(err, "chapter.save", STRINGS.editor.saveFailed));
       }
     },
