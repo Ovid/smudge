@@ -1528,3 +1528,45 @@ describe("every scope fronting PATCH /api/chapters/:id shares its code policy", 
     expect(mapped.message).not.toBe(entryOf(scope).fallback);
   });
 });
+
+// ---------------------------------------------------------------------------
+// S7 (agentic review 2026-08-17): registry-wide committedCodes coherence
+// ---------------------------------------------------------------------------
+
+describe("every scope's committedCodes is actually reachable", () => {
+  // `_resolveErrorInternal` computes possiblyCommitted ONLY inside the byCode
+  // branch — the byStatus and fallback arms hard-code it to false. A code
+  // listed in committedCodes without a matching byCode entry is therefore
+  // INERT: the scope declares "this may have committed" and the mapper
+  // silently answers "no", so consumers gated on the flag stay dark and the
+  // user gets retry-inviting fallback copy for a write that landed.
+  //
+  // The CHAPTER_PATCH_SCOPES block above pinned this rule for one endpoint;
+  // `image.upload` then shipped the same defect (I1) because that block could
+  // not see it. This one iterates the whole registry, so the next scope to get
+  // it wrong goes red without anyone remembering to extend a list.
+  const ALL_SCOPES = Object.keys(SCOPES) as ApiErrorScope[];
+  const scopesWithCommittedCodes = ALL_SCOPES.filter(
+    (s) => (SCOPES[s] as ScopeEntry).committedCodes !== undefined,
+  );
+
+  it("finds scopes to check (guards against the filter silently emptying)", () => {
+    expect(scopesWithCommittedCodes.length).toBeGreaterThan(0);
+  });
+
+  it.each(scopesWithCommittedCodes)("%s pairs every committedCode with byCode copy", (scope) => {
+    const entry = SCOPES[scope] as ScopeEntry;
+    for (const code of entry.committedCodes ?? []) {
+      expect(entry.byCode?.[code], `${scope}.byCode is missing "${code}"`).toBeTruthy();
+    }
+  });
+
+  it.each(scopesWithCommittedCodes)("%s surfaces possiblyCommitted for each code", (scope) => {
+    const entry = SCOPES[scope] as ScopeEntry;
+    for (const code of entry.committedCodes ?? []) {
+      const mapped = mapApiError(new ApiRequestError("boom", 500, code), scope);
+      expect(mapped.possiblyCommitted, `${scope} + ${code}`).toBe(true);
+      expect(mapped.message).not.toBe(entry.fallback);
+    }
+  });
+});
