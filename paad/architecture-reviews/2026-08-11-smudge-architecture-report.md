@@ -292,6 +292,7 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
   This has already produced a live defect: `useFindReplaceController.ts:150-160` documents the OOSI1 fix for the stale-chapter sub-case that stranded an unrelated chapter's editor read-only. The fix was a patch at one consumer, not at the seam.
 - **Found by:** Coupling & Dependencies
 - **Downgrade rationale:** both current consumers handle it correctly today, and the failure mode is a stranded read-only editor recoverable by refresh, not data loss. The risk is a future third consumer.
+- **Evidence drift (2026-08-17, from the F-08 fix — this finding is still open and unfixed):** the text above describes the machine as left at `{editable:false, busy:true}`. There is no longer a `busy` field (F-08 removed it as an unread mirror), so the stranded state is `{editable:false}` with no lock. The *substance* of F-07 is unchanged — the `finally` block still dispatches nothing when `reloadFailed` is set, and the consumer still owns `COMMITTED_UNRELOADED` — but a future session should not go looking for `busy`. F-08's fix also settled a question relevant here: a seam-level fix would **not** want `busy` back, because the re-entrancy latch must be readable before the first `await` and reducer state is not.
 
 ### [F-08] `useEditorMutationMachine.busy` / `isBusy()` / `getState()` are unconsumed, and `busy` is documented as knowingly wrong
 - **Category:** 31 (Dead code) *(re-typed from 7)*
