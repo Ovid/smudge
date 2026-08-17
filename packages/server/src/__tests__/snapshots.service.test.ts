@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { randomUUID as uuid } from "node:crypto";
 import { setupTestDb } from "./test-helpers";
+import { logger } from "../logger";
 import { setVelocityService, resetVelocityService } from "../velocity/velocity.injectable";
 
 const t = setupTestDb();
@@ -660,6 +661,10 @@ describe("snapshots.service", () => {
       // withholds the prose. Restore the words, drop the dead node, and
       // report the count so the client can say what happened.
       stubVelocity();
+      // The drop is a deliberate anomaly the service logs at warn level.
+      // Assert it instead of letting it noise up the suite output
+      // (CLAUDE.md §Testing Philosophy).
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
       const { chapterId, projectId } = await createProjectAndChapter();
       const { createSnapshot, restoreSnapshot } = await import("../snapshots/snapshots.service");
 
@@ -700,6 +705,11 @@ describe("snapshots.service", () => {
       expect(chapter.content).not.toContain(goneImageId);
       expect(chapter.word_count).toBe(3);
       expect(projectId).toBeTruthy();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ dropped_image_ids: [goneImageId] }),
+        expect.any(String),
+      );
+      warnSpy.mockRestore();
     });
 
     it("still refuses to restore when the image exists but belongs to another project", async () => {

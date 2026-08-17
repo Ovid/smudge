@@ -443,7 +443,13 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         // images no longer exist. Threaded through BOTH success arms below —
         // a stale chapter switch does not make the content alteration
         // untrue, it only changes which editor is showing.
-        const droppedImageCount = restored.dropped_image_count ?? 0;
+        //
+        // S5 (agentic review 2026-08-17): optional-chain the deref. `apiFetch`
+        // returns `undefined as T` for a 204, so the declared type lies for
+        // any handler that stops returning a body — the sibling read at the
+        // snapshot-view path guards for exactly this. Unreachable today; the
+        // restore route always sends the chapter.
+        const droppedImageCount = restored?.dropped_image_count ?? 0;
         // A→B→A round-trip: epoch moved but the current chapter is once
         // again the one we restored. Treat that as a NOT-stale completion
         // — the caller should reload the editor because the restore
