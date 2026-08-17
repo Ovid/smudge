@@ -161,3 +161,99 @@ describe('parseChapterContent — "valid JSON, wrong shape" (I6)', () => {
     expect(result.content_corrupt).toBeUndefined();
   });
 });
+
+describe("parseChapterContent — real manuscript shapes stay readable (F-10 safety net)", () => {
+  // Safety net for F-10 (architecture report 2026-08-11), which tightens this
+  // read path's corruption gate from `isTipTapNode` (any object) to the
+  // stricter `TipTapDocSchema` its two sibling parsers already use.
+  //
+  // The upside of that change is that `{"foo":1}` stops being served as a
+  // healthy chapter. The DOWNSIDE it must not have is any legitimate stored
+  // manuscript newly reading as corrupt — this is the read path for content
+  // the writer cannot otherwise recover, so a false positive here does not
+  // degrade a feature, it makes a chapter unopenable. Every shape below is
+  // content the editor genuinely produces and MUST keep parsing as healthy.
+  //
+  // These cases are the reason the fix cannot be waved through as "just swap
+  // the predicate": TipTapDocSchema additionally enforces `type: "doc"` and
+  // the MAX_TIPTAP_DEPTH walker, neither of which isTipTapNode checked.
+
+  /** blockquote > bulletList > listItem > paragraph > text — legal, and deep. */
+  function nestedDoc(depth: number) {
+    let node: Record<string, unknown> = { type: "text", text: "deep" };
+    for (let i = 0; i < depth; i++) {
+      node = { type: "blockquote", content: [node] };
+    }
+    return { type: "doc", content: [node] };
+  }
+
+  const HEALTHY: Array<[string, unknown]> = [
+    ["an empty document", { type: "doc" }],
+    ["a document with an empty content array", { type: "doc", content: [] }],
+    [
+      "prose with marks",
+      {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: "She said " },
+              { type: "text", marks: [{ type: "italic" }], text: "nothing" },
+              { type: "text", marks: [{ type: "bold" }], text: " at all." },
+            ],
+          },
+        ],
+      },
+    ],
+    [
+      "headings and multiple blocks",
+      {
+        type: "doc",
+        content: [
+          { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Part One" }] },
+          { type: "paragraph", content: [{ type: "text", text: "It began badly." }] },
+          { type: "horizontalRule" },
+        ],
+      },
+    ],
+    [
+      "an image node",
+      {
+        type: "doc",
+        content: [
+          {
+            type: "image",
+            attrs: { src: "/api/images/2f1c9f6e-0000-4000-8000-000000000000", alt: "a map" },
+          },
+        ],
+      },
+    ],
+    [
+      "an editor-only note mark",
+      {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", marks: [{ type: "note", attrs: { note: "fix this" } }], text: "TK" },
+            ],
+          },
+        ],
+      },
+    ],
+    ["deep but legal nesting", nestedDoc(30)],
+  ];
+
+  it.each(HEALTHY)("keeps %s readable", (_label, doc) => {
+    const result = parseChapterContent({
+      id: "abc",
+      title: "Test",
+      content: JSON.stringify(doc),
+    }) as unknown as Record<string, unknown>;
+
+    expect(result.content).toEqual(doc);
+    expect(result.content_corrupt).toBeUndefined();
+  });
+});
