@@ -257,7 +257,7 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
 - **Status note (the destructive sibling will not inherit the exemption):** roadmap Phase 4c.2a ("cut selection to outtakes", destructive) is planned and the roadmap states it *"touches the save-pipeline invariants and gets its own PR"*. Capture is exempt from invariants 1-4 only because it never writes editor content; the cut does. The hook is therefore named for the one flow it owns rather than for outtakes generally, and its header records why 4c.2a cannot simply be added alongside this handler.
 - **Status caveat (what the safety net does and does not pin):** the 19 behavioural cases in `OuttakesEditorEntryPoints.test.tsx` drive a real `EditorPage` mount and passed unmodified across the move — no test was edited. One was added first (commit `4c189ada`) because coverage showed the success arm's `signal.aborted || isStaleProject()` guard partial, and it asserts on the announcement rather than the prepended row: the panel independently refuses a foreign-project row, so a row-based assertion stays green with the guard deleted. Confirmed red against that deletion. `editorEntryPointSurface.test.ts` does **not** guard this refactor — it matches prop *names*, which are unchanged; it stayed green and needed no edit.
 - **Status date:** 2026-08-17 10:23 UTC
-- **Status commit:** e95a8c44
+- **Status commit:** 22bfb586
 
 ### [F-05] Image delete's reference scan owns `chapters` but not `chapter_snapshots`
 - **Category:** 17 (No clear ownership of data)
