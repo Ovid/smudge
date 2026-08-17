@@ -162,6 +162,40 @@ describe('parseChapterContent — "valid JSON, wrong shape" (I6)', () => {
   });
 });
 
+describe("parseChapterContent — object-but-not-a-document is corrupt (F-10)", () => {
+  // F-10: the gate was `isTipTapNode`, which accepts ANY object. Its two
+  // sibling parsers had already rejected that predicate as insufficient and
+  // moved to TipTapDocSchema — outtakes' comment says so in as many words —
+  // leaving chapters, the manuscript table and the one with a designed
+  // CORRUPT_CONTENT route, on the weakest check of the three.
+  //
+  // A stored `{"foo":1}` passed, was served as a healthy chapter with
+  // `content_corrupt` unset, rendered as nothing, and the CORRUPT_CONTENT
+  // route could never fire for it.
+  it.each([
+    ["a bare object with no type", '{"foo":1}'],
+    ["an object whose type is not doc", '{"type":"paragraph","content":[]}'],
+    ["a doc whose content is not an array", '{"type":"doc","content":5}'],
+    ["a doc with a primitive where a node belongs", '{"type":"doc","content":[0]}'],
+    ["a doc with a null child", '{"type":"doc","content":[null]}'],
+  ])("flags %s as corrupt", (_label, stored) => {
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    const result = parseChapterContent({
+      id: "abc",
+      title: "Test",
+      content: stored,
+    }) as unknown as Record<string, unknown>;
+
+    expect(result.content).toBeNull();
+    expect(result.content_corrupt).toBe(true);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ chapter_id: "abc" }),
+      "Corrupt JSON in chapter content",
+    );
+    errorSpy.mockRestore();
+  });
+});
+
 describe("parseChapterContent — real manuscript shapes stay readable (F-10 safety net)", () => {
   // Safety net for F-10 (architecture report 2026-08-11), which tightens this
   // read path's corruption gate from `isTipTapNode` (any object) to the

@@ -205,7 +205,11 @@ describe("search.service", () => {
     // the loop continued WITHOUT recording a skip, reporting the project fully
     // searched when a chapter was never examined. Three sibling parse sites
     // gained an isTipTapNode gate; these two did not.
-    it.each([["null"], ["42"], ["[]"], ['"text"']])(
+    // F-10 adds the '{"foo":1}' case: an OBJECT that is not a document passed
+    // the old isTipTapNode gate, so the walker examined it, found nothing, and
+    // reported the project fully searched. Now gated on TipTapDocSchema, the
+    // same predicate the chapter read path calls corrupt.
+    it.each([["null"], ["42"], ["[]"], ['"text"'], ['{"foo":1}'], ['{"type":"doc","content":5}']])(
       "records a chapter whose content parses to %s as skipped",
       async (rawContent) => {
         const { searchProject } = await import("../search/search.service");
@@ -531,7 +535,7 @@ describe("search.service", () => {
       expect(result).toBe("scope_not_found");
     });
 
-    it.each([["null"], ["42"], ["[]"], ['"text"']])(
+    it.each([["null"], ["42"], ["[]"], ['"text"'], ['{"foo":1}'], ['{"type":"doc","content":5}']])(
       "records a chapter whose content parses to %s as skipped during replace (OOSS2)",
       async (rawContent) => {
         const { replaceInProject } = await import("../search/search.service");

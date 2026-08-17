@@ -1,5 +1,5 @@
 import type { Knex } from "knex";
-import { isTipTapNode } from "@smudge/shared";
+import { TipTapDocSchema } from "@smudge/shared";
 import type {
   ChapterRow,
   ChapterRawRow,
@@ -28,11 +28,27 @@ function parseContent(row: Record<string, unknown>): ChapterRow {
       // The three sites keep deliberately DIFFERENT degrade policies
       // (corrupt-flag here, empty-doc for outtakes, reject-restore for
       // snapshots) — but that is an argument for sharing the PREDICATE and not
-      // the degrade, which is what isTipTapNode does (S1, dedup review
-      // 2026-07-26). The predicate was the extractable part all along; each
-      // caller still owns what happens inside the `if`.
-      if (!isTipTapNode(parsed)) {
-        throw new TypeError("Chapter content is not a JSON object");
+      // the degrade. Each caller still owns what happens inside the `if`.
+      //
+      // F-10 (architecture report 2026-08-11): the shared predicate used to be
+      // isTipTapNode, which accepts ANY object — so `{"foo":1}` was served as a
+      // healthy chapter with no corrupt flag, rendered as nothing, and the
+      // CORRUPT_CONTENT route designed for exactly this could never fire. Both
+      // sibling parsers had already rejected that predicate and moved to
+      // TipTapDocSchema (snapshots.service.ts since a19e8aa; outtakes.repository.ts
+      // since 5d3d495, whose comment says gate on the SCHEMA, not on
+      // isTipTapNode); chapters was the site that never got it, which made the
+      // 2026-07-26 dedup review's "the predicate was the extractable part"
+      // argument true of the wrong predicate.
+      //
+      // TipTapDocSchema is strictly stronger: it additionally requires
+      // `type: "doc"` and enforces the shared depth/shape walker. It is the
+      // same gate PATCH /api/chapters/:id already applies on the WRITE side, so
+      // read and write now agree on what a chapter is — anything this rejects
+      // could not have been written through the API, and is a hand-edited row,
+      // a restored backup, or a legacy row.
+      if (!TipTapDocSchema.safeParse(parsed).success) {
+        throw new TypeError("Chapter content is not a TipTap document");
       }
       return { ...row, content: parsed } as ChapterRow;
     } catch (err) {
