@@ -435,6 +435,7 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
 - **Evidence:** `packages/client/src/components/OuttakesPanel.tsx:204-215` — *"Neither producer re-checks the project after its await — the capture POST lives in EditorPage and the blank-note POST in handleCreate below"* — forcing a defensive third guard in `applyServerRow`. Call sites: `OuttakesPanel.tsx:265` + `EditorPage.tsx:1070`; same shape at `Editor.tsx:354` + `ImageGallery.tsx:206`.
 - **Found by:** Structure & Boundaries
 - **Downgrade rationale:** the panel's `applyServerRow` funnel already catches the cross-project failure mode centrally and documents why.
+- **Evidence drift (2026-08-17, from the F-04 fix — this finding is still open and unfixed):** the second producer is no longer at `EditorPage.tsx:1070`; it moved verbatim into `packages/client/src/hooks/useOuttakeCapture.ts` (`api.outtakes.create` at `:159`). The shape F-17 describes is unchanged — still one create endpoint, two producers at two layers, each with its own drift guard and error scope, reconciled through a nonce prop drilled `EditorPage → EditorMainContent → OuttakesPanel`. The extraction moved one producer behind a hook boundary; it did not reduce the count or unify the reconciliation.
 
 ### [F-18] `EditorMainContent` is a 71-prop pass-through with duplicated banner markup
 - **Category:** 11 (Low cohesion)
