@@ -1,12 +1,17 @@
 import { randomUUID as uuidv4 } from "node:crypto";
-import { countWords, TipTapDocSchema, sanitizeSnapshotLabel } from "@smudge/shared";
+import {
+  countWords,
+  TipTapDocSchema,
+  sanitizeSnapshotLabel,
+  stripImageNodes,
+} from "@smudge/shared";
 import { truncateGraphemes } from "../utils/grapheme";
 import { buildAutoSnapshotLabel } from "./labels";
 import { insertAutoSnapshotIfChanged } from "./auto-snapshot";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
-import { applyImageRefDiff, extractImageIds } from "../images/images.references";
+import { applyImageRefDiff, extractImageIds, imageIdFromNode } from "../images/images.references";
 import {
   enrichChapterWithLabel,
   stripCorruptFlag,
@@ -115,9 +120,20 @@ export async function deleteSnapshot(id: string): Promise<boolean> {
 
 export type RestoreFailure = "corrupt_snapshot" | "cross_project_image";
 
+/**
+ * `dropped_image_count` is the number of image nodes removed because the
+ * image no longer exists (F-05). Zero on the ordinary path. It is a COUNT and
+ * not a message: the client owns the user-facing copy, per CLAUDE.md §API
+ * Design.
+ */
+export interface RestoreSuccess {
+  chapter: ChapterWithLabel;
+  dropped_image_count: number;
+}
+
 export async function restoreSnapshot(
   snapshotId: string,
-): Promise<{ chapter: ChapterWithLabel } | null | RestoreFailure> {
+): Promise<RestoreSuccess | null | RestoreFailure> {
   const store = getProjectStore();
   const snapshot = await store.findSnapshotById(snapshotId);
   if (!snapshot) return null;
@@ -162,23 +178,62 @@ export async function restoreSnapshot(
     const chapter = await txStore.findChapterByIdRaw(snapshot.chapter_id);
     if (!chapter) return null;
 
-    // Reject restore if the snapshot content references images owned by a
-    // different project (or missing entirely). Without this the foreign
-    // image URL is silently written into the chapter; when the other
-    // project is purged the image 404s with no user-visible warning at
-    // restore time. applyImageRefDiff already refuses to adjust cross-
-    // project ref counts, but that only protects ref-count integrity —
-    // the broken src still ends up persisted.
+    // Two DIFFERENT conditions used to share this one arm, which is what made
+    // F-05 both permanent and mislabelled:
+    //
+    //  - image exists but belongs to ANOTHER project → still a hard refusal.
+    //    Writing the foreign src would silently persist a link that 404s once
+    //    the other project is purged, and adopting another project's asset is
+    //    not ours to decide. applyImageRefDiff already refuses to adjust
+    //    cross-project ref counts, but that only protects ref-count integrity —
+    //    the broken src still ends up persisted.
+    //
+    //  - image is GONE (deleted; images have no soft-delete and the bytes are
+    //    unlinked immediately) → restore the prose and drop the dead node.
+    //    Refusing cannot bring the image back, so it only ALSO withholds the
+    //    writer's words; the snapshot was otherwise readable but permanently
+    //    un-restorable. The count is returned so the client can say what
+    //    happened — this is the one place a restore alters what it restores,
+    //    so it must never be silent.
     const restoredIds = extractImageIds(newParsed);
+    const missingIds = new Set<string>();
     if (restoredIds.length > 0) {
       const rows = await txStore.findImagesByIds(restoredIds);
       const byId = new Map(rows.map((r) => [r.id, r]));
       for (const id of restoredIds) {
         const image = byId.get(id);
-        if (!image || image.project_id !== chapter.project_id) {
+        if (!image) {
+          missingIds.add(id);
+          continue;
+        }
+        if (image.project_id !== chapter.project_id) {
           return "cross_project_image" as const;
         }
       }
+    }
+
+    // Only re-serialize when something was actually dropped, so the untouched
+    // path keeps writing the snapshot's exact stored bytes.
+    let restoreContent = snapshot.content;
+    if (missingIds.size > 0) {
+      // imageIdFromNode is the same matcher extractImageIds used to build
+      // `missingIds`, so the strip and the reference scan cannot disagree
+      // about what counts as a reference.
+      const stripped = stripImageNodes(newParsed, (node) => {
+        const id = imageIdFromNode(node);
+        return id !== null && missingIds.has(id);
+      });
+      restoreContent = JSON.stringify(stripped);
+      newParsed = stripped;
+      logger.warn(
+        {
+          chapter_id: chapter.id,
+          project_id: chapter.project_id,
+          snapshot_id: snapshot.id,
+          dropped_image_ids: [...missingIds],
+        },
+        "Restored snapshot with deleted images dropped from content",
+      );
     }
 
     // Auto-snapshot current content before restore
@@ -209,10 +264,15 @@ export async function restoreSnapshot(
     await insertAutoSnapshotIfChanged(txStore, chapter, currentContent, snapshotLabel);
 
     // Replace content using the validated, parsed snapshot content.
+    // `restoreContent` is the snapshot's own bytes unless dead images were
+    // dropped above, in which case it is the stripped re-serialization —
+    // word count, the persisted row, and the ref-count diff must all agree on
+    // ONE content value, or the chapter would hold content whose images the
+    // refcounter never saw.
     const newWordCount = countWords(newParsed);
     const now = new Date().toISOString();
     await txStore.updateChapter(chapter.id, {
-      content: snapshot.content,
+      content: restoreContent,
       word_count: newWordCount,
       updated_at: now,
     });
@@ -221,14 +281,19 @@ export async function restoreSnapshot(
     // Adjust image reference counts — use the same coalesced content used
     // for the pre-restore auto-snapshot so a never-saved chapter (NULL
     // content) is treated as the empty doc here too.
-    await applyImageRefDiff(txStore, currentContent, snapshot.content, chapter.project_id);
+    await applyImageRefDiff(txStore, currentContent, restoreContent, chapter.project_id);
 
     // Re-read inside the transaction so a concurrent autosave landing
     // between commit and a post-tx read cannot overwrite the response
     // body with stale content (silently undoing the restore in the UI).
     const updated = await txStore.findChapterById(chapter.id);
     if (!updated) return null;
-    return { chapter: updated, project_id: chapter.project_id, chapter_id: chapter.id };
+    return {
+      chapter: updated,
+      project_id: chapter.project_id,
+      chapter_id: chapter.id,
+      dropped_image_count: missingIds.size,
+    };
   });
 
   if (result === "cross_project_image") return result;
@@ -253,7 +318,7 @@ export async function restoreSnapshot(
   // successful restore, matching the pattern in chapters.service.updateChapter.
   try {
     const enriched = await enrichChapterWithLabel(store, result.chapter);
-    return { chapter: enriched };
+    return { chapter: enriched, dropped_image_count: result.dropped_image_count };
   } catch (err: unknown) {
     logger.error(
       { err, project_id: result.project_id, chapter_id: result.chapter_id },
@@ -265,6 +330,7 @@ export async function restoreSnapshot(
     const clean = stripCorruptFlag(result.chapter);
     return {
       chapter: { ...clean, status_label: result.chapter.status },
+      dropped_image_count: result.dropped_image_count,
     };
   }
 }

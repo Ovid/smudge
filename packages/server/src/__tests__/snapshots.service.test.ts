@@ -649,7 +649,60 @@ describe("snapshots.service", () => {
       expect(chapter.word_count).toBe(0);
     });
 
-    it("refuses to restore when snapshot content references an image from another project", async () => {
+    it("restores the prose and drops the image node when the image no longer exists (F-05)", async () => {
+      // F-05: deleting an image is irreversible and its reference scan never
+      // saw snapshots, so a snapshot holding that image used to fail restore
+      // with CROSS_PROJECT_IMAGE_REF — permanently, and with a message that
+      // was simply false (the image is not in another project, it is gone).
+      //
+      // The bytes are already unrecoverable by the time we get here, so
+      // refusing the restore does not bring the image back; it only ALSO
+      // withholds the prose. Restore the words, drop the dead node, and
+      // report the count so the client can say what happened.
+      stubVelocity();
+      const { chapterId, projectId } = await createProjectAndChapter();
+      const { createSnapshot, restoreSnapshot } = await import("../snapshots/snapshots.service");
+
+      const goneImageId = uuid();
+      const snap = (await createSnapshot(chapterId, "had-an-image")) as Exclude<
+        Awaited<ReturnType<typeof createSnapshot>>,
+        null | "duplicate"
+      >;
+      // Snapshot holds prose AND an image that is no longer in the images table.
+      await t
+        .db("chapter_snapshots")
+        .where({ id: snap.id })
+        .update({
+          content: JSON.stringify({
+            type: "doc",
+            content: [
+              { type: "paragraph", content: [{ type: "text", text: "the words survive" }] },
+              { type: "image", attrs: { src: `/api/images/${goneImageId}` } },
+            ],
+          }),
+        });
+
+      const result = await restoreSnapshot(snap.id);
+
+      expect(result).not.toBe("cross_project_image");
+      expect(result).not.toBe("corrupt_snapshot");
+      expect(result).not.toBeNull();
+      const ok = result as Exclude<
+        typeof result,
+        null | "corrupt_snapshot" | "cross_project_image"
+      >;
+      expect(ok.dropped_image_count).toBe(1);
+
+      // The prose landed; the dead image node did not.
+      const chapter = await t.db("chapters").where({ id: chapterId }).first();
+      const restored = JSON.parse(chapter.content) as { content: { type: string }[] };
+      expect(restored.content.map((n) => n.type)).toEqual(["paragraph"]);
+      expect(chapter.content).not.toContain(goneImageId);
+      expect(chapter.word_count).toBe(3);
+      expect(projectId).toBeTruthy();
+    });
+
+    it("still refuses to restore when the image exists but belongs to another project", async () => {
       stubVelocity();
       const { chapterId, projectId } = await createProjectAndChapter();
       const { createSnapshot, restoreSnapshot } = await import("../snapshots/snapshots.service");

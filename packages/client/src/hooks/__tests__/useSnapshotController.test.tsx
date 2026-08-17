@@ -85,7 +85,7 @@ interface HarnessOptions {
   runResult?: MutationResult<RestoreData>;
   /** Result of useSnapshotState.restoreSnapshot, used when run() invokes the callback. */
   restoreResult?:
-    | { ok: true; staleChapterSwitch?: boolean }
+    | { ok: true; staleChapterSwitch?: boolean; droppedImageCount?: number }
     | { ok: false; error: ApiRequestError };
   viewResult?:
     | { ok: true; superseded?: "chapter" | "sameChapterNewer" }
@@ -302,6 +302,42 @@ describe("useSnapshotController — handleRestoreSnapshot mutate callback", () =
     });
     expect(h.refreshSnapshots).toHaveBeenCalled();
     expect(h.refreshSnapshotCount).toHaveBeenCalled();
+  });
+
+  it("announces when the restore dropped images that no longer exist (F-05)", async () => {
+    // This is the one path where a restore returns something other than what
+    // was saved. Silence here would make it an unannounced content edit.
+    const h = buildHarness({ restoreResult: { ok: true, droppedImageCount: 2 } });
+
+    await act(async () => {
+      await h.result.current.handleRestoreSnapshot();
+    });
+
+    expect(h.setActionInfo).toHaveBeenLastCalledWith(STRINGS.snapshots.restoreDroppedImages(2));
+  });
+
+  it("says nothing about images when the restore was byte-exact", async () => {
+    const h = buildHarness({ restoreResult: { ok: true } });
+
+    await act(async () => {
+      await h.result.current.handleRestoreSnapshot();
+    });
+
+    // Only the entry-clearing setActionInfo(null) call.
+    expect(h.setActionInfo).toHaveBeenCalledTimes(1);
+    expect(h.setActionInfo).toHaveBeenCalledWith(null);
+  });
+
+  it("still announces dropped images when the user has switched chapters (F-05)", async () => {
+    const h = buildHarness({
+      restoreResult: { ok: true, staleChapterSwitch: true, droppedImageCount: 1 },
+    });
+
+    await act(async () => {
+      await h.result.current.handleRestoreSnapshot();
+    });
+
+    expect(h.setActionInfo).toHaveBeenLastCalledWith(STRINGS.snapshots.restoreDroppedImages(1));
   });
 
   it("skips the cache clear and the active-chapter reload on a stale chapter switch", async () => {

@@ -157,6 +157,12 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
 
       type RestoreData = { staleChapterSwitch: boolean };
 
+      // F-05: how many image nodes the server dropped because those images no
+      // longer exist. Deliberately kept OUT of the mutation's `data` payload —
+      // it is an observation about the restore, not part of the contract
+      // useEditorMutation acts on (it drives no cache-clear and no reload).
+      let droppedImageCount = 0;
+
       const result = await mutation.run<RestoreData>(async () => {
         // Re-check intent AFTER the hook's flush/markClean: if the user
         // clicked "Back to editing" during the flush window, abort before
@@ -168,6 +174,7 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
           throw new RestoreFailedError(restore.error);
         }
         const stale = Boolean(restore.staleChapterSwitch);
+        droppedImageCount = restore.droppedImageCount ?? 0;
         // On stale-chapter-switch the restore landed on a now-background
         // chapter — skip both the cache clear (useSnapshotState already
         // cleared the restoring chapter's cache) and the active-chapter
@@ -200,6 +207,13 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
       });
 
       if (result.ok) {
+        // F-05: announce on BOTH arms, including the stale-chapter switch.
+        // This is the one path where a restore returns something other than
+        // what was saved, and a user who navigated away is no less entitled
+        // to know their content was altered than one who stayed.
+        if (droppedImageCount > 0) {
+          setActionInfo(STRINGS.snapshots.restoreDroppedImages(droppedImageCount));
+        }
         if (!result.data.staleChapterSwitch) {
           snapshotPanelRef.current?.refreshSnapshots();
           // The server wrote a pre-restore auto-snapshot; the toolbar

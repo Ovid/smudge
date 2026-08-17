@@ -474,6 +474,15 @@ export const STRINGS = {
       "Unable to save pending changes. Try again once your connection recovers before restoring.",
     restoreSucceededReloadFailed:
       "Snapshot restored, but reloading the chapter failed. Refresh the page before editing — editing now would overwrite the restore.",
+    // F-05: the restore succeeded but did NOT return byte-exact content —
+    // images deleted since the snapshot was taken cannot be brought back, so
+    // their placeholders were removed rather than failing the whole restore.
+    // This is the only case where a restore alters what it restores, so it
+    // must always be announced.
+    restoreDroppedImages: (count: number) =>
+      count === 1
+        ? "Snapshot restored. One image was left out because it has since been deleted."
+        : `Snapshot restored. ${count} images were left out because they have since been deleted.`,
     restoreResponseUnreadable:
       "The restore may have completed, but the server response was unreadable. Refresh the page to see the current state — editing now could overwrite the restored content.",
     // I6 (review 2026-04-25): chapter-attributed copy for the case

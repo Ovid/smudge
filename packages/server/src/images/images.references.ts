@@ -39,6 +39,25 @@ const IMAGE_SRC_RE = new RegExp(
 );
 
 /**
+ * Returns the lowercased image UUID an image node references, or null if the
+ * node is not an image node or its `src` is not a Smudge image URL.
+ *
+ * Extracted so the single-node case has ONE owner: `extractImageIds` below and
+ * `restoreSnapshot`'s dead-image strip (F-05) must agree exactly on what
+ * counts as a reference, or the strip would drop a node the reference-counter
+ * still counts (or vice versa). Kept here rather than in `shared` because
+ * IMAGE_SRC_RE is deliberately server-only — see the regex comment above and
+ * CLAUDE.md §Accepted Architectural Trade-offs F-16.
+ */
+export function imageIdFromNode(node: Record<string, unknown>): string | null {
+  if (node.type !== "image" || typeof node.attrs !== "object" || node.attrs === null) return null;
+  const attrs = node.attrs as Record<string, unknown>;
+  if (typeof attrs.src !== "string") return null;
+  const match = IMAGE_SRC_RE.exec(attrs.src);
+  return match?.[1] ? match[1].toLowerCase() : null;
+}
+
+/**
  * Walks TipTap JSON content tree and extracts image UUIDs from
  * nodes with `type: "image"` whose `attrs.src` matches `/api/images/{uuid}`.
  * Returns deduplicated, lowercased UUIDs.
@@ -53,13 +72,8 @@ export function extractImageIds(content: Record<string, unknown> | null): string
   // cap could otherwise stack-overflow the walker.
   function walk(node: Record<string, unknown>, depth: number) {
     if (depth > MAX_TIPTAP_DEPTH) return;
-    if (node.type === "image" && typeof node.attrs === "object" && node.attrs !== null) {
-      const attrs = node.attrs as Record<string, unknown>;
-      if (typeof attrs.src === "string") {
-        const match = IMAGE_SRC_RE.exec(attrs.src);
-        if (match?.[1]) ids.add(match[1].toLowerCase());
-      }
-    }
+    const id = imageIdFromNode(node);
+    if (id) ids.add(id);
     if (Array.isArray(node.content)) {
       for (const child of node.content) {
         // Skip anything this walker cannot see inside — kept explicitly
