@@ -74,7 +74,7 @@ Smudge is a web-based writing application for long-form fiction and non-fiction,
 - **Monorepo:** npm workspaces with three packages: `shared`, `server`, `client`
 - **Language:** TypeScript everywhere (frontend + backend + shared)
 - **Backend:** Node.js 22 LTS (Jod; see CONTRIBUTING.md for the DEP0040 workaround), Express 4.x, better-sqlite3 (synchronous), Knex.js (migrations/queries), Zod (validation)
-- **Frontend:** React 18+, Vite, TipTap v2 (rich text editor, stores content as JSON not HTML), Tailwind CSS, @dnd-kit/sortable v10
+- **Frontend:** React 19, Vite, TipTap v2 (rich text editor, stores content as JSON not HTML), Tailwind CSS, @dnd-kit/sortable v10
 - **Testing:** Vitest (unit + integration with Supertest), Playwright (e2e + aXe-core a11y)
 - **Deployment (target — not yet implemented):** Single Docker container, Express serving the API + static frontend on port 3456, SQLite persisted via Docker volume. Today `createApp()` mounts `/api/*` (+ `/api/health`) only — no `express.static`/SPA catch-all and no `Dockerfile` yet. When static serving lands it introduces a new path-traversal/unsafe-serving surface that must ship with guardrails + tests (see architecture report F-19).
 
@@ -90,7 +90,16 @@ packages/
       velocity/           # routes, service, repository, types, injectable
       settings/           # routes, service, repository, types
       chapter-statuses/   # routes, service, repository, types
+      snapshots/          # routes, service, repository, types + auto-snapshot, content-hash, labels
+      outtakes/           # routes, service, repository, types
+      images/             # routes, service, repository + fs store, paths, reaper, reference scan
+      search/             # routes, service (find + project-wide replace)
+      export/             # routes, service + per-format renderers (html, epub, docx), image-resolver
+      backup/             # backup-core lifecycle + dependency-free backup-zip-format
       stores/             # SqliteProjectStore facade over the repositories (getProjectStore); injectable + tx seam
+      errors/             # AppError taxonomy (appError.ts), readAfterInsert
+      config/             # paths.ts — DATA_DIR/DB_PATH resolution + containedPath guard
+      utils/              # grapheme.ts
       db/                 # connection singleton, migrations/
   client/       # React SPA, components/, hooks/, pages/, api/, errors/, strings.ts
 e2e/            # Playwright tests
@@ -326,10 +335,11 @@ Re-flagging one is warranted only if its stated premise changes.
   initialized", init throws "already initialized"). This IS the deliberate,
   tested seam that makes the single-process app injectable at all — the
   runtime-enforced init-order contract is the price of a locator that stays a
-  one-liner at 13 call sites instead of threading `db`/`store` through every
-  route→service→repository signature. "Fixing" it means a DI-container or
+  one-liner at every call site instead of threading `db`/`store` through every
+  route→service→repository signature — and the call sites have multiplied since
+  this was accepted, which strengthens the case rather than weakening it. "Fixing" it means a DI-container or
   parameter-threading rewrite that buys nothing for a single-process app.
-- **`ProjectStore` facade is 51 one-line pass-throughs (F-4).** Each
+- **`ProjectStore` facade is entirely one-line pass-throughs (F-4).** Each
   `SqliteProjectStore` method delegates to a repository function, and the
   `ProjectStore` interface has exactly one implementation (no fake implements
   it; tests construct the concrete class over a real DB). The three-edit-per-
@@ -353,7 +363,8 @@ Re-flagging one is warranted only if its stated premise changes.
   optimizations. Revisit only if Smudge ever ships a cloud / multi-writer
   deployment.
 - **`EditorPage` god-orchestrator, accepted with an enforcement net (F-1).**
-  `packages/client/src/pages/EditorPage.tsx` (~1,330 lines) owns the shared
+  `packages/client/src/pages/EditorPage.tsx` (the largest file in the client)
+  owns the shared
   mutable busy/lock state and threads it into every editor-mutating entry point;
   the cross-hook invariant holds because this one component wires the same
   objects consistently. Five prior decompositions already extracted rendering
