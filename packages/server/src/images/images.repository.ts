@@ -1,10 +1,23 @@
 import type { Knex } from "knex";
 import type { ImageRow, CreateImageRow, UpdateImageData } from "./images.types";
+import { InternalError } from "../errors/appError";
+import { READ_AFTER_INSERT_FAILURE } from "../errors/readAfterInsert";
 
 export async function insert(db: Knex | Knex.Transaction, data: CreateImageRow): Promise<ImageRow> {
   await db("images").insert(data);
   const row = await db("images").where("id", data.id).first();
-  if (!row) throw new Error(`Image ${data.id} not found after insert`);
+  // F-12: a bare Error was clamped to a generic 500 the client could not
+  // discriminate. This one MATTERS: uploadImage calls this outside any
+  // transaction, so the INSERT has already auto-committed by the time the
+  // re-read runs — the row exists and a retry would mint a duplicate. The
+  // `image.upload` scope therefore lists this code in committedCodes, and
+  // uploadImage's cleanup checks it before unlinking the file.
+  if (!row) {
+    throw new InternalError(
+      `Image ${data.id} was written but could not be read back. Do not retry.`,
+      READ_AFTER_INSERT_FAILURE,
+    );
+  }
   return row;
 }
 

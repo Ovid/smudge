@@ -2,6 +2,8 @@ import type { Knex } from "knex";
 import { TipTapDocSchema } from "@smudge/shared";
 import type { OuttakeRow, CreateOuttakeData } from "./outtakes.types";
 import { logger } from "../logger";
+import { InternalError } from "../errors/appError";
+import { READ_AFTER_INSERT_FAILURE } from "../errors/readAfterInsert";
 
 const TABLE = "outtakes";
 
@@ -72,7 +74,16 @@ export async function insert(db: Knex, data: CreateOuttakeData): Promise<Outtake
   // snapshots repo: any future DB-side default would otherwise diverge from
   // the returned shape, and the re-read confirms the write landed.
   const row = await db(TABLE).where({ id: data.id }).first();
-  if (!row) throw new Error(`Outtake ${data.id} not found after insert`);
+  // F-12: discriminating code rather than a bare Error. This runs INSIDE
+  // createOuttake's transaction, so the throw rolls the insert back — nothing
+  // is committed. `outtake.create` therefore does NOT list this in
+  // committedCodes; "Failed to save outtake" is the truthful message here.
+  if (!row) {
+    throw new InternalError(
+      `Outtake ${data.id} was written but could not be read back.`,
+      READ_AFTER_INSERT_FAILURE,
+    );
+  }
   return parseRow(row);
 }
 

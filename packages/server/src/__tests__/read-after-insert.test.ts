@@ -4,6 +4,7 @@ import { setupTestDb } from "./test-helpers";
 import * as ImagesRepo from "../images/images.repository";
 import * as SnapshotsRepo from "../snapshots/snapshots.repository";
 import * as OuttakesRepo from "../outtakes/outtakes.repository";
+import { READ_AFTER_INSERT_FAILURE } from "../errors/readAfterInsert";
 
 // Safety net for F-12 (architecture report 2026-08-11).
 //
@@ -124,6 +125,61 @@ describe("read-after-insert failure (F-12 safety net)", () => {
         updated_at: now,
       }),
     ).rejects.toThrow();
+  });
+
+  it("carries a discriminating code so the client can branch on it (F-12)", async () => {
+    // A bare Error was clamped by globalErrorHandler to a generic 500 with no
+    // code, and the client's scope registry discriminates entirely on
+    // error.code — so there was nothing to branch on. `projects` already
+    // emitted a discriminating code for this exact condition.
+    const projectId = await createProject();
+    await vanishAfterInsert("images");
+
+    await expect(
+      ImagesRepo.insert(t.db, {
+        id: uuid(),
+        project_id: projectId,
+        filename: "gone.png",
+        mime_type: "image/png",
+        size_bytes: 1,
+        created_at: new Date().toISOString(),
+      }),
+    ).rejects.toMatchObject({ code: READ_AFTER_INSERT_FAILURE, status: 500 });
+  });
+
+  it("uses ONE code across all three modules — commit semantics are the scope's job", async () => {
+    // Deliberately the same code everywhere: it is one condition. Whether it
+    // means "possibly committed" depends on whether the caller wrapped the
+    // insert in a transaction, which is a per-call-site fact the client scope
+    // records — not something the code itself can express.
+    const projectId = await createProject();
+    const chapterId = await createChapter(projectId);
+    await vanishAfterInsert("chapter_snapshots");
+    await vanishAfterInsert("outtakes");
+    const now = new Date().toISOString();
+
+    await expect(
+      SnapshotsRepo.insert(t.db, {
+        id: uuid(),
+        chapter_id: chapterId,
+        label: null,
+        content: '{"type":"doc","content":[]}',
+        word_count: 0,
+        is_auto: false,
+        created_at: now,
+      }),
+    ).rejects.toMatchObject({ code: READ_AFTER_INSERT_FAILURE });
+
+    await expect(
+      OuttakesRepo.insert(t.db, {
+        id: uuid(),
+        project_id: projectId,
+        label: null,
+        content: '{"type":"doc","content":[]}',
+        created_at: now,
+        updated_at: now,
+      }),
+    ).rejects.toMatchObject({ code: READ_AFTER_INSERT_FAILURE });
   });
 
   it("does not silently return a fabricated row in place of the vanished one", async () => {

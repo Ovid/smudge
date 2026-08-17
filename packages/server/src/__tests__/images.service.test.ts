@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
-import { mkdtemp, rm, unlink } from "node:fs/promises";
+import { mkdtemp, rm, unlink, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import request from "supertest";
@@ -25,6 +25,8 @@ const t = setupTestDb();
 // survives an abandoned test body.
 afterEach(async () => {
   await t.db.raw("DROP TRIGGER IF EXISTS images_vanish_after_update;");
+  // Same rationale as above for the F-12 read-after-INSERT trigger.
+  await t.db.raw("DROP TRIGGER IF EXISTS images_shift_id_after_insert;");
 });
 
 let tempDir: string;
@@ -54,6 +56,34 @@ async function createTestProject(): Promise<string> {
 
 describe("images.service", () => {
   describe("uploadImage()", () => {
+    it("keeps the file when the row committed but could not be read back (F-12)", async () => {
+      // uploadImage inserts OUTSIDE any transaction, so a failed read-back
+      // means the row auto-committed. The cleanup used to unlink the file
+      // unconditionally, on a comment asserting "the DB insert failed" — which
+      // is exactly wrong for this one error. That turned a recoverable glitch
+      // into a committed image row pointing at a file that no longer exists.
+      const projectId = await createTestProject();
+      // Make the confirming SELECT miss WITHOUT removing the row.
+      await t.db.raw(`CREATE TRIGGER images_shift_id_after_insert AFTER INSERT ON images
+        BEGIN UPDATE images SET id = id || '-x' WHERE id = NEW.id; END`);
+
+      await expect(
+        imagesService.uploadImage(projectId, {
+          buffer: TEST_PNG,
+          originalname: "committed.png",
+          mimetype: "image/png",
+          size: TEST_PNG.length,
+        } as Parameters<typeof imagesService.uploadImage>[1]),
+      ).rejects.toMatchObject({ code: "READ_AFTER_INSERT_FAILURE" });
+
+      // The row really is there...
+      const rows = await t.db("images").where({ project_id: projectId });
+      expect(rows).toHaveLength(1);
+      // ...so its bytes must still be there too.
+      const dir = path.dirname(getImagePath(projectId, "x", "png"));
+      await expect(readdir(dir)).resolves.toHaveLength(1);
+    });
+
     it("uploads a valid image and returns the record", async () => {
       const projectId = await createTestProject();
       const result = await imagesService.uploadImage(projectId, {
