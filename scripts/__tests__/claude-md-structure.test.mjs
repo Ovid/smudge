@@ -30,7 +30,7 @@ function documentedServerModules() {
   const [, after] = doc.split("## Target Project Structure\n");
   if (after === undefined) throw new Error('No "## Target Project Structure" heading in CLAUDE.md');
   const fence = after.match(/```\n([\s\S]*?)```/);
-  if (!fence) throw new Error("No fenced code block under Target Project Structure");
+  if (!fence?.[1]) throw new Error("No fenced code block under Target Project Structure");
 
   // Entries nested under `    src/` carry six spaces of indent; `  server/`
   // and `  client/` carry two. Anchoring on the deeper indent keeps the
@@ -38,8 +38,7 @@ function documentedServerModules() {
   return fence[1]
     .split("\n")
     .map((line) => /^ {6}([\w-]+)\/(\s|$)/.exec(line))
-    .filter((m) => m !== null)
-    .map((m) => m[1])
+    .flatMap((m) => (m?.[1] ? [m[1]] : []))
     .sort();
 }
 

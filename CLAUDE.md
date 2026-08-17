@@ -215,7 +215,7 @@ a shared type (e.g. `toChapterStatus`).
 For mutation-via-server flows (snapshot restore, project-wide replace, and future similar operations), route through `useEditorMutation` in `packages/client/src/hooks/useEditorMutation.ts` — it enforces invariants 1–4 by construction. Hand-composing these steps is reserved for flows outside its scope (e.g. snapshot view, which does not mutate content). For any client flow whose response must be discarded when superseded by a newer request or an external epoch change (chapter switch, project switch, unmount), route through `useAbortableSequence` — it encodes the "bump before, check after" contract as tokens, auto-aborts on unmount, and is enforced by ESLint.
 
 **Editor operational state lives in one machine.** The editor's
-`{ editable, locked, busy }` operational state is owned by
+`{ editable, locked }` operational state is owned by
 `useEditorMutationMachine` (`packages/client/src/hooks/useEditorMutationMachine.ts`)
 — a pure `useReducer` driven by explicit events (`MUTATION_STARTED`,
 `MUTATION_SETTLED_OK` / `_SUPERSEDED`, `RELOADED`, `COMMITTED_UNRELOADED`,
@@ -225,6 +225,18 @@ calls kept in sync by hand. Do not reintroduce free-standing
 lock/unlock and re-enable intent through the machine. Two transitions stay
 synchronous-imperative for timing safety: the lock-down `setEditable(false)`
 (blocks input before the first `await`) and the `inFlightRef` re-entrancy latch.
+**Mutation-busy is deliberately not machine state (F-08).** The machine exposes
+exactly one synchronous probe, `isLocked()`; busy is `mutation.isBusy()`, backed
+by `inFlightRef`, and a reducer field cannot replace it because the latch must
+be readable *before* the first `await` while reducer state is visible only after
+React commits. The machine previously carried a `busy` mirror no consumer read,
+giving two same-named `isBusy()` probes on sibling objects — one authoritative,
+one documented as wrong. Do not re-add it; if a render-time busy indicator is
+ever wanted (a `disabled` prop rather than a callback check), add the field
+then, and not as a second `isBusy()`. Three events
+(`MUTATION_SETTLED_SUPERSEDED`, `RELOADED`, `EDITOR_REMOUNTED`) now produce an
+identical state — that is deliberate and pinned by a test; they are distinct
+facts dispatched from distinct sites, so do not merge them.
 `MutationResult` carries `committed_but_unreloaded` as the canonical "server
 committed, display unconfirmed" outcome (2xx `BAD_JSON` on replace/restore,
 reload-GET failure, race-only supersession); it routes to the persistent lock

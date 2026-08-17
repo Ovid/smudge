@@ -65,7 +65,7 @@ function readEnvVars() {
   for (const file of sourceFiles()) {
     const src = readFileSync(file, "utf-8");
     for (const m of src.matchAll(/process\.env\.([A-Z][A-Z0-9_]*)/g)) {
-      found.add(m[1]);
+      if (m[1]) found.add(m[1]);
     }
   }
   return [...found].sort();

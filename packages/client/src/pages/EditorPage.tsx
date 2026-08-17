@@ -66,8 +66,9 @@ export function EditorPage() {
   const navigate = useNavigate();
 
   // Phase 4b.5: the editor's operational state (lock banner, TipTap editable
-  // intent, mutation-busy) lives in ONE machine so the invariant pair can no
-  // longer drift by hand. The read-only lock is surfaced when a mutation
+  // intent) lives in ONE machine so the invariant pair can no longer drift by
+  // hand. Mutation-busy is NOT part of it — that is mutation.isBusy(), backed
+  // by inFlightRef, which must be readable before the first await (F-08). The read-only lock is surfaced when a mutation
   // succeeded server-side but the follow-up reload failed (I1); the Editor is
   // intentionally left setEditable(false) in that case to prevent the user
   // from typing over stale content. The lock banner is the only persistent
@@ -360,8 +361,8 @@ export function EditorPage() {
 
   // OOSI1 (agentic-review 2026-05-30): re-assert editor editability after a
   // committed_but_unreloaded replace that settled on a now-unrelated chapter.
-  // Dispatches MUTATION_SETTLED_SUPERSEDED ({editable:true, busy:false,
-  // lock:null}) — the same terminal state the mutation hook emits when IT
+  // Dispatches MUTATION_SETTLED_SUPERSEDED ({editable:true, lock:null})
+  // — the same terminal state the mutation hook emits when IT
   // detects supersession — so finalizeReplaceSuccess's stale branch can
   // re-enable the displayed editor instead of leaving it read-only with only a
   // dismissible action error. Deps mirror applyReloadFailedLock (the sibling
