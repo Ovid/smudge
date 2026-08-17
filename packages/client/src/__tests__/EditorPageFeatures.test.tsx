@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor, cleanup, act } from "@testing-libra
 import userEvent from "@testing-library/user-event";
 import { EditorPage } from "../pages/EditorPage";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { api } from "../api/client";
+import { api, ApiRequestError } from "../api/client";
 import { STRINGS } from "../strings";
 import { pendingUntilAbort } from "./helpers/abortableMocks";
 import { expectConsole } from "./expectConsole";
@@ -1597,7 +1597,6 @@ describe("EditorPage find-and-replace confirmation", () => {
     // banner with the editor re-enabled — auto-save would then silently
     // revert the committed replace. After: the editor stays read-only and
     // the "response unreadable" banner becomes persistent until refresh.
-    const { ApiRequestError } = await import("../api/client");
     const badJson = new ApiRequestError("Malformed response body", 200, "BAD_JSON");
     vi.mocked(api.search.replace).mockRejectedValueOnce(badJson);
 
@@ -1641,7 +1640,6 @@ describe("EditorPage find-and-replace confirmation", () => {
     // Editor with editable=true (default), defeating the lock while the
     // banner persists. The next keystroke would PATCH stale content over
     // the server-committed mutation.
-    const { ApiRequestError } = await import("../api/client");
     vi.mocked(api.search.replace).mockRejectedValueOnce(
       new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
     );
@@ -1676,7 +1674,6 @@ describe("EditorPage find-and-replace confirmation", () => {
     // fix, the Ctrl+S handler short-circuits when editorLockedMessageRef
     // is set, so no save is attempted at all and the indicator stays
     // consistent with the lock banner's "refresh to recover" narrative.
-    const { ApiRequestError } = await import("../api/client");
     vi.mocked(api.search.replace).mockRejectedValueOnce(
       new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
     );
@@ -1715,7 +1712,6 @@ describe("EditorPage find-and-replace confirmation", () => {
     const { clearAllCachedContent, clearCachedContent } = await import("../hooks/useContentCache");
     vi.mocked(clearAllCachedContent).mockClear();
     vi.mocked(clearCachedContent).mockClear();
-    const { ApiRequestError } = await import("../api/client");
     vi.mocked(api.search.replace).mockRejectedValueOnce(
       new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
     );
@@ -1768,7 +1764,6 @@ describe("EditorPage find-and-replace confirmation", () => {
   });
 
   it("swallows ABORTED errors from executeReplace without showing a banner", async () => {
-    const { ApiRequestError } = await import("../api/client");
     vi.mocked(api.search.replace).mockRejectedValueOnce(
       new ApiRequestError("Request aborted", 0, "ABORTED"),
     );
@@ -1785,7 +1780,6 @@ describe("EditorPage find-and-replace confirmation", () => {
   });
 
   it("surfaces SCOPE_NOT_FOUND 404 with replaceScopeNotFound copy", async () => {
-    const { ApiRequestError } = await import("../api/client");
     vi.mocked(api.search.replace).mockRejectedValueOnce(
       new ApiRequestError("Scope missing", 404, "SCOPE_NOT_FOUND"),
     );
@@ -1800,7 +1794,6 @@ describe("EditorPage find-and-replace confirmation", () => {
   });
 
   it("surfaces MATCH_CAP_EXCEEDED with tooManyMatches copy", async () => {
-    const { ApiRequestError } = await import("../api/client");
     vi.mocked(api.search.replace).mockRejectedValueOnce(
       new ApiRequestError("Too many", 400, "MATCH_CAP_EXCEEDED"),
     );
@@ -1815,7 +1808,6 @@ describe("EditorPage find-and-replace confirmation", () => {
   });
 
   it("surfaces REGEX_TIMEOUT with searchTimedOut copy", async () => {
-    const { ApiRequestError } = await import("../api/client");
     vi.mocked(api.search.replace).mockRejectedValueOnce(
       new ApiRequestError("Timeout", 400, "REGEX_TIMEOUT"),
     );
@@ -1832,7 +1824,6 @@ describe("EditorPage find-and-replace confirmation", () => {
   it("surfaces 5xx with generic replaceFailed copy (no raw server message leak)", async () => {
     // CLAUDE.md: all UI strings must route through strings.ts; raw server
     // messages must not leak to the UI (blocks i18n).
-    const { ApiRequestError } = await import("../api/client");
     vi.mocked(api.search.replace).mockRejectedValueOnce(
       new ApiRequestError("Something specific broke", 500, "INTERNAL_ERROR"),
     );
@@ -1854,7 +1845,6 @@ describe("EditorPage find-and-replace confirmation", () => {
     // the same dead row and loop the same error — re-fire the search on
     // any 404 and use findReplace.clearError() to suppress the panel-local
     // duplicate so the action banner remains the single source of truth.
-    const { ApiRequestError } = await import("../api/client");
     vi.mocked(api.search.replace).mockRejectedValueOnce(
       new ApiRequestError("project missing", 404, "NOT_FOUND"),
     );
@@ -1878,7 +1868,6 @@ describe("EditorPage find-and-replace confirmation", () => {
   });
 
   it("handleReplaceOne locks editor on 2xx BAD_JSON — server may have committed (C1)", async () => {
-    const { ApiRequestError } = await import("../api/client");
     vi.mocked(api.search.replace).mockRejectedValueOnce(
       new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
     );
@@ -1902,7 +1891,6 @@ describe("EditorPage find-and-replace confirmation", () => {
     // would otherwise re-hydrate the pre-replace draft from localStorage.
     const { clearCachedContent } = await import("../hooks/useContentCache");
     vi.mocked(clearCachedContent).mockClear();
-    const { ApiRequestError } = await import("../api/client");
     vi.mocked(api.search.replace).mockRejectedValueOnce(
       new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
     );
@@ -1918,7 +1906,6 @@ describe("EditorPage find-and-replace confirmation", () => {
   });
 
   it("handleReplaceOne surfaces MATCH_CAP_EXCEEDED with tooManyMatches copy", async () => {
-    const { ApiRequestError } = await import("../api/client");
     vi.mocked(api.search.replace).mockRejectedValueOnce(
       new ApiRequestError("too many", 400, "MATCH_CAP_EXCEEDED"),
     );
@@ -2018,7 +2005,6 @@ describe("EditorPage find-and-replace confirmation", () => {
   });
 
   it("handleReplaceOne swallows ABORTED errors silently", async () => {
-    const { ApiRequestError } = await import("../api/client");
     vi.mocked(api.search.replace).mockRejectedValueOnce(
       new ApiRequestError("aborted", 0, "ABORTED"),
     );
@@ -2068,7 +2054,6 @@ describe("EditorPage find-and-replace confirmation", () => {
     // the user could fire another server-side replace + auto-snapshot over
     // an ambiguously-committed mutation. The API-level mock would normally
     // resolve, so if the guard misfires we'd see a second search.replace call.
-    const { ApiRequestError } = await import("../api/client");
     vi.mocked(api.search.replace).mockRejectedValueOnce(
       new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
     );
@@ -2111,7 +2096,6 @@ describe("EditorPage find-and-replace confirmation", () => {
   it("handleReplaceOne refuses when editor is locked after a prior BAD_JSON (C1)", async () => {
     // Same guard discipline as executeReplace — the per-match Replace
     // button must not fire a server write while the lock banner is up.
-    const { ApiRequestError } = await import("../api/client");
     vi.mocked(api.search.replace).mockRejectedValueOnce(
       new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
     );
@@ -2146,7 +2130,6 @@ describe("EditorPage find-and-replace confirmation", () => {
     // production code dispatches UNLOCK. So the user saw the persistent
     // "refresh the page before continuing" banner, clicked Replace, and was
     // told to wait for an operation that does not exist and will never end.
-    const { ApiRequestError } = await import("../api/client");
     vi.mocked(api.search.replace).mockRejectedValueOnce(
       new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
     );
@@ -2481,7 +2464,6 @@ describe("EditorPage snapshot panel", () => {
       is_auto: false,
       created_at: "2026-04-17T10:00:00Z",
     });
-    const { ApiRequestError } = await import("../api/client");
     (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
       .fn()
       .mockRejectedValue(new ApiRequestError("Malformed response body", 200, "BAD_JSON"));
@@ -2584,7 +2566,6 @@ describe("EditorPage snapshot panel", () => {
       is_auto: false,
       created_at: "2026-04-17T10:00:00Z",
     });
-    const { ApiRequestError } = await import("../api/client");
     (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
       .fn()
       .mockRejectedValue(new ApiRequestError("boom", 500, "INTERNAL_ERROR"));
@@ -2657,7 +2638,6 @@ describe("EditorPage snapshot panel", () => {
       is_auto: false,
       created_at: "2026-04-17T10:00:00Z",
     });
-    const { ApiRequestError } = await import("../api/client");
     (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
       .fn()
       .mockRejectedValue(new ApiRequestError("Malformed response body", 200, "BAD_JSON"));
@@ -2775,7 +2755,6 @@ describe("EditorPage snapshot panel", () => {
       is_auto: false,
       created_at: "2026-04-17T10:00:00Z",
     });
-    const { ApiRequestError } = await import("../api/client");
     (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
       .fn()
       .mockRejectedValue(new ApiRequestError("Snapshot not found", 404, "NOT_FOUND"));
@@ -2836,7 +2815,6 @@ describe("EditorPage snapshot panel", () => {
       is_auto: false,
       created_at: "2026-04-17T10:00:00Z",
     });
-    const { ApiRequestError } = await import("../api/client");
     (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
       .fn()
       .mockRejectedValue(new ApiRequestError("Malformed response body", 200, "BAD_JSON"));
@@ -2976,7 +2954,6 @@ describe("EditorPage snapshot panel", () => {
       is_auto: false,
       created_at: "2026-04-17T10:00:00Z",
     });
-    const { ApiRequestError } = await import("../api/client");
     const restoreMock = vi
       .fn()
       .mockRejectedValue(new ApiRequestError("Malformed response body", 200, "BAD_JSON"));
@@ -3077,7 +3054,6 @@ describe("EditorPage snapshot panel", () => {
       is_auto: false,
       created_at: "2026-04-17T10:00:00Z",
     });
-    const { ApiRequestError } = await import("../api/client");
     (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
       .fn()
       .mockRejectedValue(new ApiRequestError("Corrupt snapshot", 400, "CORRUPT_SNAPSHOT"));
@@ -3134,7 +3110,6 @@ describe("EditorPage snapshot panel", () => {
       is_auto: false,
       created_at: "2026-04-17T10:00:00Z",
     });
-    const { ApiRequestError } = await import("../api/client");
     (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
       .fn()
       .mockRejectedValue(
@@ -3196,7 +3171,6 @@ describe("EditorPage snapshot panel", () => {
       is_auto: false,
       created_at: "2026-04-17T10:00:00Z",
     });
-    const { ApiRequestError } = await import("../api/client");
     (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
       .fn()
       .mockRejectedValue(new ApiRequestError("Malformed response body", 200, "BAD_JSON"));
@@ -3259,7 +3233,6 @@ describe("EditorPage snapshot panel", () => {
       is_auto: false,
       created_at: "2026-04-17T10:00:00Z",
     });
-    const { ApiRequestError } = await import("../api/client");
     (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
       .fn()
       .mockRejectedValue(new ApiRequestError("Malformed response body", 200, "BAD_JSON"));
@@ -3342,7 +3315,6 @@ describe("EditorPage snapshot panel", () => {
       is_auto: false,
       created_at: "2026-04-17T10:00:00Z",
     });
-    const { ApiRequestError } = await import("../api/client");
     (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
       .fn()
       .mockRejectedValue(new ApiRequestError("Malformed response body", 200, "BAD_JSON"));
@@ -3418,7 +3390,6 @@ describe("EditorPage snapshot panel", () => {
       is_auto: false,
       created_at: "2026-04-17T10:00:00Z",
     });
-    const { ApiRequestError } = await import("../api/client");
     (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
       .fn()
       .mockRejectedValue(new ApiRequestError("Malformed response body", 200, "BAD_JSON"));
@@ -3540,5 +3511,228 @@ describe("EditorPage snapshot panel", () => {
     // The foreign project's title must NOT have replaced the heading.
     expect(screen.queryByRole("heading", { name: "Foreign Project Title" })).toBeNull();
     expect(screen.getByRole("heading", { name: initial.title })).toBeInTheDocument();
+  });
+});
+
+// Added 2026-08-17 (paad:rethink verification pass). handleProjectSettingsUpdate
+// had no direct coverage: its success merge, its 404-navigate branch, its
+// error banner, its abort guard and its busy gate were all unexercised. The
+// handler runs after every project-settings field save, so a regression here
+// is one the writer meets in ordinary use, not only under failure.
+describe("EditorPage project settings refresh", () => {
+  afterEach(() => cleanup());
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.chapters.get).mockResolvedValue(mockChapter);
+    vi.mocked(api.projects.update).mockResolvedValue({
+      ...mockProject,
+      author_name: "New Author",
+    });
+  });
+
+  /** Routes api.projects.get by call order without mockResolvedValueOnce
+   *  chains (unconsumed once-values survive vi.clearAllMocks and desync
+   *  later tests). First call is the page load; later calls are the
+   *  settings refresh. */
+  function routeProjectGet(first: unknown, rest: (signal?: AbortSignal) => Promise<unknown>) {
+    let calls = 0;
+    vi.mocked(api.projects.get).mockImplementation((async (_slug: string, signal?: AbortSignal) => {
+      calls += 1;
+      return calls === 1 ? first : rest(signal);
+    }) as unknown as typeof api.projects.get);
+  }
+
+  /** Loads the editor, opens the settings dialog and commits an author-name
+   *  edit — the shortest real path to onUpdate → handleProjectSettingsUpdate. */
+  async function saveAnAuthorName() {
+    renderEditorPage();
+    await waitFor(
+      () => {
+        expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+      },
+      { timeout: 3000 },
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /project settings/i }));
+    const authorInput = screen.getByLabelText(STRINGS.projectSettings.authorName);
+    await userEvent.clear(authorInput);
+    await userEvent.type(authorInput, "New Author");
+    fireEvent.blur(authorInput);
+  }
+
+  it("merges refreshed project metadata while keeping the chapter list already on screen", async () => {
+    // The refresh GET returns the project's top-level fields, but the
+    // authoritative chapter list is the one already in state (the GET's copy
+    // can be stale or, as here, empty). Splicing the response wholesale would
+    // blank the sidebar after every settings save.
+    routeProjectGet(mockProject, async () => ({
+      ...mockProject,
+      title: "Renamed Project",
+      author_name: "New Author",
+      chapters: [],
+    }));
+
+    await saveAnAuthorName();
+
+    // New metadata landed...
+    await waitFor(
+      () => {
+        expect(screen.getByRole("heading", { name: "Renamed Project" })).toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
+    // ...and the chapters survived the merge.
+    expect(screen.getByText("Chapter Two")).toBeInTheDocument();
+    expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("navigates home when the refresh reports the project is gone", async () => {
+    // A 404 here means the project was deleted or purged from another tab.
+    // Staying put would leave the writer in a stale editor behind a retry
+    // banner that can never succeed.
+    routeProjectGet(mockProject, () =>
+      Promise.reject(new ApiRequestError("Not found", 404, "NOT_FOUND")),
+    );
+
+    await saveAnAuthorName();
+
+    await waitFor(
+      () => {
+        expect(screen.getByText("Home")).toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
+  });
+
+  it("shows a dismissible banner when the refresh fails for any other reason", async () => {
+    // A transient failure must not navigate away — the project is still
+    // there, only the refresh missed. The editor stays put and says so.
+    routeProjectGet(mockProject, () => Promise.reject(new Error("boom")));
+
+    await saveAnAuthorName();
+
+    await waitFor(
+      () => {
+        expect(screen.getByText(STRINGS.error.loadProjectFailed)).toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
+    // Still on the editor, not bounced home.
+    expect(screen.queryByText("Home")).toBeNull();
+  });
+
+  it("drops a superseded refresh instead of letting it clobber the newer one", async () => {
+    // Two field saves in quick succession: the first refresh is aborted by the
+    // second. The aborted request rejects, and its catch must return silently
+    // — surfacing its banner would blame the user for a request the app itself
+    // cancelled.
+    let calls = 0;
+    vi.mocked(api.projects.get).mockImplementation((async (_slug: string, signal?: AbortSignal) => {
+      calls += 1;
+      if (calls === 1) return mockProject;
+      if (calls === 2) return pendingUntilAbort(signal);
+      return { ...mockProject, title: "Second Refresh Won", author_name: "New Author" };
+    }) as unknown as typeof api.projects.get);
+
+    await saveAnAuthorName();
+    await waitFor(() => expect(calls).toBeGreaterThanOrEqual(2), { timeout: 3000 });
+
+    // Second save supersedes the first, aborting its in-flight GET.
+    const authorInput = screen.getByLabelText(STRINGS.projectSettings.authorName);
+    await userEvent.clear(authorInput);
+    await userEvent.type(authorInput, "Second Author");
+    fireEvent.blur(authorInput);
+
+    await waitFor(
+      () => {
+        expect(screen.getByRole("heading", { name: "Second Refresh Won" })).toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
+    // The aborted first refresh raised nothing.
+    expect(screen.queryByText(STRINGS.error.loadProjectFailed)).toBeNull();
+  });
+
+  it("defers the refresh instead of racing an in-flight mutation", async () => {
+    // Cross-caller busy invariant: the settings refresh writes project state,
+    // and so does a committing mutation. Running both interleaves two
+    // setProject writes and can discard the mutation's post-commit fields.
+    // The refresh must be dropped with the busy banner, not queued behind it.
+    let resolveReplace: (v: {
+      replaced_count: number;
+      affected_chapter_ids: string[];
+    }) => void = () => {};
+    vi.mocked(api.search.replace).mockImplementation(
+      () =>
+        new Promise<{ replaced_count: number; affected_chapter_ids: string[] }>((resolve) => {
+          resolveReplace = resolve;
+        }),
+    );
+    vi.mocked(api.chapterStatuses.list).mockResolvedValue([]);
+    vi.mocked(api.search.find).mockResolvedValue({
+      total_count: 1,
+      chapters: [
+        {
+          chapter_id: "ch-1",
+          chapter_title: "Chapter One",
+          matches: [{ index: 0, context: "foo bar", blockIndex: 0, offset: 0, length: 3 }],
+        },
+      ],
+    });
+    routeProjectGet(mockProject, async () => mockProject);
+
+    renderEditorPage();
+    await waitFor(
+      () => {
+        expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
+
+    // Open find-and-replace and let the 300ms search debounce elapse.
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
+      await Promise.resolve();
+    });
+    const searchInput = await screen.findByLabelText("Find");
+    const replaceInput = screen.getByLabelText("Replace");
+    vi.useFakeTimers();
+    try {
+      fireEvent.change(searchInput, { target: { value: "foo" } });
+      fireEvent.change(replaceInput, { target: { value: "qux" } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    // Start the replace and leave it in flight — actionBusyRef is now set.
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Replace All in Manuscript" }, { timeout: 3000 }),
+    );
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+    await waitFor(() => expect(api.search.replace).toHaveBeenCalled(), { timeout: 3000 });
+
+    const getCallsBefore = vi.mocked(api.projects.get).mock.calls.length;
+
+    // Now save a settings field while the replace is still in flight.
+    await userEvent.click(screen.getByRole("button", { name: /project settings/i }));
+    const authorInput = screen.getByLabelText(STRINGS.projectSettings.authorName);
+    await userEvent.clear(authorInput);
+    await userEvent.type(authorInput, "New Author");
+    fireEvent.blur(authorInput);
+
+    expect(await screen.findByText(STRINGS.editor.mutationBusy)).toBeInTheDocument();
+    // The refresh GET never fired.
+    expect(vi.mocked(api.projects.get).mock.calls.length).toBe(getCallsBefore);
+
+    // Let the replace finish so teardown is clean.
+    await act(async () => {
+      resolveReplace({ replaced_count: 1, affected_chapter_ids: [] });
+      await Promise.resolve();
+    });
   });
 });
