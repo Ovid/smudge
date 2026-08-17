@@ -17,6 +17,11 @@ describe("POST /api/projects/:slug/chapters — read_after_create_failure", () =
       .send({ title: `Read Fail Test ${Date.now()}`, mode: "fiction" });
     const projectSlug = projRes.body.slug;
 
+    // S1 (agentic review 2026-08-17): 500-class AppErrors are now logged by
+    // globalErrorHandler — this test deliberately drives one, so silence it
+    // and keep the suite's output clean (CLAUDE.md §Testing Philosophy).
+    const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+
     // Spy on the service to return the failure sentinel
     const ProjectService = await import("../projects/projects.service");
     vi.spyOn(ProjectService, "createChapter").mockResolvedValueOnce("read_after_create_failure");
@@ -27,6 +32,12 @@ describe("POST /api/projects/:slug/chapters — read_after_create_failure", () =
     expect(res.body.error.code).toBe("READ_AFTER_CREATE_FAILURE");
     expect(res.body.error.message).toBe(
       "Chapter was created but could not be retrieved. Do not retry.",
+    );
+    // The operator gets a record of it — this is a server fault, and the
+    // envelope is the only other trace it leaves.
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 500, code: "READ_AFTER_CREATE_FAILURE" }),
+      expect.any(String),
     );
   });
 });
