@@ -1,4 +1,4 @@
-import { MAX_TIPTAP_DEPTH, isTipTapNode } from "@smudge/shared";
+import { MAX_TIPTAP_DEPTH, isTipTapNode, TipTapDocSchema } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { logger } from "../logger";
 import { UUID_PATTERN } from "./images.paths";
@@ -39,6 +39,25 @@ const IMAGE_SRC_RE = new RegExp(
 );
 
 /**
+ * Returns the lowercased image UUID an image node references, or null if the
+ * node is not an image node or its `src` is not a Smudge image URL.
+ *
+ * Extracted so the single-node case has ONE owner: `extractImageIds` below and
+ * `restoreSnapshot`'s dead-image strip (F-05) must agree exactly on what
+ * counts as a reference, or the strip would drop a node the reference-counter
+ * still counts (or vice versa). Kept here rather than in `shared` because
+ * IMAGE_SRC_RE is deliberately server-only — see the regex comment above and
+ * CLAUDE.md §Accepted Architectural Trade-offs F-16.
+ */
+export function imageIdFromNode(node: Record<string, unknown>): string | null {
+  if (node.type !== "image" || typeof node.attrs !== "object" || node.attrs === null) return null;
+  const attrs = node.attrs as Record<string, unknown>;
+  if (typeof attrs.src !== "string") return null;
+  const match = IMAGE_SRC_RE.exec(attrs.src);
+  return match?.[1] ? match[1].toLowerCase() : null;
+}
+
+/**
  * Walks TipTap JSON content tree and extracts image UUIDs from
  * nodes with `type: "image"` whose `attrs.src` matches `/api/images/{uuid}`.
  * Returns deduplicated, lowercased UUIDs.
@@ -53,13 +72,8 @@ export function extractImageIds(content: Record<string, unknown> | null): string
   // cap could otherwise stack-overflow the walker.
   function walk(node: Record<string, unknown>, depth: number) {
     if (depth > MAX_TIPTAP_DEPTH) return;
-    if (node.type === "image" && typeof node.attrs === "object" && node.attrs !== null) {
-      const attrs = node.attrs as Record<string, unknown>;
-      if (typeof attrs.src === "string") {
-        const match = IMAGE_SRC_RE.exec(attrs.src);
-        if (match?.[1]) ids.add(match[1].toLowerCase());
-      }
-    }
+    const id = imageIdFromNode(node);
+    if (id) ids.add(id);
     if (Array.isArray(node.content)) {
       for (const child of node.content) {
         // Skip anything this walker cannot see inside — kept explicitly
@@ -227,8 +241,39 @@ export function scanChapterContentForImage(
   } catch {
     return "unreadable";
   }
-  if (!isTipTapNode(parsed)) return "unreadable";
-  return extractImageIds(parsed).includes(imageId.toLowerCase()) ? "references" : "no-reference";
+  // OOSS1 (agentic review 2026-08-17): gate on the SAME schema the chapter read
+  // path uses (chapters.repository.parseContent), not on `isTipTapNode`.
+  //
+  // `isTipTapNode` accepts ANY non-array object, so a document whose `content`
+  // container is an object rather than a list passed this gate — and
+  // extractImageIds then declined to descend (its `Array.isArray(node.content)`
+  // test) and returned [], answering "no-reference" for a chapter that is
+  // displaying the image. The walker's array test is inside the recursion, so
+  // that blindness applies at EVERY depth; TipTapDocSchema's depth refine
+  // rejects a present-but-non-array container at every depth too, which is why
+  // the schema — and not a hand-rolled container check here — is the fix that
+  // matches the hole.
+  //
+  // This was not merely theoretical: PATCH /api/chapters/:id accepted the
+  // nested shape until ff8f7903 (2026-08-04) tightened validateTipTapDepth, and
+  // `make restore` still swaps in a whole database file with no validation.
+  //
+  // Converging on the read path's predicate is the point: a chapter this
+  // rejects is already surfaced as `content_corrupt` and routed to
+  // CORRUPT_CONTENT, so "readable enough to edit" and "readable enough to
+  // defend its images" now mean one thing rather than two that can drift.
+  // Cost is ~10ms on a worst-case 5MB chapter (MAX_CHAPTER_CONTENT_BYTES)
+  // against the ~14ms JSON.parse above it already pays — and this path already
+  // refuses the delete when uncertain.
+  //
+  // The walk still runs on `parsed`, not on safeParse's output: the schema is a
+  // gate here, not a transform, and the counter must see the bytes the row
+  // actually holds. The check subsumes the old `isTipTapNode` guard — the
+  // schema requires `type: "doc"` on an object, which is strictly narrower.
+  if (!TipTapDocSchema.safeParse(parsed).success) return "unreadable";
+  return extractImageIds(parsed as Record<string, unknown>).includes(imageId.toLowerCase())
+    ? "references"
+    : "no-reference";
 }
 
 /**

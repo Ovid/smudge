@@ -102,6 +102,12 @@ export type RestoreResult =
       // the restore was initiated on after an A→B→A round trip) to decide
       // whether to reload the editor.
       restoredChapterId?: string;
+      // Number of distinct IMAGES the server dropped because they no longer
+      // exist (F-05) — not a node tally; two nodes pointing at the same dead
+      // image count once. Absent/0 means the restore was byte-exact. The
+      // caller MUST surface this — it is the only signal that a restore
+      // returned something other than what was saved.
+      droppedImageCount?: number;
     }
   | { ok: false; error: ApiRequestError };
 
@@ -433,7 +439,18 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
           dispatched = true;
           return p;
         });
-        await promise;
+        const restored = await promise;
+        // F-05: present only when the server had to drop image nodes whose
+        // images no longer exist. Threaded through BOTH success arms below —
+        // a stale chapter switch does not make the content alteration
+        // untrue, it only changes which editor is showing.
+        //
+        // S5 (agentic review 2026-08-17): optional-chain the deref. `apiFetch`
+        // returns `undefined as T` for a 204, so the declared type lies for
+        // any handler that stops returning a body — the sibling read at the
+        // snapshot-view path guards for exactly this. Unreachable today; the
+        // restore route always sends the chapter.
+        const droppedImageCount = restored?.dropped_image_count ?? 0;
         // A→B→A round-trip: epoch moved but the current chapter is once
         // again the one we restored. Treat that as a NOT-stale completion
         // — the caller should reload the editor because the restore
@@ -449,6 +466,7 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
             ok: true,
             staleChapterSwitch: true,
             ...(restoringChapterId ? { restoredChapterId: restoringChapterId } : {}),
+            ...(droppedImageCount > 0 ? { droppedImageCount } : {}),
           };
         }
         setViewingSnapshot(null);
@@ -501,6 +519,7 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         return {
           ok: true,
           ...(restoringChapterId ? { restoredChapterId: restoringChapterId } : {}),
+          ...(droppedImageCount > 0 ? { droppedImageCount } : {}),
         };
       } catch (err) {
         if (isApiError(err)) {

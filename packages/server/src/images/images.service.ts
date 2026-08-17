@@ -8,6 +8,8 @@ import { ALLOWED_MIMES, mimeToExt, getImagePath, validateMagicBytes } from "./im
 import { writeImageFile, readImageFile, deleteImageFile } from "./images.fs";
 import type { ImageRow, UpdateImageData } from "./images.types";
 import { logger } from "../logger";
+import { AppError } from "../errors/appError";
+import { READ_AFTER_INSERT_FAILURE } from "../errors/readAfterInsert";
 
 export interface FileInput {
   buffer: Buffer;
@@ -95,8 +97,23 @@ export async function uploadImage(projectId: string, file: FileInput): Promise<U
       created_at: new Date().toISOString(),
     });
   } catch (err) {
-    // Clean up the orphaned file — the DB insert failed so nothing references it
-    await deleteImageFile(filePath).catch(() => {});
+    // Clean up the orphaned file — but ONLY when nothing references it.
+    //
+    // F-12: this used to unlink unconditionally, on the stated assumption that
+    // "the DB insert failed". That assumption is false for exactly one error:
+    // READ_AFTER_INSERT_FAILURE means the INSERT *succeeded* (this path runs
+    // outside any transaction, so it auto-committed) and only the confirming
+    // re-read came back empty. Deleting the file there left a committed image
+    // row pointing at nothing — turning a recoverable glitch into permanent
+    // corruption of the row it was trying to clean up after.
+    //
+    // I3: this check is sound only because the repository raises that code for
+    // EVERY way its confirming read can fail, not just the empty result — the
+    // "did the INSERT land" fact lives there, next to the INSERT. Do not add a
+    // second error identity here; extend the repository's catch instead.
+    if (!(err instanceof AppError && err.code === READ_AFTER_INSERT_FAILURE)) {
+      await deleteImageFile(filePath).catch(() => {});
+    }
     throw err;
   }
 

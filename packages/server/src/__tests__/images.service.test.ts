@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
-import { mkdtemp, rm, unlink } from "node:fs/promises";
+import { mkdtemp, rm, unlink, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import request from "supertest";
@@ -7,6 +7,9 @@ import { setupTestDb } from "./test-helpers";
 import * as imagesService from "../images/images.service";
 import { logger } from "../logger";
 import { getImagePath, mimeToExt } from "../images/images.paths";
+import { setProjectStore } from "../stores/project-store.injectable";
+import { SqliteProjectStore } from "../stores";
+import * as ImagesRepo from "../images/images.repository";
 
 const TEST_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
@@ -25,6 +28,8 @@ const t = setupTestDb();
 // survives an abandoned test body.
 afterEach(async () => {
   await t.db.raw("DROP TRIGGER IF EXISTS images_vanish_after_update;");
+  // Same rationale as above for the F-12 read-after-INSERT trigger.
+  await t.db.raw("DROP TRIGGER IF EXISTS images_shift_id_after_insert;");
 });
 
 let tempDir: string;
@@ -54,6 +59,90 @@ async function createTestProject(): Promise<string> {
 
 describe("images.service", () => {
   describe("uploadImage()", () => {
+    it("keeps the file when the row committed but could not be read back (F-12)", async () => {
+      // uploadImage inserts OUTSIDE any transaction, so a failed read-back
+      // means the row auto-committed. The cleanup used to unlink the file
+      // unconditionally, on a comment asserting "the DB insert failed" — which
+      // is exactly wrong for this one error. That turned a recoverable glitch
+      // into a committed image row pointing at a file that no longer exists.
+      const projectId = await createTestProject();
+      // Make the confirming SELECT miss WITHOUT removing the row.
+      await t.db.raw(`CREATE TRIGGER images_shift_id_after_insert AFTER INSERT ON images
+        BEGIN UPDATE images SET id = id || '-x' WHERE id = NEW.id; END`);
+
+      await expect(
+        imagesService.uploadImage(projectId, {
+          buffer: TEST_PNG,
+          originalname: "committed.png",
+          mimetype: "image/png",
+          size: TEST_PNG.length,
+        } as Parameters<typeof imagesService.uploadImage>[1]),
+      ).rejects.toMatchObject({ code: "READ_AFTER_INSERT_FAILURE" });
+
+      // The row really is there...
+      const rows = await t.db("images").where({ project_id: projectId });
+      expect(rows).toHaveLength(1);
+      // ...so its bytes must still be there too.
+      const dir = path.dirname(getImagePath(projectId, "x", "png"));
+      await expect(readdir(dir)).resolves.toHaveLength(1);
+    });
+
+    it("keeps the file when the confirming read THROWS rather than missing (I3)", async () => {
+      // The guard above discriminates on error identity, but the fact that
+      // decides whether the file may be unlinked is "did the INSERT land" —
+      // and outside a transaction it always has by the time the re-read runs.
+      // A re-read that throws (SQLITE_BUSY, an I/O error, or most plausibly
+      // `Knex: Timeout acquiring a connection` — the pool is max:1 and the
+      // connection is released between the two statements) is the same
+      // committed row, and unlinking there is the identical corruption.
+      const projectId = await createTestProject();
+      const boom = new Error("Knex: Timeout acquiring a connection. The pool is probably full.");
+      // Real SQLite for everything except the one confirming SELECT: the
+      // INSERT genuinely commits, exactly as it does in production.
+      const failingReadBack = new Proxy(t.db, {
+        apply(target, thisArg, args: unknown[]) {
+          const qb = Reflect.apply(target as never, thisArg, args) as unknown;
+          if (args[0] !== "images") return qb;
+          return {
+            insert: (data: unknown) => t.db("images").insert(data as never),
+            where: () => ({ first: () => Promise.reject(boom) }),
+          };
+        },
+      }) as unknown as typeof t.db;
+
+      setProjectStore(new SqliteProjectStore(failingReadBack));
+      try {
+        await expect(
+          imagesService.uploadImage(projectId, {
+            buffer: TEST_PNG,
+            originalname: "throwing.png",
+            mimetype: "image/png",
+            size: TEST_PNG.length,
+          } as Parameters<typeof imagesService.uploadImage>[1]),
+        ).rejects.toMatchObject({ code: "READ_AFTER_INSERT_FAILURE" });
+      } finally {
+        setProjectStore(new SqliteProjectStore(t.db));
+      }
+
+      // The row committed...
+      const rows = await t.db("images").where({ project_id: projectId });
+      expect(rows).toHaveLength(1);
+      // ...so its bytes must still be on disk.
+      const dir = path.dirname(getImagePath(projectId, "x", "png"));
+      await expect(readdir(dir)).resolves.toHaveLength(1);
+      // The original failure is preserved for the operator.
+      await expect(
+        ImagesRepo.insert(failingReadBack, {
+          id: "probe",
+          project_id: projectId,
+          filename: "probe.png",
+          mime_type: "image/png",
+          size_bytes: 1,
+          created_at: new Date().toISOString(),
+        }),
+      ).rejects.toMatchObject({ cause: boom });
+    });
+
     it("uploads a valid image and returns the record", async () => {
       const projectId = await createTestProject();
       const result = await imagesService.uploadImage(projectId, {
@@ -433,9 +522,28 @@ describe("images.service", () => {
     // repair yields a chapter with a permanently broken image. This is the one
     // place in the image lifecycle where a read failure produces an
     // irreversible write.
+    //
+    // OOSS1 (agentic review 2026-08-17): the last two rows are the same class
+    // one level in. `isTipTapNode` accepts any non-array object, so a document
+    // whose `content` is an OBJECT rather than a list passed the gate — and the
+    // walker then declined to descend (it requires an array), returning [] and
+    // answering "no-reference" for a chapter that is displaying the image. The
+    // nested variant is the one that matters: the walker's array test is inside
+    // the recursion, so the blindness applies at every depth. It was also
+    // API-writable until ff8f7903 (2026-08-04) tightened the depth walker, and
+    // remains reachable through a backup restore, which swaps the database file
+    // in without validation.
     it.each([
       ["unparseable JSON", "not json {"],
       ["JSON that is not an object", "42"],
+      [
+        "a document whose content container is an object, not a list",
+        '{"type":"doc","content":{"type":"image","attrs":{"src":"/api/images/IMAGE_ID"}}}',
+      ],
+      [
+        "a document with an object content container one level down",
+        '{"type":"doc","content":[{"type":"paragraph","content":{"type":"image","attrs":{"src":"/api/images/IMAGE_ID"}}}]}',
+      ],
     ])("blocks the delete when a chapter's content is %s (OOSI2)", async (_label, stored) => {
       const projectId = await createTestProject();
       const uploadResult = await imagesService.uploadImage(projectId, {
@@ -450,7 +558,10 @@ describe("images.service", () => {
       const projectDetail = await request(t.app).get(`/api/projects/${projectRes.body[0].slug}`);
       const chapterId = projectDetail.body.chapters[0].id;
       // Bypass the API so the row really is unreadable.
-      await t.db("chapters").where({ id: chapterId }).update({ content: stored });
+      await t
+        .db("chapters")
+        .where({ id: chapterId })
+        .update({ content: stored.replace(/IMAGE_ID/g, imageId) });
 
       const result = await imagesService.deleteImage(imageId);
 

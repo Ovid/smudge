@@ -1,6 +1,8 @@
 import type { Knex } from "knex";
 import type { SnapshotRow, SnapshotListItem, CreateSnapshotData } from "./snapshots.types";
 import { canonicalContentHash } from "./content-hash";
+import { InternalError } from "../errors/appError";
+import { READ_AFTER_INSERT_FAILURE } from "../errors/readAfterInsert";
 
 const TABLE = "chapter_snapshots";
 
@@ -15,7 +17,16 @@ export async function insert(db: Knex, data: CreateSnapshotData): Promise<Snapsh
   // would otherwise silently diverge from the returned shape, and the
   // re-read confirms the write actually landed.
   const row = await db(TABLE).where({ id: data.id }).first();
-  if (!row) throw new Error(`Snapshot ${data.id} not found after insert`);
+  // F-12: discriminating code rather than a bare Error clamped to a generic
+  // 500. Unlike the image path this runs INSIDE createSnapshot's transaction,
+  // so the throw rolls the insert back — nothing is committed and a retry is
+  // safe. `snapshot.create` deliberately does NOT list this in committedCodes.
+  if (!row) {
+    throw new InternalError(
+      `Snapshot ${data.id} was written but could not be read back.`,
+      READ_AFTER_INSERT_FAILURE,
+    );
+  }
   return coerceRow(row);
 }
 

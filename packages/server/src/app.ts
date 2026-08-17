@@ -100,6 +100,22 @@ export function globalErrorHandler(
   // their envelope directly and do NOT log them at error level — these
   // paths emitted via in-route res.json() before F-3 and logged nothing.
   if (err instanceof AppError) {
+    // S1 (agentic review 2026-08-17): ...except the 500-class ones. "Already
+    // classified" means the CLIENT knows what happened; a 5xx still means the
+    // SERVER broke, and the operator has no other record of it. F-12 made this
+    // load-bearing: converting the read-after-insert bare `Error`s into
+    // InternalErrors moved them behind this early return, silently deleting
+    // the only log of a "the row is committed and we cannot see it" event —
+    // the class of anomaly log CLAUDE.md §F-2 rests on. 4xx AppErrors stay
+    // quiet; they are expected outcomes, not faults.
+    if (err.status >= 500) {
+      const fields = { err, status: err.status, code: err.code };
+      if (req.log) {
+        req.log.error(fields, "Server-fault AppError");
+      } else {
+        logger.error({ ...fields, method: req.method, path: req.path }, "Server-fault AppError");
+      }
+    }
     res.status(err.status).json({
       error: { code: err.code, message: err.message, ...err.extras },
     });

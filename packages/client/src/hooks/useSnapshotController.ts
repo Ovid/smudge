@@ -157,6 +157,12 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
 
       type RestoreData = { staleChapterSwitch: boolean };
 
+      // F-05: how many image nodes the server dropped because those images no
+      // longer exist. Deliberately kept OUT of the mutation's `data` payload —
+      // it is an observation about the restore, not part of the contract
+      // useEditorMutation acts on (it drives no cache-clear and no reload).
+      let droppedImageCount = 0;
+
       const result = await mutation.run<RestoreData>(async () => {
         // Re-check intent AFTER the hook's flush/markClean: if the user
         // clicked "Back to editing" during the flush window, abort before
@@ -168,6 +174,7 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
           throw new RestoreFailedError(restore.error);
         }
         const stale = Boolean(restore.staleChapterSwitch);
+        droppedImageCount = restore.droppedImageCount ?? 0;
         // On stale-chapter-switch the restore landed on a now-background
         // chapter — skip both the cache clear (useSnapshotState already
         // cleared the restoring chapter's cache) and the active-chapter
@@ -198,6 +205,35 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
           data: { staleChapterSwitch: false },
         };
       });
+
+      // F-05: announce on EVERY arm reached after the server restore
+      // committed. This is the one path where a restore returns something
+      // other than what was saved, and a user who navigated away — or whose
+      // reload failed — is no less entitled to know their content was altered
+      // than one who stayed.
+      //
+      // I2 (agentic review 2026-08-17): this used to sit inside `if
+      // (result.ok)`, which silently dropped it on the
+      // committed_but_unreloaded arm — the arm where the user is LEAST able
+      // to see the change, since the editor is locked and they are told to
+      // refresh. Every committed_but_unreloaded return in useEditorMutation
+      // is reached after `mutate()` succeeded, so the count is true there.
+      // The 2xx-BAD_JSON arm below is excluded on purpose: its body was
+      // unparseable, so there is no count to report.
+      //
+      // S2: attribute the notice when the user is no longer on the restored
+      // chapter, mirroring the I6 treatment of the possibly-committed banner.
+      if (droppedImageCount > 0) {
+        const currentId = getActiveChapter()?.id;
+        setActionInfo(
+          currentId !== undefined && currentId !== activeChapter.id
+            ? STRINGS.snapshots.restoreDroppedImagesOnOtherChapter(
+                droppedImageCount,
+                activeChapter.title,
+              )
+            : STRINGS.snapshots.restoreDroppedImages(droppedImageCount),
+        );
+      }
 
       if (result.ok) {
         if (!result.data.staleChapterSwitch) {

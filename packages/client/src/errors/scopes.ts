@@ -320,6 +320,14 @@ export const SCOPES = {
     // (so duplicate uploads on retry don't sneak in) or direct the user
     // to it. The scope-level string tells them what to do.
     committed: STRINGS.imageGallery.uploadCommittedRefresh,
+    // F-12: the upload insert runs OUTSIDE a transaction, so a
+    // READ_AFTER_INSERT_FAILURE means the row auto-committed and only the
+    // confirming re-read failed — the image really is stored and a retry would
+    // mint a duplicate. This is the ONE read-after-insert site that earns
+    // committed treatment; the outtake and snapshot inserts sit inside
+    // transactions and roll back, so their scopes deliberately omit this code.
+    // See packages/server/src/errors/readAfterInsert.ts.
+    committedCodes: ["READ_AFTER_INSERT_FAILURE"],
     byStatus: {
       413: STRINGS.imageGallery.fileTooLarge,
       // I1 (2026-04-24 review): project was deleted between gallery-open
@@ -329,6 +337,14 @@ export const SCOPES = {
       404: STRINGS.imageGallery.uploadProjectGone,
     },
     byCode: {
+      // I1 (agentic review 2026-08-17): `committedCodes` only takes effect on
+      // a byCode match — the byStatus and fallback arms of
+      // `_resolveErrorInternal` hard-code possiblyCommitted to false. Without
+      // this entry the F-12 code above was inert: the 500 fell through to
+      // `uploadFailedGeneric`, which invites the retry that mints the
+      // duplicate row + blob F-12 exists to prevent (uploads are
+      // non-idempotent, CLAUDE.md §F-8). Both entries are required.
+      READ_AFTER_INSERT_FAILURE: STRINGS.imageGallery.uploadCommittedRefresh,
       PAYLOAD_TOO_LARGE: STRINGS.imageGallery.fileTooLarge,
       // I1 (2026-04-24 review): server 400 for missing file, unsupported
       // MIME, MIME/content mismatch, and empty file. Without a byCode

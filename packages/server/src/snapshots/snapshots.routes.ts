@@ -101,12 +101,26 @@ export function snapshotDirectRouter(): Router {
         // 409 per CLAUDE.md: request is well-formed but violates a
         // constraint the client needs to resolve (move/re-upload the
         // image, or pick a different snapshot). Not a validation error.
+        //
+        // F-05: this arm no longer covers a MISSING image — that restores
+        // with the dead node dropped (dropped_image_count below). The two
+        // used to share this refusal, which made the message false for the
+        // far more common case and left the snapshot permanently unrestorable.
         throw new ConflictError(
           "Snapshot references an image from a different project and cannot be restored.",
           SNAPSHOT_ERROR_CODES.CROSS_PROJECT_IMAGE_REF,
         );
       }
-      res.json(result.chapter);
+      // Spread rather than nest so the response stays assignable to Chapter —
+      // an added optional field is backward-compatible where a re-shaped body
+      // would not be. Omitted entirely on the ordinary path so the field's
+      // presence means "content was altered", mirroring the outtakes
+      // `content_corrupt` degraded-read flag (CLAUDE.md §Data Model).
+      res.json(
+        result.dropped_image_count > 0
+          ? { ...result.chapter, dropped_image_count: result.dropped_image_count }
+          : result.chapter,
+      );
     }),
   );
 

@@ -3,6 +3,7 @@ import request from "supertest";
 import express from "express";
 import { logger } from "../logger";
 import { globalErrorHandler } from "../app";
+import { InternalError, NotFoundError } from "../errors/appError";
 
 function createErrorTestApp() {
   const app = express();
@@ -178,6 +179,55 @@ describe("status allowlist is enforced by the handler", () => {
     const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
     const res = await request(createErrorTestApp()).get(`/api/test-error-status/${raw}`);
     expect(res.status).toBe(raw);
+    logSpy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S1 (agentic review 2026-08-17): 500-class AppErrors must still be logged
+// ---------------------------------------------------------------------------
+
+describe("AppError logging", () => {
+  function appErrorApp() {
+    const app = express();
+    app.get("/api/internal", (_req, _res, next) => {
+      next(new InternalError("Row written but unreadable.", "READ_AFTER_INSERT_FAILURE"));
+    });
+    app.get("/api/not-found", (_req, _res, next) => {
+      next(new NotFoundError("Project not found.", "NOT_FOUND"));
+    });
+    app.use(globalErrorHandler);
+    return app;
+  }
+
+  it("logs a 500 AppError — it is a server fault, not a classified client one", async () => {
+    // F-12 converted the read-after-insert bare `Error`s into InternalErrors.
+    // That was right for the client (a bare Error carries no discriminating
+    // code), but AppErrors take the handler's early return, which is BEFORE
+    // the only error log — so the conversion silently removed the sole
+    // server-side record of a "the row is committed and we cannot see it"
+    // event. A 500 means the server broke; it is exactly what an operator
+    // needs to see, and CLAUDE.md §F-2 rests on these anomaly logs existing.
+    const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+
+    const res = await request(appErrorApp()).get("/api/internal");
+
+    expect(res.status).toBe(500);
+    expect(res.body.error.code).toBe("READ_AFTER_INSERT_FAILURE");
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 500, code: "READ_AFTER_INSERT_FAILURE" }),
+      expect.any(String),
+    );
+    logSpy.mockRestore();
+  });
+
+  it("stays quiet for 4xx AppErrors — those are classified, expected outcomes", async () => {
+    const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+
+    const res = await request(appErrorApp()).get("/api/not-found");
+
+    expect(res.status).toBe(404);
+    expect(logSpy).not.toHaveBeenCalled();
     logSpy.mockRestore();
   });
 });

@@ -1,6 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import request from "supertest";
 import { setupTestDb } from "./test-helpers";
+import { logger } from "../logger";
 
 const t = setupTestDb();
 
@@ -213,6 +214,60 @@ describe("snapshot routes", () => {
       const autoSnapshot = listRes.body.find((s: { is_auto: boolean }) => s.is_auto);
       expect(autoSnapshot).toBeDefined();
       expect(autoSnapshot.label).toContain("Before restore");
+    });
+
+    it("puts dropped_image_count on the wire, snake_cased, only when non-zero (S6)", async () => {
+      // S6 (agentic review 2026-08-17): the count was asserted only at the
+      // service level, above `res.json`. The route spreads it onto the chapter
+      // under a hand-written snake_case key that the client reads by the same
+      // literal — a rename at either end had nothing going red, and the
+      // "omitted when 0" half (whose ABSENCE is the client's "content is
+      // exactly what was saved" signal) was equally unpinned.
+      // The drop is a deliberate anomaly the service logs at warn level;
+      // assert it rather than letting it noise up the suite.
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+      const { chapterId } = await createTestProject();
+
+      const createRes = await request(t.app)
+        .post(`/api/chapters/${chapterId}/snapshots`)
+        .send({ label: "had-an-image" });
+      const snapshotId = createRes.body.snapshot.id;
+
+      // The ordinary restore says nothing about images.
+      const clean = await request(t.app).post(`/api/snapshots/${snapshotId}/restore`);
+      expect(clean.status).toBe(200);
+      expect(clean.body).not.toHaveProperty("dropped_image_count");
+
+      // Rewrite the snapshot to hold prose plus an image that no longer exists.
+      await t
+        .db("chapter_snapshots")
+        .where({ id: snapshotId })
+        .update({
+          content: JSON.stringify({
+            type: "doc",
+            content: [
+              { type: "paragraph", content: [{ type: "text", text: "the words survive" }] },
+              {
+                type: "image",
+                attrs: { src: "/api/images/00000000-0000-0000-0000-0000000000aa" },
+              },
+            ],
+          }),
+        });
+
+      const res = await request(t.app).post(`/api/snapshots/${snapshotId}/restore`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.dropped_image_count).toBe(1);
+      // Still assignable to Chapter — the field is spread, not nested.
+      expect(res.body.id).toBe(chapterId);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          dropped_image_ids: ["00000000-0000-0000-0000-0000000000aa"],
+        }),
+        expect.any(String),
+      );
+      warnSpy.mockRestore();
     });
 
     it("returns 404 for non-existent snapshot", async () => {

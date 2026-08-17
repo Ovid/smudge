@@ -11,7 +11,7 @@ import {
   MAX_MATCHES_PER_REQUEST,
   SEARCH_ERROR_CODES,
   sanitizeSnapshotLabel,
-  isTipTapNode,
+  TipTapDocSchema,
 } from "@smudge/shared";
 import type { SearchErrorCode } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
@@ -143,10 +143,17 @@ export async function searchProject(
       // "42", "[]", '"text"') parses without throwing, so guarding only the
       // throw let the walker examine a non-document, find nothing, and continue
       // WITHOUT recording a skip — reporting the project fully searched when a
-      // chapter was never read. Same isTipTapNode gate as the sibling parse
-      // sites (chapters.repository, images.references, outtakes.repository).
+      // chapter was never read.
+      //
+      // F-10: this used to gate on isTipTapNode, which accepts ANY object, so
+      // `{"foo":1}` still slipped through as "searched, no matches" rather than
+      // "skipped". Now gated on the same TipTapDocSchema as the chapter read
+      // path, so a chapter the reader calls corrupt is a chapter search calls
+      // skipped, instead of the two disagreeing.
       const raw: unknown = JSON.parse(chapter.content);
-      if (!isTipTapNode(raw)) throw new TypeError("Chapter content is not a TipTap node");
+      if (!TipTapDocSchema.safeParse(raw).success) {
+        throw new TypeError("Chapter content is not a TipTap document");
+      }
       parsed = raw as Record<string, unknown>;
     } catch {
       logger.warn(
@@ -259,9 +266,12 @@ export async function replaceInProject(
         let parsed: Record<string, unknown>;
         try {
           // OOSS2: see searchProject above — a wrong-shape row silently counted
-          // as "replaced, nothing to do" instead of as skipped.
+          // as "replaced, nothing to do" instead of as skipped. F-10: same
+          // TipTapDocSchema tightening as searchProject and the read path.
           const raw: unknown = JSON.parse(chapter.content);
-          if (!isTipTapNode(raw)) throw new TypeError("Chapter content is not a TipTap node");
+          if (!TipTapDocSchema.safeParse(raw).success) {
+            throw new TypeError("Chapter content is not a TipTap document");
+          }
           parsed = raw as Record<string, unknown>;
         } catch {
           logger.warn(

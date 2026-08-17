@@ -550,8 +550,12 @@ export const api = {
         ...(signal ? { signal } : {}),
       }),
 
+    // `dropped_image_count` is present only when the restore had to drop
+    // image nodes whose images no longer exist (F-05), and counts the DISTINCT
+    // images dropped rather than the nodes. Its absence means the restored
+    // content is exactly what the snapshot held.
     restore: (id: string, signal?: AbortSignal) =>
-      apiFetch<Chapter>(`/snapshots/${enc(id)}/restore`, {
+      apiFetch<Chapter & { dropped_image_count?: number }>(`/snapshots/${enc(id)}/restore`, {
         method: "POST",
         ...(signal ? { signal } : {}),
       }),
