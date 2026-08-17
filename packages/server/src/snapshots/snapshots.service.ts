@@ -121,10 +121,12 @@ export async function deleteSnapshot(id: string): Promise<boolean> {
 export type RestoreFailure = "corrupt_snapshot" | "cross_project_image";
 
 /**
- * `dropped_image_count` is the number of image nodes removed because the
- * image no longer exists (F-05). Zero on the ordinary path. It is a COUNT and
- * not a message: the client owns the user-facing copy, per CLAUDE.md §API
- * Design.
+ * `dropped_image_count` is the number of DISTINCT IMAGES removed because they
+ * no longer exist (F-05) — `missingIds.size`, not a node tally. Two nodes
+ * pointing at the same dead image count once, which is what the user-facing
+ * copy ("One image was left out") already says. Zero on the ordinary path. It
+ * is a COUNT and not a message: the client owns the user-facing copy, per
+ * CLAUDE.md §API Design.
  */
 export interface RestoreSuccess {
   chapter: ChapterWithLabel;

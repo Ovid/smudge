@@ -11,7 +11,15 @@
  * `READ_AFTER_CREATE_FAILURE` for the same condition; the other three modules
  * did not.
  *
- * ONE code across all sites, because it is one condition. Whether it means
+ * ONE code for every NEW site, because it is one condition — this constant,
+ * not a fresh string. `projects` keeps its older `READ_AFTER_CREATE_FAILURE`
+ * (noted above) because renaming a code the client already maps buys nothing;
+ * it is a grandfathered spelling, not a second option. A module facing this
+ * condition imports this constant. Picking a new name instead is what produces
+ * a code no client scope maps — the exact failure mode of I1 (agentic review
+ * 2026-08-17), where the scope and the server disagreed about a code.
+ *
+ * Whether it means
  * "possibly committed" is NOT a property of the code — it is a property of the
  * call site, and it is decided per client scope:
  *

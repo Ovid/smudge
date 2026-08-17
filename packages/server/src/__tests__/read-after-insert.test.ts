@@ -1,10 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { randomUUID as uuid } from "node:crypto";
 import { setupTestDb } from "./test-helpers";
 import * as ImagesRepo from "../images/images.repository";
 import * as SnapshotsRepo from "../snapshots/snapshots.repository";
 import * as OuttakesRepo from "../outtakes/outtakes.repository";
 import { READ_AFTER_INSERT_FAILURE } from "../errors/readAfterInsert";
+import { createOuttake } from "../outtakes/outtakes.service";
+import { createSnapshot } from "../snapshots/snapshots.service";
 
 // Safety net for F-12 (architecture report 2026-08-11).
 //
@@ -202,5 +204,83 @@ describe("read-after-insert failure (F-12 safety net)", () => {
 
     expect(result).toBe("threw");
     await expect(OuttakesRepo.findById(t.db, id)).resolves.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S8 (agentic review 2026-08-17): transaction membership, observed
+// ---------------------------------------------------------------------------
+
+describe("read-after-insert commit semantics through the service layer", () => {
+  // The tests above call the repositories directly with `t.db`, so the one
+  // fact the whole design rests on — that `images` inserts OUTSIDE a
+  // transaction and the other two INSIDE — is never observed. That fact is
+  // the sole justification for `image.upload` carrying `committedCodes` while
+  // `outtake.create` and `snapshot.create` deliberately omit it, and
+  // readAfterInsert.ts states it only as prose addressed to a human. If a
+  // future refactor moves an insert across that boundary, the corresponding
+  // client scope must move with it — these tests are what goes red.
+  //
+  // The lever is a trigger that SHIFTS the row's id rather than deleting it:
+  // the confirming re-read misses, but the row itself survives the statement.
+  // What happens to it next is decided purely by transaction membership.
+  async function shiftIdAfterInsert(table: string) {
+    await t.db.raw(`DROP TRIGGER IF EXISTS shift_${table}`);
+    await t.db.raw(
+      `CREATE TRIGGER shift_${table} AFTER INSERT ON ${table}
+       BEGIN UPDATE ${table} SET id = id || '-x' WHERE id = NEW.id; END`,
+    );
+  }
+
+  afterEach(async () => {
+    for (const table of ["images", "chapter_snapshots", "outtakes"]) {
+      await t.db.raw(`DROP TRIGGER IF EXISTS shift_${table}`);
+    }
+  });
+
+  it("images: the row is COMMITTED — the insert runs outside any transaction", async () => {
+    const projectId = await createProject();
+    await shiftIdAfterInsert("images");
+
+    await expect(
+      ImagesRepo.insert(t.db, {
+        id: uuid(),
+        project_id: projectId,
+        filename: "committed.png",
+        mime_type: "image/png",
+        size_bytes: 1,
+        created_at: new Date().toISOString(),
+      }),
+    ).rejects.toMatchObject({ code: READ_AFTER_INSERT_FAILURE });
+
+    // Still there. A retry would mint a duplicate — hence committedCodes.
+    await expect(t.db("images").where({ project_id: projectId })).resolves.toHaveLength(1);
+  });
+
+  it("outtakes: the row ROLLS BACK — createOuttake wraps the insert", async () => {
+    const projectId = await createProject();
+    await shiftIdAfterInsert("outtakes");
+
+    await expect(
+      createOuttake(projectId, { type: "doc", content: [] }, "rolled-back"),
+    ).rejects.toMatchObject({ code: READ_AFTER_INSERT_FAILURE });
+
+    // Nothing survived, so retrying is safe and correct — hence NO
+    // committedCodes on `outtake.create`.
+    await expect(t.db("outtakes").where({ project_id: projectId })).resolves.toHaveLength(0);
+  });
+
+  it("snapshots: the row ROLLS BACK — createSnapshot wraps the insert", async () => {
+    const projectId = await createProject();
+    const chapterId = await createChapter(projectId);
+    await shiftIdAfterInsert("chapter_snapshots");
+
+    await expect(createSnapshot(chapterId, "rolled-back")).rejects.toMatchObject({
+      code: READ_AFTER_INSERT_FAILURE,
+    });
+
+    await expect(t.db("chapter_snapshots").where({ chapter_id: chapterId })).resolves.toHaveLength(
+      0,
+    );
   });
 });

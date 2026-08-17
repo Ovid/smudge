@@ -102,8 +102,9 @@ export type RestoreResult =
       // the restore was initiated on after an A→B→A round trip) to decide
       // whether to reload the editor.
       restoredChapterId?: string;
-      // Number of image nodes the server dropped because those images no
-      // longer exist (F-05). Absent/0 means the restore was byte-exact. The
+      // Number of distinct IMAGES the server dropped because they no longer
+      // exist (F-05) — not a node tally; two nodes pointing at the same dead
+      // image count once. Absent/0 means the restore was byte-exact. The
       // caller MUST surface this — it is the only signal that a restore
       // returned something other than what was saved.
       droppedImageCount?: number;
