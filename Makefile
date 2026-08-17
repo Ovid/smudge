@@ -81,8 +81,19 @@ restore: ensure-native ## Restore a backup zip: make restore BACKUP=backups/smud
 build: ## Build client for production
 	npm run build -w packages/client
 
-loc: ## Count lines of code in our own files
-	cloc packages/shared/src packages/server/src packages/client/src e2e --exclude-dir=node_modules,dist,coverage
+# Test sources are the e2e/ tree, any __tests__/ dir, and *.test.*/*.spec.*
+# files; everything else under the source trees is main code.
+LOC_SRC := packages/shared/src packages/server/src packages/client/src e2e
+LOC_CLOC = cloc $(LOC_SRC) --exclude-dir=node_modules,dist,coverage --fullpath
+LOC_TEST_RE := '(^|/)(e2e|__tests__)/|\.(test|spec)\.'
+
+loc: ## Count lines of code in our own files (main, tests, total)
+	@echo "=== Main code ==="
+	@$(LOC_CLOC) --not-match-f=$(LOC_TEST_RE)
+	@echo "=== Tests ==="
+	@$(LOC_CLOC) --match-f=$(LOC_TEST_RE)
+	@echo "=== Total ==="
+	@$(LOC_CLOC)
 
 dep-cooldown: ## Supply-chain cooldown gate: fail if any package-lock version is <7 days old and not allowlisted (needs network; NOT part of `make all`)
 	@# Authoritative gate runs in CI (dep-cooldown job) where the publish-time
