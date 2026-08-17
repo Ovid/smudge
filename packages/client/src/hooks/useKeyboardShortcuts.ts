@@ -81,6 +81,13 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
     // The nav announcement now resolves after an await (F-13), so it can land
     // after unmount. Nothing else in this effect is async.
     let unmounted = false;
+    // S2 (review 2026-08-16): which Ctrl+Shift+Arrow press owns the live region.
+    // Presses overlap by construction (key autorepeat), and press N+1 aborts
+    // press N's in-flight GET synchronously, so press N resolves false FIRST —
+    // while press N+1 is still loading. Without this, that stale refusal speaks
+    // over a navigation that is genuinely in flight. Bump before, check after,
+    // matching CLAUDE.md §Save-pipeline invariant 4.
+    let navEpoch = 0;
 
     function handleKeyDown(e: KeyboardEvent) {
       const ctrl = e.ctrlKey || e.metaKey;
@@ -206,19 +213,22 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
         // S3: the outcome announcement below waits on flushSave — seconds, if
         // a save is in retry backoff — and then on a chapter GET. Announce the
         // keypress now so the user knows it registered; the outcome replaces
-        // this string, or clears it if nothing moved.
+        // this string, whichever way it goes (I1).
         if (navAnnouncementTimer !== null) clearTimeout(navAnnouncementTimer);
         deps.setNavAnnouncement(STRINGS.sidebar.navigatingToChapter(nextChapter.title));
+        const myEpoch = ++navEpoch;
         const settle = (navigated: boolean) => {
-          if (unmounted) return;
-          if (!navigated) {
-            // Retract the pending state. This does not un-speak it — it stops
-            // the live region asserting a navigation that is still "in
-            // progress" forever.
-            deps.setNavAnnouncement("");
-            return;
-          }
-          deps.setNavAnnouncement(STRINGS.sidebar.navigatedToChapter(nextChapter.title));
+          if (unmounted || myEpoch !== navEpoch) return;
+          // I1: both outcomes SPEAK. The refusal arm used to clear to "", but a
+          // polite live region announces content additions — emptying it says
+          // nothing, so the pending string above stayed the last thing spoken
+          // for a navigation that was refused. The editor-lock path shows no
+          // banner by design, making this the only correction it can offer.
+          deps.setNavAnnouncement(
+            navigated
+              ? STRINGS.sidebar.navigatedToChapter(nextChapter.title)
+              : STRINGS.sidebar.navigationFailed(nextChapter.title),
+          );
           if (navAnnouncementTimer !== null) clearTimeout(navAnnouncementTimer);
           navAnnouncementTimer = setTimeout(() => deps.setNavAnnouncement(""), 1000);
         };
