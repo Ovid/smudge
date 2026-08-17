@@ -522,9 +522,28 @@ describe("images.service", () => {
     // repair yields a chapter with a permanently broken image. This is the one
     // place in the image lifecycle where a read failure produces an
     // irreversible write.
+    //
+    // OOSS1 (agentic review 2026-08-17): the last two rows are the same class
+    // one level in. `isTipTapNode` accepts any non-array object, so a document
+    // whose `content` is an OBJECT rather than a list passed the gate — and the
+    // walker then declined to descend (it requires an array), returning [] and
+    // answering "no-reference" for a chapter that is displaying the image. The
+    // nested variant is the one that matters: the walker's array test is inside
+    // the recursion, so the blindness applies at every depth. It was also
+    // API-writable until ff8f7903 (2026-08-04) tightened the depth walker, and
+    // remains reachable through a backup restore, which swaps the database file
+    // in without validation.
     it.each([
       ["unparseable JSON", "not json {"],
       ["JSON that is not an object", "42"],
+      [
+        "a document whose content container is an object, not a list",
+        '{"type":"doc","content":{"type":"image","attrs":{"src":"/api/images/IMAGE_ID"}}}',
+      ],
+      [
+        "a document with an object content container one level down",
+        '{"type":"doc","content":[{"type":"paragraph","content":{"type":"image","attrs":{"src":"/api/images/IMAGE_ID"}}}]}',
+      ],
     ])("blocks the delete when a chapter's content is %s (OOSI2)", async (_label, stored) => {
       const projectId = await createTestProject();
       const uploadResult = await imagesService.uploadImage(projectId, {
@@ -539,7 +558,10 @@ describe("images.service", () => {
       const projectDetail = await request(t.app).get(`/api/projects/${projectRes.body[0].slug}`);
       const chapterId = projectDetail.body.chapters[0].id;
       // Bypass the API so the row really is unreadable.
-      await t.db("chapters").where({ id: chapterId }).update({ content: stored });
+      await t
+        .db("chapters")
+        .where({ id: chapterId })
+        .update({ content: stored.replace(/IMAGE_ID/g, imageId) });
 
       const result = await imagesService.deleteImage(imageId);
 
