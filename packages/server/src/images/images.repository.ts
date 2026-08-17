@@ -5,13 +5,35 @@ import { READ_AFTER_INSERT_FAILURE } from "../errors/readAfterInsert";
 
 export async function insert(db: Knex | Knex.Transaction, data: CreateImageRow): Promise<ImageRow> {
   await db("images").insert(data);
-  const row = await db("images").where("id", data.id).first();
+  // I3 (agentic review 2026-08-17): everything past this line runs with the
+  // INSERT already committed (uploadImage calls this outside any
+  // transaction), so EVERY way the confirming read can fail means the same
+  // thing — the row is there and the file must not be unlinked. Catching the
+  // throw here, rather than letting uploadImage discriminate on error
+  // identity, puts the decision where the fact lives: a re-read that rejects
+  // (SQLITE_BUSY, an I/O error, `Knex: Timeout acquiring a connection` — the
+  // pool is max:1 and the connection is released between these two
+  // statements) previously escaped the guard and unlinked a live row's file,
+  // which nothing repairs: images.reaper only deletes files with no row, never
+  // the reverse.
+  let row: ImageRow | undefined;
+  try {
+    row = await db("images").where("id", data.id).first();
+  } catch (err) {
+    const wrapped = new InternalError(
+      `Image ${data.id} was written but could not be read back. Do not retry.`,
+      READ_AFTER_INSERT_FAILURE,
+    );
+    // `cause`, not AppError's `extras` — extras are merged into the client-
+    // visible error envelope, and a raw driver message must not go there.
+    wrapped.cause = err;
+    throw wrapped;
+  }
   // F-12: a bare Error was clamped to a generic 500 the client could not
-  // discriminate. This one MATTERS: uploadImage calls this outside any
-  // transaction, so the INSERT has already auto-committed by the time the
-  // re-read runs — the row exists and a retry would mint a duplicate. The
-  // `image.upload` scope therefore lists this code in committedCodes, and
-  // uploadImage's cleanup checks it before unlinking the file.
+  // discriminate. This one MATTERS: the row exists and a retry would mint a
+  // duplicate. The `image.upload` scope therefore lists this code in
+  // committedCodes, and uploadImage's cleanup checks it before unlinking the
+  // file.
   if (!row) {
     throw new InternalError(
       `Image ${data.id} was written but could not be read back. Do not retry.`,

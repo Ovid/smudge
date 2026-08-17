@@ -7,6 +7,9 @@ import { setupTestDb } from "./test-helpers";
 import * as imagesService from "../images/images.service";
 import { logger } from "../logger";
 import { getImagePath, mimeToExt } from "../images/images.paths";
+import { setProjectStore } from "../stores/project-store.injectable";
+import { SqliteProjectStore } from "../stores";
+import * as ImagesRepo from "../images/images.repository";
 
 const TEST_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
@@ -82,6 +85,62 @@ describe("images.service", () => {
       // ...so its bytes must still be there too.
       const dir = path.dirname(getImagePath(projectId, "x", "png"));
       await expect(readdir(dir)).resolves.toHaveLength(1);
+    });
+
+    it("keeps the file when the confirming read THROWS rather than missing (I3)", async () => {
+      // The guard above discriminates on error identity, but the fact that
+      // decides whether the file may be unlinked is "did the INSERT land" —
+      // and outside a transaction it always has by the time the re-read runs.
+      // A re-read that throws (SQLITE_BUSY, an I/O error, or most plausibly
+      // `Knex: Timeout acquiring a connection` — the pool is max:1 and the
+      // connection is released between the two statements) is the same
+      // committed row, and unlinking there is the identical corruption.
+      const projectId = await createTestProject();
+      const boom = new Error("Knex: Timeout acquiring a connection. The pool is probably full.");
+      // Real SQLite for everything except the one confirming SELECT: the
+      // INSERT genuinely commits, exactly as it does in production.
+      const failingReadBack = new Proxy(t.db, {
+        apply(target, thisArg, args: unknown[]) {
+          const qb = Reflect.apply(target as never, thisArg, args) as unknown;
+          if (args[0] !== "images") return qb;
+          return {
+            insert: (data: unknown) => t.db("images").insert(data as never),
+            where: () => ({ first: () => Promise.reject(boom) }),
+          };
+        },
+      }) as unknown as typeof t.db;
+
+      setProjectStore(new SqliteProjectStore(failingReadBack));
+      try {
+        await expect(
+          imagesService.uploadImage(projectId, {
+            buffer: TEST_PNG,
+            originalname: "throwing.png",
+            mimetype: "image/png",
+            size: TEST_PNG.length,
+          } as Parameters<typeof imagesService.uploadImage>[1]),
+        ).rejects.toMatchObject({ code: "READ_AFTER_INSERT_FAILURE" });
+      } finally {
+        setProjectStore(new SqliteProjectStore(t.db));
+      }
+
+      // The row committed...
+      const rows = await t.db("images").where({ project_id: projectId });
+      expect(rows).toHaveLength(1);
+      // ...so its bytes must still be on disk.
+      const dir = path.dirname(getImagePath(projectId, "x", "png"));
+      await expect(readdir(dir)).resolves.toHaveLength(1);
+      // The original failure is preserved for the operator.
+      await expect(
+        ImagesRepo.insert(failingReadBack, {
+          id: "probe",
+          project_id: projectId,
+          filename: "probe.png",
+          mime_type: "image/png",
+          size_bytes: 1,
+          created_at: new Date().toISOString(),
+        }),
+      ).rejects.toMatchObject({ cause: boom });
     });
 
     it("uploads a valid image and returns the record", async () => {

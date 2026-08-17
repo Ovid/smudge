@@ -106,6 +106,11 @@ export async function uploadImage(projectId: string, file: FileInput): Promise<U
     // re-read came back empty. Deleting the file there left a committed image
     // row pointing at nothing — turning a recoverable glitch into permanent
     // corruption of the row it was trying to clean up after.
+    //
+    // I3: this check is sound only because the repository raises that code for
+    // EVERY way its confirming read can fail, not just the empty result — the
+    // "did the INSERT land" fact lives there, next to the INSERT. Do not add a
+    // second error identity here; extend the repository's catch instead.
     if (!(err instanceof AppError && err.code === READ_AFTER_INSERT_FAILURE)) {
       await deleteImageFile(filePath).catch(() => {});
     }
