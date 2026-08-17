@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import { mkdtemp, rm, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -14,6 +14,18 @@ const TEST_PNG = Buffer.from(
 );
 
 const t = setupTestDb();
+
+// S4 (review 2026-08-16): one test plants a trigger that deletes an image row
+// on UPDATE, to drive a read-after-write miss. `setupTestDb` builds ONE
+// `:memory:` DB per file in `beforeAll` and never resets schema between tests,
+// so a trigger that outlives its test silently rewrites every later
+// `UPDATE images` — six deleteImage() tests break, pointing at the wrong place.
+// A `finally` in the planting test is not enough: a timeout or an unhandled
+// rejection skips it. Dropping unconditionally here is the only placement that
+// survives an abandoned test body.
+afterEach(async () => {
+  await t.db.raw("DROP TRIGGER IF EXISTS images_vanish_after_update;");
+});
 
 let tempDir: string;
 let originalDataDir: string | undefined;
@@ -263,6 +275,36 @@ describe("images.service", () => {
         { alt_text: "test" },
       );
       expect(result).toHaveProperty("notFound", true);
+    });
+
+    it("returns notFound when the row disappears between the update and the re-read", async () => {
+      const projectId = await createTestProject();
+      const uploadResult = await imagesService.uploadImage(projectId, {
+        buffer: TEST_PNG,
+        originalname: "test.png",
+        mimetype: "image/png",
+        size: TEST_PNG.length,
+      });
+      const imageId = (uploadResult as { image: { id: string } }).image.id;
+
+      // Drive the re-read-returns-nothing arm from the DB rather than by
+      // spying on a store method: the service's read-after-write may run on
+      // the outer store or on a transaction's txStore, and a trigger fires
+      // for both. Keeps this test shape-independent.
+      await t.db.raw(
+        `CREATE TRIGGER images_vanish_after_update AFTER UPDATE ON images
+         BEGIN DELETE FROM images WHERE id = NEW.id; END;`,
+      );
+      const result = await imagesService.updateImageMetadata(imageId, {
+        alt_text: "A test image",
+      });
+      // S2 (review 2026-08-16): NOT `notFound`. The existence check already
+      // passed and the UPDATE already ran inside this transaction, so "not
+      // found" would tell the client the image never existed when the write
+      // in fact landed. Mirrors chapters.service.updateChapter's
+      // "read_failure" → 500 UPDATE_READ_FAILURE, which the client's
+      // committed-UX machinery understands.
+      expect(result).toHaveProperty("readFailure", true);
     });
   });
 

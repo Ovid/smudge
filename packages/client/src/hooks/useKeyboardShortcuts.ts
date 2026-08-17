@@ -24,7 +24,13 @@ interface KeyboardShortcutDeps {
   setShortcutHelpOpen: React.Dispatch<React.SetStateAction<boolean>>;
   toggleSidebar: () => void;
   handleCreateChapter: () => void;
-  handleSelectChapterWithFlush: (id: string) => Promise<void>;
+  // Resolves true only if `activeChapter` actually became `id`. False covers
+  // both halves: switchToView refused (busy latch / editor lock / failed
+  // flush-save), or the switch was permitted but the chapter never loaded —
+  // GET rejected, request aborted, or superseded by a newer selection (I1).
+  // Either way the user is still on the old chapter, so callers must not
+  // report success (F-13).
+  handleSelectChapterWithFlush: (id: string) => Promise<boolean>;
   setWordCountAnnouncement: React.Dispatch<React.SetStateAction<string>>;
   setNavAnnouncement: React.Dispatch<React.SetStateAction<string>>;
   switchToView: (mode: ViewMode) => Promise<boolean>;
@@ -72,6 +78,16 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
 
   useEffect(() => {
     let navAnnouncementTimer: ReturnType<typeof setTimeout> | null = null;
+    // The nav announcement now resolves after an await (F-13), so it can land
+    // after unmount. Nothing else in this effect is async.
+    let unmounted = false;
+    // S2 (review 2026-08-16): which Ctrl+Shift+Arrow press owns the live region.
+    // Presses overlap by construction (key autorepeat), and press N+1 aborts
+    // press N's in-flight GET synchronously, so press N resolves false FIRST —
+    // while press N+1 is still loading. Without this, that stale refusal speaks
+    // over a navigation that is genuinely in flight. Bump before, check after,
+    // matching CLAUDE.md §Save-pipeline invariant 4.
+    let navEpoch = 0;
 
     function handleKeyDown(e: KeyboardEvent) {
       const ctrl = e.ctrlKey || e.metaKey;
@@ -187,16 +203,49 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
         if (nextIndex < 0 || nextIndex >= chapters.length) return;
         const nextChapter = chapters[nextIndex];
         if (!nextChapter) return;
-        void handleSelectChapterWithFlushRef.current(nextChapter.id).catch(() => {});
-        deps.setNavAnnouncement(STRINGS.sidebar.navigatedToChapter(nextChapter.title));
+        // F-13: announce only once the navigation has actually happened.
+        // handleSelectChapterWithFlush resolves false when switchToView
+        // refused — the busy latch, the editor lock, or a failed flush-save —
+        // and (I1) when the switch was permitted but the chapter GET failed,
+        // aborted, or was superseded. The editor-lock path shows no banner by
+        // design, so announcing unconditionally told a screen-reader user the
+        // one thing they had to go on, and told them the opposite of the truth.
+        // S3: the outcome announcement below waits on flushSave — seconds, if
+        // a save is in retry backoff — and then on a chapter GET. Announce the
+        // keypress now so the user knows it registered; the outcome replaces
+        // this string, whichever way it goes (I1).
         if (navAnnouncementTimer !== null) clearTimeout(navAnnouncementTimer);
-        navAnnouncementTimer = setTimeout(() => deps.setNavAnnouncement(""), 1000);
+        deps.setNavAnnouncement(STRINGS.sidebar.navigatingToChapter(nextChapter.title));
+        const myEpoch = ++navEpoch;
+        const settle = (navigated: boolean) => {
+          if (unmounted || myEpoch !== navEpoch) return;
+          // I1: both outcomes SPEAK. The refusal arm used to clear to "", but a
+          // polite live region announces content additions — emptying it says
+          // nothing, so the pending string above stayed the last thing spoken
+          // for a navigation that was refused. The editor-lock path shows no
+          // banner by design, making this the only correction it can offer.
+          deps.setNavAnnouncement(
+            navigated
+              ? STRINGS.sidebar.navigatedToChapter(nextChapter.title)
+              : STRINGS.sidebar.navigationFailed(nextChapter.title),
+          );
+          if (navAnnouncementTimer !== null) clearTimeout(navAnnouncementTimer);
+          navAnnouncementTimer = setTimeout(() => deps.setNavAnnouncement(""), 1000);
+        };
+        void handleSelectChapterWithFlushRef
+          .current(nextChapter.id)
+          .then(settle)
+          .catch(() => {
+            // Navigation failed outright — same as a refusal.
+            settle(false);
+          });
         return;
       }
     }
 
     document.addEventListener("keydown", handleKeyDown);
     return () => {
+      unmounted = true;
       document.removeEventListener("keydown", handleKeyDown);
       if (navAnnouncementTimer !== null) clearTimeout(navAnnouncementTimer);
     };

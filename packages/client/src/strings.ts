@@ -232,7 +232,23 @@ export const STRINGS = {
     statusLabel: (label: string) => `Chapter status: ${label}`,
     statusChanged: (label: string) => `Chapter status changed to ${label}`,
     resizeHandle: "Resize sidebar",
+    // S3: fires at keypress, replaced by navigatedToChapter on arrival or
+    // navigationFailed on refusal (I1). The
+    // arrival announcement waits on flushSave (which can sit in save-retry
+    // backoff for seconds) plus a chapter GET, and in that window a
+    // screen-reader user would otherwise get nothing — the keypress reads as
+    // ignored.
+    navigatingToChapter: (title: string) => `Navigating to ${title}...`,
     navigatedToChapter: (title: string) => `Navigated to ${title}`,
+    // I1 (review 2026-08-16): the refusal outcome needs its OWN string — it
+    // cannot be a clear back to "". `aria-live="polite"` announces content
+    // additions, so emptying the region says nothing at all, leaving
+    // navigatingToChapter as the last thing spoken for a navigation that never
+    // happened. The editor-lock refusal path shows no banner by design, so this
+    // is the only signal that path has. (The word-count shortcut above works
+    // around the same live-region rule by clearing and re-setting on the next
+    // frame.)
+    navigationFailed: (title: string) => `Could not navigate to ${title}`,
   },
   preview: {
     backToEditor: "Back to Editor",
@@ -403,6 +419,11 @@ export const STRINGS = {
     deleteSuccess: (filename: string) => `Image deleted: ${filename}`,
     saveFailed: "Save failed. Your changes have not been saved.",
     saveFailedNetwork: "Save failed — check your connection and try again.",
+    // S2: distinct from saveFailed because the opposite is true — the server
+    // committed the metadata and only the read-back failed, so "have not been
+    // saved" would be wrong and a retry is not what the user needs.
+    saveCommittedUnreadable:
+      "The image details may have been saved but the server response was unreadable. Refresh the gallery to see the current state before trying again.",
     deleteBlockedLoading: "This image is in use. Loading details...",
     inTrash: "in trash",
     loadFailed: "Failed to load images.",

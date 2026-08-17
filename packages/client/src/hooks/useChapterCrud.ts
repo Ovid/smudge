@@ -421,9 +421,24 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
     ],
   );
 
+  /**
+   * Resolves TRUE only when `activeChapter` actually became `chapterId`.
+   *
+   * I1 (review 2026-08-16): this used to be `Promise<void>`, and
+   * `handleSelectChapterWithFlush` reported success by returning a hardcoded
+   * `true` after awaiting it. Every early exit below leaves the user on the old
+   * chapter, and the catch swallows its error into a banner — so the
+   * Ctrl+Shift+Arrow live region announced "Navigated to <chapter>" on a failed
+   * or superseded load. F-13 removed that lie for `switchToView` refusals; the
+   * load-failure path kept it. The truth is only knowable here, so it is
+   * reported from here rather than re-derived at the call site.
+   */
   const handleSelectChapter = useCallback(
-    async (chapterId: string) => {
-      if (activeChapterRef.current && chapterId === activeChapterRef.current.id) return;
+    async (chapterId: string): Promise<boolean> => {
+      // Already there: nothing moved, so nothing may be announced as having
+      // moved. (Unreachable from Ctrl+Shift+Arrow, which always targets a
+      // different index — this is the sidebar re-click path.)
+      if (activeChapterRef.current && chapterId === activeChapterRef.current.id) return false;
       // Seq bump + abort + backoff-unblock. Before S3 this path only bumped
       // the seq and aborted — if a retry was asleep in backoff, it would
       // sit for up to 8s before the next iteration's seq check fired.
@@ -442,21 +457,23 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
         // for response-staleness gating. Both checks apply.
         const { promise, signal } = selectChapterOp.run((s) => api.chapters.get(chapterId, s));
         const chapter = await promise;
-        if (signal.aborted) return;
-        if (token.isStale()) return; // superseded by a newer selection
+        if (signal.aborted) return false;
+        if (token.isStale()) return false; // superseded by a newer selection
         const cached = getCachedContent(chapterId);
         const effectiveChapter = cached ? { ...chapter, content: cached } : chapter;
         setActiveChapter(effectiveChapter);
         setChapterWordCount(countWords(effectiveChapter.content));
+        return true;
       } catch (err) {
         // I2 (review 2026-05-25): selectChapterOp.run aborts prior
         // requests on supersede and unmount, so ABORTED rejections are
         // an intentional control-flow signal here — silence them
         // before the warn so test output stays clean.
-        if (isAborted(err)) return;
+        if (isAborted(err)) return false;
         clientWarn("Failed to load chapter:", err);
-        if (token.isStale()) return;
+        if (token.isStale()) return false;
         applyMappedError(mapApiError(err, "chapter.load"), { onMessage: setError });
+        return false;
       }
     },
     [

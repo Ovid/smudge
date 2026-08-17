@@ -5,6 +5,15 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import importPlugin from "eslint-plugin-import";
 import prettierConfig from "eslint-config-prettier";
 import globals from "globals";
+import { resolve } from "node:path";
+
+// S5 (review 2026-08-16): `packageDir` entries are resolved with
+// `path.resolve()`, i.e. against `process.cwd()`. With a two-element array
+// `import/no-extraneous-dependencies` reads each manifest with throwAtRead
+// off, so any ESLint run whose cwd is not the repo root silently finds no
+// package.json and reports nothing at all — a false green, not an error.
+// Anchor to this config file's own directory instead.
+const REPO_ROOT = import.meta.dirname;
 
 export default tseslint.config(
   { ignores: ["**/dist/", "**/node_modules/", "**/*.d.ts"] },
@@ -14,12 +23,77 @@ export default tseslint.config(
     plugins: {
       import: importPlugin,
     },
+    settings: {
+      // Both entries are load-bearing for `import/no-cycle` on TypeScript, and
+      // each fails SILENTLY when missing — the rule reports nothing and looks
+      // like a clean bill of health (F-09). Verified by fixture:
+      //   - no resolver:  `import/no-unresolved` fires on a *valid*
+      //     extensionless relative TS import, so the cycle walk never starts.
+      //   - resolver but no `import/parsers`: resolution succeeds, but the
+      //     plugin cannot parse the *imported* .ts file to read its own
+      //     imports, so a real two-file cycle goes undetected.
+      // Only with both does a planted cycle report "Dependency cycle detected."
+      // `eslintImportCycleRule.test.ts` plants exactly that fixture so this
+      // cannot silently regress to a false green.
+      "import/resolver": { typescript: true },
+      "import/parsers": { "@typescript-eslint/parser": [".ts", ".tsx"] },
+    },
     rules: {
       "@typescript-eslint/no-unused-vars": [
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
       "import/first": "error",
+      // S-02 (acyclic module graph) was protected by review alone. Zero cycles
+      // exist today — re-measured after the detection above was made to work.
+      "import/no-cycle": "error",
+    },
+  },
+  // One block per workspace so `packageDir` is [repo root, that workspace]:
+  // root catches shared tooling (eslint, vitest), the workspace catches its
+  // own deps, and a package declared only in a *sibling* workspace still
+  // errors. That cross-workspace precision is the point.
+  //
+  // S1 (review 2026-08-16) — scope, precisely: this rule reports IMPORTS THAT
+  // ARE NOT DECLARED. It never reports the mirror image, a declaration nothing
+  // imports. F-11 was both halves (server declaring `@tiptap/*` it never
+  // imported, client importing an undeclared `@tiptap/core` that resolved only
+  // via hoisting); only the second half is guarded here. A stale declaration
+  // still has to be caught by review — as one was in this pass, `@tiptap/pm` in
+  // `packages/shared`, since removed.
+  // The JSDoc cast is load-bearing: inside `.map()` the object literal gets no
+  // contextual type, so `["error", {...}]` widens to `(string | {...})[]` and
+  // no longer satisfies `RuleEntry`'s tuple. The sibling blocks below are
+  // direct arguments to `tseslint.config()` and infer the tuple for free.
+  ...["shared", "server", "client"].map(
+    (workspace) =>
+      /** @type {import("typescript-eslint").ConfigWithExtends} */ ({
+        files: [`packages/${workspace}/**/*.{ts,tsx}`],
+        rules: {
+          "import/no-extraneous-dependencies": [
+            "error",
+            {
+              packageDir: [REPO_ROOT, resolve(REPO_ROOT, "packages", workspace)],
+              // Production source may not import a devDependency (it would ship
+              // broken); tests and local config may.
+              devDependencies: [
+                "**/__tests__/**",
+                "**/*.test.{ts,tsx}",
+                "**/*.spec.{ts,tsx}",
+                "**/*.config.{ts,mts}",
+              ],
+            },
+          ],
+        },
+      }),
+  ),
+  {
+    files: ["e2e/**/*.ts", "scripts/**/*.{ts,mjs}", "*.config.{ts,js}", "*.config.{mts,mjs}"],
+    rules: {
+      "import/no-extraneous-dependencies": [
+        "error",
+        { packageDir: REPO_ROOT, devDependencies: true },
+      ],
     },
   },
   {

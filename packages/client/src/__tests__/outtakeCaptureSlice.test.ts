@@ -22,7 +22,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { getSchema } from "@tiptap/core";
-import { EditorState, TextSelection } from "prosemirror-state";
+import { EditorState, TextSelection } from "@tiptap/pm/state";
 import { editorExtensions } from "@smudge/shared/editor-extensions";
 
 const schema = getSchema(editorExtensions);

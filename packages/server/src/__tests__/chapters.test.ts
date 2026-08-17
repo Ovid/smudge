@@ -517,4 +517,14 @@ describe("chapter routes reject a malformed :id with 400 (OOSS1)", () => {
     const res = await send();
     expect(res.status).toBe(400);
   });
+
+  // I4 (review 2026-08-16): the boundary between 400 and 404 is SHAPE, not
+  // UUID version. This id has a non-4 version nibble, so it is a well-formed
+  // 32-hex id that simply does not exist — 404, the same as any other absent
+  // chapter. It 400'd before the zod pin, and nothing noticed. See
+  // validateUuidParam.test.ts for the full domain.
+  it("GET with a valid-shape, non-v4 id returns 404, not 400", async () => {
+    const res = await request(t.app).get("/api/chapters/9f8e7d6c-5b4a-9392-8b1c-2d3e4f5a6b7c");
+    expect(res.status).toBe(404);
+  });
 });

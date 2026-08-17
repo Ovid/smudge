@@ -902,8 +902,12 @@ export function EditorPage() {
     openTrash();
   }, [isActionBusy, openTrash, editorMachine]);
 
+  // Returns whether the switch actually happened. Callers that report the
+  // outcome to the user — notably the Ctrl+Shift+Arrow screen-reader
+  // announcement — must gate on this rather than on the call returning
+  // (F-13); every `return false` below leaves the user on the old chapter.
   const handleSelectChapterWithFlush = useCallback(
-    async (chapterId: string) => {
+    async (chapterId: string): Promise<boolean> => {
       // Chapter-select side-effects (seq bump, in-flight save abort, load
       // next chapter) must not run when switchToView refused — otherwise
       // we silently abandon an unsaved chapter while simultaneously
@@ -914,8 +918,12 @@ export function EditorPage() {
       // Sidebar click handler (which voids this promise).
       try {
         const switched = await switchToView("editor");
-        if (!switched) return;
-        await handleSelectChapter(chapterId);
+        if (!switched) return false;
+        // I1 (review 2026-08-16): return handleSelectChapter's own verdict
+        // rather than a hardcoded `true`. It swallows its errors into a banner
+        // and returns early on abort/supersede, so `true` here announced a
+        // navigation that had not happened whenever the chapter GET failed.
+        return await handleSelectChapter(chapterId);
       } catch (err) {
         clientWarn("handleSelectChapterWithFlush failed", err);
         // S2 (agentic-review 2026-05-26): this outer catch is defensive
@@ -929,6 +937,7 @@ export function EditorPage() {
         applyMappedError(mapApiError(err, "chapter.load"), {
           onMessage: setActionError,
         });
+        return false;
       }
     },
     [handleSelectChapter, switchToView, setActionError],

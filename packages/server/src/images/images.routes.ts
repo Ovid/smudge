@@ -4,6 +4,7 @@ import { asyncHandler } from "../asyncHandler";
 import {
   BadRequestError,
   ConflictError,
+  InternalError,
   NotFoundError,
   PayloadTooLargeError,
 } from "../errors/appError";
@@ -132,6 +133,16 @@ export function imagesDirectRouter(): Router {
 
       if ("notFound" in result && result.notFound) {
         throw new NotFoundError("Image not found.");
+      }
+
+      // S2: the write committed but the read-after-write came back empty.
+      // Distinct from 404 so the client's committed-UX path can fire — a 404
+      // would say "this image does not exist" about a row that was updated.
+      if ("readFailure" in result && result.readFailure) {
+        throw new InternalError(
+          "Image was updated but could not be re-read.",
+          "UPDATE_READ_FAILURE",
+        );
       }
 
       if ("validationError" in result && result.validationError) {
