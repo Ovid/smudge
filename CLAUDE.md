@@ -240,9 +240,13 @@ facts dispatched from distinct sites, so do not merge them.
 `MutationResult` carries `committed_but_unreloaded` as the canonical "server
 committed, display unconfirmed" outcome (2xx `BAD_JSON` on replace/restore,
 reload-GET failure, race-only supersession); it routes to the persistent lock
-banner — except the find-replace stale-chapter-drift sub-case
-(`useFindReplaceController`), which re-enables the now-unrelated editor with a
-dismissible notice. Invariant 2's `setEditable(false)` is now expressed as
+banner — except the stale-chapter-drift sub-case, which re-enables the
+now-unrelated editor with a dismissible, chapter-attributed notice. Both
+controllers implement it (`useFindReplaceController`, `useSnapshotController`);
+a third consumer of `committed_but_unreloaded` must too, because that outcome
+leaves the machine at `editable:false` and the hook dispatches no terminal
+event — skipping the lock without re-asserting strands the editor read-only
+with nothing on screen to explain it. Invariant 2's `setEditable(false)` is now expressed as
 machine intent.
 
 **Machine intent reaches TipTap by two routes, and both must stay wired.**

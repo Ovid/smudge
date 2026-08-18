@@ -474,6 +474,14 @@ export const STRINGS = {
       "Unable to save pending changes. Try again once your connection recovers before restoring.",
     restoreSucceededReloadFailed:
       "Snapshot restored, but reloading the chapter failed. Refresh the page before editing — editing now would overwrite the restore.",
+    // OOSS1 (agentic review 2026-08-18): chapter-attributed, dismissible twin
+    // of the banner above, for when the user navigated away during the restore
+    // round trip. Unattributed, the copy reads as a claim about the chapter now
+    // on screen — which the restore never touched — and the non-dismissible
+    // banner would disable it. Mirrors restoreResponseUnreadableOnOtherChapter
+    // and the find-replace stale-drift arm.
+    restoreSucceededReloadFailedOnOtherChapter: (chapterTitle: string) =>
+      `Snapshot restored into "${chapterTitle}", but reloading that chapter failed. Switch back to it and refresh the page before editing it — editing it now would overwrite the restore.`,
     // F-05: the restore succeeded but did NOT return byte-exact content —
     // images deleted since the snapshot was taken cannot be brought back, so
     // their placeholders were removed rather than failing the whole restore.

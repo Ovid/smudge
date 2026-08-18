@@ -77,6 +77,8 @@ export interface SnapshotControllerDeps {
   isActionBusy: () => boolean;
   actionBusyRef: MutableRefObject<boolean>;
   applyReloadFailedLock: (bannerMessage: string) => void;
+  /** Dispatches MUTATION_SETTLED_SUPERSEDED — see the OOSS1 drift arm. */
+  reassertEditorEditable: () => void;
   setActionError: Dispatch<SetStateAction<string | null>>;
   setActionInfo: Dispatch<SetStateAction<string | null>>;
 }
@@ -99,6 +101,7 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
     isActionBusy,
     actionBusyRef,
     applyReloadFailedLock,
+    reassertEditorEditable,
     setActionError,
     setActionInfo,
   } = deps;
@@ -264,6 +267,32 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
       // follow-up GET could not confirm what is on screen. Raise the persistent
       // lock banner, clear the now-stale cache, and refresh the snapshot list.
       if (result.stage === "committed_but_unreloaded") {
+        // OOSS1 (agentic review 2026-08-18): guard on chapter drift before
+        // locking, as both siblings already do (useFindReplaceController's
+        // `stale`, and the 2xx-BAD_JSON arm below). The lock banner is
+        // persistent and non-dismissible, so pinning it after the user
+        // navigated away disables a chapter the restore never touched.
+        //
+        // The re-assert is not optional cosmetics: committed_but_unreloaded
+        // leaves the machine at editable:false (useEditorMutation's finally
+        // dispatches no terminal event on that path), so skipping the lock
+        // without it would strand the unrelated editor read-only with only a
+        // dismissible notice to explain it — recoverable solely by another
+        // chapter switch or a refresh. MUTATION_SETTLED_SUPERSEDED is the same
+        // terminal state the hook dispatches when it detects supersession
+        // itself; the drifted chapter was re-fetched by handleSelectChapter
+        // after the server commit, so its on-screen content is safe to edit.
+        const currentId = getActiveChapter()?.id;
+        if (currentId !== undefined && currentId !== activeChapter.id) {
+          reassertEditorEditable();
+          setActionError(
+            STRINGS.snapshots.restoreSucceededReloadFailedOnOtherChapter(activeChapter.title),
+          );
+          clearCachedContent(activeChapter.id);
+          snapshotPanelRef.current?.refreshSnapshots();
+          refreshSnapshotCount();
+          return;
+        }
         // Surface a persistent, non-dismissible lock banner so the
         // user-visible signal of the read-only state cannot be hidden (I1).
         // applyReloadFailedLock (I6) sets the banner AND safeSetEditable
@@ -426,6 +455,7 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
     refreshSnapshotCount,
     getActiveChapter,
     applyReloadFailedLock,
+    reassertEditorEditable,
     actionBusyRef,
     isEditorLocked,
   ]);

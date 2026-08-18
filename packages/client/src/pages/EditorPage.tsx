@@ -377,6 +377,7 @@ export function EditorPage() {
     isActionBusy,
     actionBusyRef,
     applyReloadFailedLock,
+    reassertEditorEditable,
     setActionError,
     setActionInfo,
   });
