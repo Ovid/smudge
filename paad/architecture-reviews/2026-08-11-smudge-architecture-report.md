@@ -406,7 +406,7 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
 - **Status note (the guard is load-bearing, not redundant):** verified by mutation — with the branch neutered to `if (false)`, `runRestore` **resolves successfully** on the forged archive rather than failing some other way. Nothing else in the pipeline catches it, so without this guard the archive would extract at twice its declared size, silently. The new test asserts the guard's own message (`/extraction exceeded declared size/`) rather than merely "it threw", because asserting only that it rejects is the weakness that let the branch go uncovered inside a 76-case suite.
 - **Status caveat:** the test depends on JSZip resolving a duplicated path to the real entry on each lookup. A future JSZip that rejects duplicate central-directory names outright would break this test — loudly, which is acceptable — and would mean re-deriving a reachable shape. T-1 was deliberately left untouched: it still concedes "either outcome" and so still cannot report *which* defense fired. Tightening it was offered and declined this session as a separate change.
 - **Status date:** 2026-08-18 07:04 UTC
-- **Status commit:** d4a995a2
+- **Status commit:** 67dae69f
 
 ### [F-15] Auto-backup rotation failure is swallowed, defeating a deliberate re-throw that has its own test
 - **Category:** 20 (Weak error handling strategy)
