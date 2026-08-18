@@ -18,7 +18,11 @@ import { useReducer, useRef, useCallback, useMemo, type Dispatch } from "react";
  * callback check), add the field back then — not before.
  */
 export type EditorMutationState = {
-  /** Intent; a sync-effect in EditorPage pushes this into TipTap (re-enable). */
+  /**
+   * Intent. Two routes into TipTap: a sync-effect in EditorPage pushes it into
+   * a MOUNTED editor (re-enable), and `Editor`'s `editable` prop applies it at
+   * construction so a mount under a lock comes up read-only (F-36).
+   */
   editable: boolean;
   /** Persistent read-only lock banner; null = unlocked. */
   lock: { message: string } | null;
@@ -67,9 +71,11 @@ export function editorMutationReducer(
       // Fresh server content is on screen.
       return { editable: true, lock: null };
     case "EDITOR_REMOUNTED":
-      // Chapter switch or post-reload remount: the prior lock no longer applies
-      // and TipTap mounts editable=true. Mirrors today's
-      // [activeChapter?.id, chapterReloadKey] clear-effect.
+      // Chapter switch or post-reload remount: the prior lock no longer
+      // applies. Since F-36 the mount inherits this `editable` through
+      // `Editor`'s prop rather than defaulting to true, so returning
+      // editable:true here is what makes the fresh editor writable. Mirrors
+      // today's [activeChapter?.id, chapterReloadKey] clear-effect.
       return { editable: true, lock: null };
 
     case "COMMITTED_UNRELOADED":

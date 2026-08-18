@@ -596,9 +596,12 @@ export function EditorPage() {
 
   // Remount (chapter switch or chapterReloadKey bump) clears the lock and
   // re-asserts editable — replaces the old lock-message-clearing effect.
-  // Chapter switch creates a new Editor with default editable=true, and a
-  // chapterReloadKey bump remounts with fresh server content; in both cases
-  // the read-only state from the failed reload no longer applies.
+  // Chapter switch creates a new Editor and a chapterReloadKey bump remounts
+  // with fresh server content; in both cases the read-only state from the
+  // failed reload no longer applies. Since F-36 a mount inherits machine
+  // intent via Editor's `editable` prop rather than defaulting to true, so
+  // this dispatch is what makes the new editor writable — not a TipTap
+  // default it merely agrees with.
   useEffect(() => {
     editorMachine.dispatch({ type: "EDITOR_REMOUNTED" });
     // Key ONLY on the remount triggers + the stable useReducer dispatch.
