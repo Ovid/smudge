@@ -454,11 +454,24 @@ plausible by accident, the tool is a forcing pause
 interrupts rather than forbids. Where it is plausible on purpose, the tool is a
 record like this one, because only a document can carry the *why*.
 
-**Pre-existing instance worth revisiting (not fixed here):**
+**Pre-existing instance, fixed 2026-08-18 (commit `71bba74a`):**
 `packages/server/src/__tests__/chapters.test.ts` — "ignores target_word_count
-(column removed)" PATCHes `{ title }` without ever sending `target_word_count`,
-then asserts the response lacks it. It cannot fail except by someone re-adding
-the column, and its name claims an input-handling behaviour it does not
-exercise. The `migration-004.test.ts` schema-shape assertions are a different
-case and fine: migrations are cumulative and re-run on every new migration, so
-a live mechanism can genuinely re-add a column.
+(column removed)" PATCHed `{ title }` without ever sending
+`target_word_count`, then asserted the response lacked it. It could not fail
+except by someone re-adding the column, and its name claimed an input-handling
+behaviour it did not exercise. Replaced by two cases covering what was actually
+untested: `UpdateChapterSchema` is `.partial()` without `.strict()`, so Zod
+strips unknown keys — an unknown-only body therefore 400s (rather than
+reporting a no-op success), and a mixed body still applies its known field.
+
+The replacement carries the check the original lacked: **each case was verified
+to fail under the change it guards** (`.passthrough()` breaks the first,
+`.strict()` the second). That verification is worth doing whenever a test's
+subject is an absence — it is the difference between a guard and a tombstone,
+and it is cheap. It also caught two assertions in the first draft that survived
+the `.passthrough()` run, i.e. that had reproduced the original defect; they
+were dropped.
+
+The `migration-004.test.ts` schema-shape assertions are a different case and
+fine: migrations are cumulative and re-run on every new migration, so a live
+mechanism can genuinely re-add a column.
