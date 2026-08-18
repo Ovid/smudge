@@ -494,6 +494,16 @@ export function Editor({
         },
       };
     }
+    // OOSI2 (review 2026-08-18): drop the handle on unmount / editor swap,
+    // mirroring editorInstanceRef above. Without this the ref outlived the
+    // editor, so safeSetEditable took its non-null path, called setEditable
+    // on a destroyed instance (a no-op at the guard above), and returned
+    // `true` — the opposite of what its contract documents. Registered after
+    // the unmount-save effect (line ~262) so React's registration-order
+    // cleanup still runs that save against a live ref (S9).
+    return () => {
+      if (editorRef) editorRef.current = null;
+    };
   }, [editor, editorRef]);
 
   useEffect(() => {
