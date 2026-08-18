@@ -36,6 +36,35 @@ for capturing the _choice_ once I already understand it; the explaining happens
 in the message above it. A question whose reasoning is only visible inside the
 picker widget has not been asked.
 
+## Explaining Things to Me
+
+You finish a task holding the whole codebase in working memory. I don't
+have that, and I often can't tell whether I'm confused or you're being
+unclear. Before sending, check:
+
+1. **Name it before you abbreviate it.** First mention in a message is
+   "the restore bug (OOSI1)" — never a bare `OOSI1`, `F-36`, `I2`.
+   Same for hooks, files, and any term from a report I'd have to open.
+2. **One inference per sentence.** If a sentence carries two causal
+   steps ("X, so Y, which means Z"), split it. The step you dropped is
+   usually the one I needed.
+3. **No jargon without its referent.** "the lock", "the machine",
+   "drift", "the seam", "the arm" — say what it locks, what it models,
+   what drifted.
+4. **The thing before the judgment.** "This code never checks whether
+   the user switched chapters" comes before "this is the asymmetry
+   that matters."
+
+Setup sentences are part of the answer, not padding. If I have to ask
+"what does that mean?", the message failed regardless of length.
+
+**This overrides terseness modes for chat prose.** Ponytail (and any
+similar "shortest explanation wins" instruction) governs what you
+BUILD — the code, the diff, the number of files. It does not govern
+how you explain finished work to me. Compressing a four-step causal
+chain into one clause is not laziness, it is a message I have to
+decompress by hand.
+
 ## Ignore `.devcontainer/`
 
 `.devcontainer/` is **third-party content** managed out-of-band
