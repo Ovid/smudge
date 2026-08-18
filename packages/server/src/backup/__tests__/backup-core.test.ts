@@ -1084,6 +1084,54 @@ it("T-2 (F-14): a duplicate central-directory entry that under-declares the tota
   ).rejects.toThrow(/extraction exceeded declared size/);
 });
 
+// ── OOSI1: central-directory names vs JSZip's local-header key space ─────────
+
+it("OOSI1: an entry named in the central directory but not extractable fails loudly", async () => {
+  // runRestore validates `names` read from the CENTRAL DIRECTORY but extracts
+  // with `zip.file(name)`, and JSZip keys its map by the LOCAL header name
+  // (zipEntry.js readLocalPart overwrites fileName; readCentralPart skips it).
+  // When the two key spaces disagree the entry was silently skipped by
+  // `if (!file) continue` — so patching smudge.db's LOCAL name to an equal-
+  // length string (no offset shift) passed the presence check, passed zip-slip
+  // and the bomb caps, moved the live data dir aside, wrote nothing, and
+  // RESOLVED. The operator was told the restore succeeded and left looking at
+  // an empty data dir.
+  const { dataDir, dbPath } = await makeFixture();
+  const backupsDir = join(dataDir, "backups");
+  const { outFile: archive } = await runBackup({
+    dataDir,
+    dbPath,
+    backupsDir,
+    mode: "manual",
+    now: () => new Date(2026, 4, 26, 18, 0, 0),
+  });
+
+  const forged = Buffer.from(await readFile(archive));
+  const entry = [...walkCentralDirectory(forged)].find((e) => e.path === "smudge.db");
+  expect(entry).toBeDefined();
+  // Central-directory layout: sizeFieldOffset is record+24, so the local
+  // header offset field sits 18 bytes further on. Local header is 30 bytes
+  // before its name.
+  const localHeaderOffset = forged.readUInt32LE(entry!.sizeFieldOffset + 18);
+  const nameOffset = localHeaderOffset + 30;
+  expect(forged.subarray(nameOffset, nameOffset + 9).toString("utf8")).toBe("smudge.db");
+  forged.write("smudge.dc", nameOffset, "utf8");
+
+  const forgedPath = join(backupsDir, "smudge-localname.zip");
+  await writeFile(forgedPath, forged);
+
+  await expect(
+    runRestore({
+      archivePath: forgedPath,
+      dataDir,
+      confirmToken: basename(forgedPath),
+      probePort: async () => false,
+      freeBytes: async () => 10 * 1024 * 1024 * 1024,
+      now: () => new Date(2026, 4, 26, 18, 1, 0),
+    }),
+  ).rejects.toThrow(/declared in the central directory but not extractable/);
+});
+
 // ── I2: SMUDGE_BACKUP_KEEP resolution ────────────────────────────────────────
 
 describe("resolveKeep", () => {

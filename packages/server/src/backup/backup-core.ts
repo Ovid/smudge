@@ -282,7 +282,23 @@ export async function runRestore(
     const zip = await JSZip.loadAsync(buf);
     for (const name of names) {
       const file = zip.file(name);
-      if (!file) continue;
+      if (!file) {
+        // `names` comes from the CENTRAL DIRECTORY; JSZip keys its map by each
+        // entry's LOCAL header name (zipEntry.js readLocalPart overwrites
+        // fileName, readCentralPart deliberately skips it). Directory entries
+        // are the honest miss — runBackup's JSZip auto-creates `images/` and a
+        // folder per project, and zip.file() returns null for every one — so a
+        // blanket throw here would break every restore.
+        //
+        // A non-directory miss means the two key spaces disagree, which only
+        // happens in a tampered or corrupt archive. Skipping it silently
+        // extracted nothing, resolved successfully, and left the operator
+        // staring at an empty data dir believing the restore worked (OOSI1).
+        // Thrown inside the existing try so RestorePartialError attaches the
+        // move-aside path the operator recovers from.
+        if (name.endsWith("/")) continue;
+        throw new Error(`archive entry declared in the central directory but not extractable: ${name}`);
+      }
       // NOTE: file.async("nodebuffer") decompresses the full entry into memory here —
       // a single entry is fully in RAM before being written. The byte-budget below
       // bounds DISK usage (cumulative write), not RAM (the declared-size cap #1 bounds

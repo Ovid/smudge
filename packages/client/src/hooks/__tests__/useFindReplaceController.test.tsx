@@ -241,7 +241,17 @@ describe("useFindReplaceController — finalizeReplaceSuccess reloadFailed branc
   // These two pin the machine's RESULTING STATE instead, through the real
   // reducer, wired the way EditorPage wires it (applyReloadFailedLock →
   // COMMITTED_UNRELOADED, reassertEditorEditable → MUTATION_SETTLED_SUPERSEDED).
-  // Whoever dispatches, these end states must hold.
+  //
+  // Scope, stated honestly (S3, review 2026-08-18): this is NOT
+  // dispatcher-agnostic. `mutation` here is a stub that dispatches nothing and
+  // withRealMachine patches only the two injected deps, so a seam-level fix
+  // that moved the dispatch into useEditorMutation would redden both of these
+  // while production stayed correct. Treat that redness as a prompt to
+  // re-verify the end state under the new division of labour — not as proof of
+  // a regression. What they add over
+  // `editorMutationReducer(seed, <event>)` (already pinned in
+  // useEditorMutationMachine.test.tsx) is that the CONTROLLER picks the right
+  // event for the drift/no-drift split, and the right copy with it.
   function withRealMachine(deps: FindReplaceControllerDeps) {
     // Precondition: what useEditorMutation leaves behind on the committed path
     // — MUTATION_STARTED applied (editable:false) and NO terminal event.
