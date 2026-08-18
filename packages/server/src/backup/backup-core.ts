@@ -297,7 +297,9 @@ export async function runRestore(
         // Thrown inside the existing try so RestorePartialError attaches the
         // move-aside path the operator recovers from.
         if (name.endsWith("/")) continue;
-        throw new Error(`archive entry declared in the central directory but not extractable: ${name}`);
+        throw new Error(
+          `archive entry declared in the central directory but not extractable: ${name}`,
+        );
       }
       // NOTE: file.async("nodebuffer") decompresses the full entry into memory here —
       // a single entry is fully in RAM before being written. The byte-budget below
