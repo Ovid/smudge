@@ -21,8 +21,9 @@
 > | `a3d55ca9` (F-36 fix) | `464b80f7` |
 > | `7c81b4d1` (.gitignore) | `a44e7284` |
 >
-> Pre-rewrite history is preserved at `backup/pre-reword-2026-08-18` until this
-> branch lands.
+> The pre-rewrite history has since been deleted, so the left-hand column no
+> longer resolves in this repository. This table is the only remaining
+> translation between the two.
 
 ## Executive Summary
 
