@@ -2530,6 +2530,108 @@ describe("EditorPage snapshot panel", () => {
     ).toBe("true");
   });
 
+  it("locks editor when a restore committed but the confirming reload failed (F-07 safety net)", async () => {
+    // F-07 safety net. Sibling of the C2 BAD_JSON test above, but via the
+    // OTHER route into stage:"committed_but_unreloaded": the restore POST
+    // succeeds and it is reloadActiveChapter's GET that fails. That route is
+    // the one useEditorMutation's `finally` deliberately leaves without a
+    // terminal dispatch (`if (reloadFailed) { /* no-op */ }`), handing the
+    // completion to useSnapshotController.
+    //
+    // Until now that hand-off was pinned only by a SPY on the injected
+    // applyReloadFailedLock dep (useSnapshotController.test.tsx). A change that
+    // moves the dispatch to the seam would legitimately rewrite that spy
+    // assertion — and nothing would notice if the editor were left read-only
+    // with NO banner, which is exactly the stranded state F-07 describes. This
+    // test asserts the USER-VISIBLE end state instead, so it holds regardless
+    // of which layer raises COMMITTED_UNRELOADED.
+    const warn = expectConsole("warn");
+    vi.mocked(api.snapshots.list).mockResolvedValue([
+      {
+        id: "snap-1",
+        chapter_id: "ch-1",
+        label: "v1",
+        word_count: 5,
+        is_auto: false,
+        created_at: "2026-04-17T10:00:00Z",
+      },
+    ]);
+    vi.mocked(api.snapshots.get).mockResolvedValue({
+      id: "snap-1",
+      chapter_id: "ch-1",
+      label: "v1",
+      content: JSON.stringify({ type: "doc", content: [{ type: "paragraph" }] }),
+      word_count: 5,
+      is_auto: false,
+      created_at: "2026-04-17T10:00:00Z",
+    });
+    // The restore itself COMMITS on the server...
+    (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
+      .fn()
+      .mockResolvedValue({ status: "ok" });
+    // ...and only the confirming re-read fails. Call-routed rather than a
+    // mockResolvedValueOnce chain (writing-tests §1: once-implementations
+    // survive vi.clearAllMocks and desync later tests in this file).
+    let chapterGetCalls = 0;
+    vi.mocked(api.chapters.get).mockImplementation(async () => {
+      chapterGetCalls += 1;
+      if (chapterGetCalls === 1) return mockChapter;
+      throw new Error("reload failed");
+    });
+
+    renderEditorPage();
+    await waitFor(
+      () => {
+        expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+      },
+      { timeout: 3000 },
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "View" }));
+    await waitFor(
+      () => {
+        expect(api.snapshots.get).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
+      },
+      { timeout: 3000 },
+    );
+
+    const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
+    await userEvent.click(restoreButtons[0]!);
+    const dialog = await screen.findByRole("alertdialog", { name: "Restore" });
+    const confirmButton = Array.from(dialog.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Restore",
+    );
+    await userEvent.click(confirmButton!);
+
+    // The restore-specific copy — NOT a generic default. If a seam-level fix
+    // ever dispatches COMMITTED_UNRELOADED with hook-owned copy, this is the
+    // assertion that catches the writer being told the wrong thing.
+    expect(
+      await screen.findByText(STRINGS.snapshots.restoreSucceededReloadFailed),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: STRINGS.editor.refreshButton })).toBeInTheDocument();
+
+    // Read-only asserted on the LIVE editor, as the replace twin (I1) does.
+    // Note this diverges from the C2 BAD_JSON test above: that path keeps the
+    // SnapshotBanner up so no editable editor is mounted at all, whereas the
+    // reload-failure path exits snapshot view and mounts the editor read-only.
+    // Both end at the same machine state; only the surface differs.
+    // NOTE (F-07 session, 2026-08-18): the live editor's contenteditable is
+    // deliberately NOT asserted here yet — it is currently "true" under this
+    // lock banner, which is a defect under discussion, not settled behaviour.
+    // See the Safety Net Report for this session.
+
+    // Never re-enabled on a later tick.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText(STRINGS.snapshots.restoreSucceededReloadFailed)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: STRINGS.editor.refreshButton })).toBeInTheDocument();
+
+    warn.calledWith("Failed to reload chapter:", expect.any(Error));
+  });
+
   it("surfaces generic restoreFailed copy and exits snapshot view on a generic 500 restore error", async () => {
     // Phase 4b.3 commit 3 migrated the restore failure branches off the
     // old RestoreFailureReason enum onto mapApiError("snapshot.restore").

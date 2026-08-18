@@ -12,6 +12,7 @@ import type { useSnapshotState } from "../useSnapshotState";
 import { ApiRequestError, api } from "../../api/client";
 import { clearCachedContent, clearAllCachedContent } from "../useContentCache";
 import { STRINGS } from "../../strings";
+import { editorMutationReducer, type EditorMutationState } from "../useEditorMutationMachine";
 
 // OOSI1 (agentic-review 2026-05-30): unit-level regression for the
 // finalizeReplaceSuccess `reloadFailed && stale` branch. Reproducing the
@@ -224,6 +225,69 @@ describe("useFindReplaceController — finalizeReplaceSuccess reloadFailed branc
     expect(setActionError).not.toHaveBeenCalledWith(
       STRINGS.findReplace.replaceSucceededReloadFailed,
     );
+  });
+
+  // ── F-07 safety net: END STATE, not call-shape ──────────────────────────
+  //
+  // The two tests above assert that the controller CALLS the injected
+  // applyReloadFailedLock / reassertEditorEditable deps. That pins the current
+  // division of labour, which is exactly what F-07 puts in question: today
+  // useEditorMutation's `finally` dispatches nothing on the committed path and
+  // the consumer owns COMMITTED_UNRELOADED. Any fix that moves that dispatch to
+  // the seam would legitimately rewrite those spy assertions — and a rewrite
+  // that got the stale case wrong would strand an unrelated chapter's editor
+  // read-only again (the OOSI1 defect), with no test left to notice.
+  //
+  // These two pin the machine's RESULTING STATE instead, through the real
+  // reducer, wired the way EditorPage wires it (applyReloadFailedLock →
+  // COMMITTED_UNRELOADED, reassertEditorEditable → MUTATION_SETTLED_SUPERSEDED).
+  // Whoever dispatches, these end states must hold.
+  function withRealMachine(deps: FindReplaceControllerDeps) {
+    // Precondition: what useEditorMutation leaves behind on the committed path
+    // — MUTATION_STARTED applied (editable:false) and NO terminal event.
+    let state: EditorMutationState = { editable: false, lock: null };
+    const patched: FindReplaceControllerDeps = {
+      ...deps,
+      applyReloadFailedLock: (message: string) => {
+        state = editorMutationReducer(state, { type: "COMMITTED_UNRELOADED", message });
+      },
+      reassertEditorEditable: () => {
+        state = editorMutationReducer(state, { type: "MUTATION_SETTLED_SUPERSEDED" });
+      },
+    };
+    return { deps: patched, getState: () => state };
+  }
+
+  it("leaves the machine editable and unlocked when the replace target drifted (end state)", async () => {
+    const built = buildDeps({ runResult: COMMITTED_UNRELOADED, activeChapterId: "ch-2" });
+    const { deps, getState } = withRealMachine(built.deps);
+
+    const { result } = renderHook(() => useFindReplaceController(deps));
+    await act(async () => {
+      await result.current.executeReplace(FROZEN_CHAPTER_REPLACE);
+    });
+
+    // The now-unrelated chapter must be typeable again, with no banner pinned
+    // to it. A committed-path regression that dispatched nothing at all would
+    // leave editable:false here and this goes red.
+    expect(getState()).toEqual({ editable: true, lock: null });
+  });
+
+  it("leaves the machine locked with replace copy when the target is still active (end state)", async () => {
+    const built = buildDeps({ runResult: COMMITTED_UNRELOADED, activeChapterId: "ch-1" });
+    const { deps, getState } = withRealMachine(built.deps);
+
+    const { result } = renderHook(() => useFindReplaceController(deps));
+    await act(async () => {
+      await result.current.executeReplace(FROZEN_CHAPTER_REPLACE);
+    });
+
+    // Read-only AND banner, as one state. The copy is asserted because a
+    // seam-level fix could dispatch hook-owned generic copy and still lock.
+    expect(getState()).toEqual({
+      editable: false,
+      lock: { message: STRINGS.findReplace.replaceSucceededReloadFailed },
+    });
   });
 });
 
