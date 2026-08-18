@@ -904,6 +904,12 @@ newest-first list of `OuttakeCard`. Errors route through
 `mapApiError(err, "outtake.list")` → `applyMappedError`. Prepends on local
 create; removes on delete.
 
+> **Superseded 2026-08-18 — the blank-create form was removed entirely.**
+> Everything in this task about the textarea, `textToDoc`, the `draft` /
+> `onDraftChange` props and the create POST is historical: do NOT rebuild it
+> from this text. The panel's only producer is the toolbar capture. Rationale in
+> `docs/roadmap-decisions/2026-07-19-phase-4c-2-scratchpad-outtakes.md`.
+
 **"New outtake" textarea → TipTap doc (alignment #3).** A `<textarea>` yields a
 plain string, but `CreateOuttakeSchema.content` requires a valid doc. Wrap lines
 into paragraph nodes before POST:

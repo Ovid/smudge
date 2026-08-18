@@ -17,15 +17,13 @@ import { STRINGS } from "../strings";
 // skipped it.
 //
 // This hook is deliberately named for the ONE flow it owns, not for outtakes
-// generally. Two outtake-shaped things stay in EditorPage on purpose and are
+// generally. One outtake-shaped thing stays in EditorPage on purpose and is
 // commented there:
 //
 //   * handleInsertOuttake — shares guardInsertAtCursor with handleInsertImage.
 //     That pairing is a reviewed fix (I2/S3/S4, commit 714a9af3) for two insert
 //     paths whose guard sets had drifted apart twice; splitting it here would
 //     undo it.
-//   * outtakeDraft — the unsent blank-note text, which belongs to the panel's
-//     form, not to capture.
 //
 // WHY THIS ONE NEEDS NO BUSY/LOCK DEPS, and why its sibling will. Capture never
 // writes editor content — it reads state.selection and POSTs a copy — so

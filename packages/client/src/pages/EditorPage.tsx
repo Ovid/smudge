@@ -466,28 +466,11 @@ export function EditorPage() {
   const [galleryExternalRefreshKey, setGalleryExternalRefreshKey] = useState(0);
   const [toolbarEditor, setToolbarEditor] = useState<TipTapEditor | null>(null);
 
-  // F-04: the capture cluster (this state, its abortable op, its re-entrancy
-  // latch and the handler) lives in useOuttakeCapture below. The draft state
-  // that follows stays here deliberately — see its own comment.
-  //
-  // I6 (agentic-review 2026-08-05): the blank-note draft lives HERE, not in
-  // OuttakesPanel. ReferencePanel renders only the active tab and
-  // EditorMainContent renders the panel only while open, so an ordinary Ctrl+.
-  // or one arrow key in the tablist unmounted the panel and took the writer's
-  // unsent text with it — no confirm, no warning, and no server copy, since the
-  // POST never fired. This page outlives both. `null` means the form is closed;
-  // "" means it is open and empty, so one value carries both bits.
-  //
-  // It also fixes the sharper case: handleCreate's POST deliberately carries no
-  // AbortSignal, so a failure settling after the panel unmounted had nowhere to
-  // put the text back. The setter it calls now belongs to a live component.
-  //
-  // F-04: not moved into useOuttakeCapture. Lifetime is not the reason — a hook
-  // called from this body has this component's lifetime exactly, so the
-  // requirement above ("outlives OuttakesPanel") would still hold there. It
-  // stays because it belongs to the panel's compose form, not to capture, and
-  // useOuttakeCapture is scoped to the one flow it names.
-  const [outtakeDraft, setOuttakeDraft] = useState<string | null>(null);
+  // F-04: the capture cluster (its state, abortable op, re-entrancy latch and
+  // handler) lives in useOuttakeCapture below. It is now the only producer of
+  // outtakes — the panel's blank-note compose form was removed, so the drawer
+  // holds text moved out of the manuscript and nothing composed directly into
+  // it (design §3 decision 3, "a drawer, not a second editor").
 
   // S3 + S4 (review 2026-07-26): ONE guard for the two insert-at-cursor entry
   // points. I2 established that inserting an image and inserting an outtake are
@@ -1222,8 +1205,6 @@ export function EditorPage() {
         onInsertOuttake={handleInsertOuttake}
         capturedOuttake={capturedOuttake}
         outtakesExternalRefreshKey={outtakesExternalRefreshKey}
-        outtakeDraft={outtakeDraft}
-        onOuttakeDraftChange={setOuttakeDraft}
         snapshotPanelOpen={snapshotPanelOpen}
         onCloseSnapshotPanel={() => setSnapshotPanelOpen(false)}
         snapshotPanelRef={snapshotPanelRef}

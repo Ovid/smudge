@@ -35,6 +35,13 @@ invariants).
 - **Non-destructive capture:** "Send selection to outtakes" (a _copy_ of the
   editor selection — the chapter is untouched) and manual create (plain
   textarea).
+  > **Superseded 2026-08-18: manual create was removed.** It is the only item in
+  > this scope list with no entry in §3 "Design Decisions", because it was never
+  > argued for — the CRUD surface had a POST, so the panel got a create button —
+  > and it contradicts §3 decision 3 ("the panel is not an editor"). The drawer
+  > now has one producer, the toolbar capture. See
+  > `docs/roadmap-decisions/2026-07-19-phase-4c-2-scratchpad-outtakes.md`
+  > § "Blank-outtake compose form removed".
 - **Insert back into the editor:** insert an outtake's content at the cursor
   (a normal edit, autosaved).
 

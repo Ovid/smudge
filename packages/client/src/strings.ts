@@ -5,6 +5,11 @@ import {
   MAX_IMAGE_UPLOAD_LABEL,
 } from "@smudge/shared";
 
+// The outtakes drawer has exactly one way in — the toolbar action — so its
+// label appears both on the button and in the empty state that tells a writer
+// where to find it. Named once so the two cannot drift apart.
+const SEND_SELECTION_TO_OUTTAKES = "Send selection to outtakes";
+
 export const STRINGS = {
   app: {
     name: "Smudge",
@@ -550,9 +555,13 @@ export const STRINGS = {
   },
   outtakes: {
     tab: "Outtakes",
-    empty: "No outtakes yet. Stash cut text here to find it later.",
+    // The drawer has no compose form: text arrives by selecting it in the editor
+    // and using the toolbar action. The old copy said "stash cut text here",
+    // which pointed at a textarea that no longer exists — an empty state naming
+    // no reachable gesture reads as broken.
+    empty: `No outtakes yet. Select text in a chapter and use “${SEND_SELECTION_TO_OUTTAKES}” to stash it here.`,
     noMatches: "No outtakes match your filter.",
-    newFromSelection: "Send selection to outtakes",
+    newFromSelection: SEND_SELECTION_TO_OUTTAKES,
     selectionRequired: "Select some text first, then send it to outtakes.",
     selectionHasNoText: "That selection has no text to stash — images aren't kept in outtakes.",
     // S3 (agentic-review 2026-08-04): the toolbar button lives OUTSIDE the
@@ -576,15 +585,6 @@ export const STRINGS = {
     // and no retry path, leaving the field asserting a label the server never
     // received.
     renameInFlight: "Still renaming that outtake — wait, then click away again to save.",
-    newBlank: "New outtake",
-    createdElsewhere:
-      "Saved to the project you were in when you clicked Save — it isn't in this project's outtakes. Your text is still below.",
-    // I3 (agentic-review 2026-08-04): the same mid-POST project switch on the
-    // failure arms. Covers both the definite failure and the possibly-committed
-    // one: either way the note is not in THIS project, the other project is
-    // where to look, and the retained draft now targets the project on screen.
-    createFailedElsewhere:
-      "That note didn't land in this project — it was aimed at the project you were in when you clicked Save. Check there before retrying; saving now files your text under this project.",
     filterPlaceholder: "Filter outtakes…",
     untitled: "Untitled outtake",
     fromChapterPrefix: "From ",
@@ -600,9 +600,6 @@ export const STRINGS = {
     confirmDeleteTitle: "Delete this outtake?",
     confirmDeleteBody: "This can't be undone.",
     labelAriaLabel: "Outtake label",
-    newPlaceholder: "Paste or type text to stash here…",
-    save: "Save",
-    cancel: "Cancel",
     // S7 (agentic-review 2026-08-04): outtakes are hard-deleted, so an
     // apparently-empty card is an invitation to destroy the last copy of JSON a
     // human could still recover by hand. Say what actually happened.
