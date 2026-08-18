@@ -165,6 +165,13 @@ const EDITOR_MAIN_CONTENT_PROPS = [
   "onSave",
   "onContentChange",
   "onEditorReady",
+  // Guard axis: NONE required — this is not an editor-mutating entry point.
+  // It flows the machine's `editable` intent INWARD so a freshly constructed
+  // TipTap starts read-only when a lock is already up (the imperative
+  // setEditable handle cannot reach an editor that has not mounted yet).
+  // It carries no content and triggers no server mutation, so it takes no
+  // busy latch and no lock check — it IS the lock being applied.
+  "editorEditable",
   "onImageAnnouncement",
   "onImageUploadCommitted",
   "chapterWordCount",

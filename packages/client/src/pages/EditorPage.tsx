@@ -1197,6 +1197,7 @@ export function EditorPage() {
         onSave={handleSaveLockGated}
         onContentChange={handleContentChange}
         onEditorReady={setToolbarEditor}
+        editorEditable={editorMachine.state.editable}
         onImageAnnouncement={(msg) => {
           if (imageAnnouncementTimerRef.current) {
             clearTimeout(imageAnnouncementTimerRef.current);

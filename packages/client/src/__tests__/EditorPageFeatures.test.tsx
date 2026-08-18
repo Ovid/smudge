@@ -2617,17 +2617,28 @@ describe("EditorPage snapshot panel", () => {
     // SnapshotBanner up so no editable editor is mounted at all, whereas the
     // reload-failure path exits snapshot view and mounts the editor read-only.
     // Both end at the same machine state; only the surface differs.
-    // NOTE (F-07 session, 2026-08-18): the live editor's contenteditable is
-    // deliberately NOT asserted here yet — it is currently "true" under this
-    // lock banner, which is a defect under discussion, not settled behaviour.
-    // See the Safety Net Report for this session.
+    // The live editor must be read-only. This is the half that was broken:
+    // the restore was initiated from snapshot view, where NO editor is
+    // mounted, so the lock-down safeSetEditable(false) hit its `if (!current)`
+    // no-op and the intent was dropped. Exiting snapshot view then mounted a
+    // fresh TipTap at its default editable:true, and the reconcile effect
+    // could not re-run because none of its deps had changed. The editor is
+    // now constructed FROM the machine's intent, so a mount under a lock is
+    // read-only from its first render.
+    expect(screen.getByRole("textbox", { name: STRINGS.a11y.editorContent })).toHaveAttribute(
+      "contenteditable",
+      "false",
+    );
 
     // Never re-enabled on a later tick.
     await act(async () => {
       await Promise.resolve();
     });
     expect(screen.getByText(STRINGS.snapshots.restoreSucceededReloadFailed)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: STRINGS.editor.refreshButton })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: STRINGS.a11y.editorContent })).toHaveAttribute(
+      "contenteditable",
+      "false",
+    );
 
     warn.calledWith("Failed to reload chapter:", expect.any(Error));
   });

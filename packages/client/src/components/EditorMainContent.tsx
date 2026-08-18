@@ -96,6 +96,8 @@ interface EditorMainContentProps {
   onSave: EditorProps["onSave"];
   onContentChange: EditorProps["onContentChange"];
   onEditorReady: EditorProps["onEditorReady"];
+  /** Machine `editable` intent, applied when a fresh Editor is constructed. */
+  editorEditable: EditorProps["editable"];
   onImageAnnouncement: (message: string) => void;
   onImageUploadCommitted: () => void;
 
@@ -179,6 +181,7 @@ export function EditorMainContent({
   onSave,
   onContentChange,
   onEditorReady,
+  editorEditable,
   onImageAnnouncement,
   onImageUploadCommitted,
   chapterWordCount,
@@ -367,6 +370,7 @@ export function EditorMainContent({
                     onContentChange={onContentChange}
                     editorRef={editorRef}
                     onEditorReady={onEditorReady}
+                    editable={editorEditable}
                     projectId={project.id}
                     onImageAnnouncement={onImageAnnouncement}
                     onImageUploadCommitted={onImageUploadCommitted}
