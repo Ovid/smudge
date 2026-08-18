@@ -279,7 +279,9 @@ describe("validateEntryPaths", () => {
       expect.unreachable("expected ZipSlipError");
     } catch (e) {
       const message = (e as Error).message;
-      expect(message).not.toMatch(/[\r\n\u001b]/);
+      // No raw control character survives into the message (a regex literal
+      // would trip eslint's no-control-regex, so compare code points).
+      expect([...message].filter((c) => c.codePointAt(0)! < 0x20)).toEqual([]);
       expect(message).toContain("\\u001b");
       expect(message).toContain("\\r");
     }
