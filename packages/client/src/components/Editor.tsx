@@ -59,7 +59,10 @@ interface EditorProps {
    * through the imperative `setEditable` handle (Decided Q3) — this prop
    * exists because that handle cannot reach an editor that is not mounted
    * yet: `safeSetEditable` no-ops when `editorRef.current` is null and
-   * returns false, which every caller ignores.
+   * returns false, which every caller ignores. (That is only accurate as of
+   * OOSI2 — before the handle effect got an unmount cleanup, the ref outlived
+   * its editor, so the F-36 path below actually took the non-null branch,
+   * no-opped against a DESTROYED editor, and reported success.)
    *
    * Without it, any mount that happens while the machine already intends
    * editable:false comes up WRITABLE — the reconcile effect cannot re-run
@@ -79,14 +82,18 @@ interface EditorProps {
    * (`index.js:977`) precisely so an `editable` option cannot clobber
    * imperative state. The handle therefore stays authoritative after mount.
    * That guard is what makes this prop safe, so a TipTap upgrade that drops
-   * it would silently hand editability back to the render path; the
-   * "constructs read-only under a lock" test in EditorPageFeatures is what
-   * would notice.
+   * it would silently hand editability back to the render path. The canary is
+   * "keeps imperative setEditable(false) authoritative across a re-render"
+   * in Editor.test.tsx (S1), which holds the prop at `true` while the handle
+   * says `false` — the only combination a dropped pin can break. The
+   * "constructs read-only under a lock" test in EditorPageFeatures does NOT
+   * cover it: intent is false throughout there, so a re-applying render path
+   * would push the identical value and stay green.
    *
-   * Residual (accepted): while intent and actual editability disagree,
-   * TipTap's options comparison never matches, so each render fires a
-   * redundant setOptions + view.updateState. Measurable only as churn while
-   * a lock banner is up, which is a rare and already-degraded state.
+   * No added churn: the per-render `setOptions` fires unconditionally already,
+   * because `Placeholder.configure` / `imagePasteExtension.configure` and the
+   * inline onUpdate/onBlur closures mint fresh objects every render, so
+   * TipTap's options comparison never matches with or without this prop.
    */
   editable?: boolean;
 }
@@ -294,8 +301,9 @@ export function Editor({
       imagePasteExtension.configure({ getUploadHandler }),
     ],
     content: content ?? { type: "doc", content: [{ type: "paragraph" }] },
-    // Construction-time only; see the `editable` prop doc. Later transitions
-    // arrive through the setEditable handle, not through this option.
+    // Applied at construction; see the `editable` prop doc. TipTap re-reads
+    // this option every render but pins `editable: this.editor.isEditable`,
+    // so later transitions arrive through the setEditable handle, not here.
     editable,
     onUpdate: ({ editor: ed }) => {
       dirtyRef.current = true;

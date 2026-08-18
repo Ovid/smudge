@@ -2619,8 +2619,10 @@ describe("EditorPage snapshot panel", () => {
     // Both end at the same machine state; only the surface differs.
     // The live editor must be read-only. This is the half that was broken:
     // the restore was initiated from snapshot view, where NO editor is
-    // mounted, so the lock-down safeSetEditable(false) hit its `if (!current)`
-    // no-op and the intent was dropped. Exiting snapshot view then mounted a
+    // mounted, so the lock-down safeSetEditable(false) was dropped — it hit
+    // `if (!current)` only after OOSI2 gave the handle effect an unmount
+    // cleanup; before that it no-opped against a destroyed editor and
+    // reported success. Either way the intent never landed. Exiting snapshot view then mounted a
     // fresh TipTap at its default editable:true, and the reconcile effect
     // could not re-run because none of its deps had changed. The editor is
     // now constructed FROM the machine's intent, so a mount under a lock is
