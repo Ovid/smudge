@@ -983,6 +983,107 @@ it("T-1: on post-move extraction failure (JSZip size-mismatch or byte-budget ove
   expect(movedDbBytes).toEqual(originalDb);
 });
 
+// ── T-2 (F-14): the byte-budget guard actually fires ─────────────────────────
+
+it("T-2 (F-14): a duplicate central-directory entry that under-declares the total trips the byte-budget guard", async () => {
+  // F-14: the last-ditch decompression-bomb defense in runRestore
+  // (`written > declaredTotal + 1MiB`) was dead in the coverage report. T-1
+  // above aims at it but concedes in its own comment that it accepts EITHER
+  // JSZip's size-mismatch throw or our overrun — and JSZip always wins, so the
+  // branch never ran. Verified: patching a central-directory entry's declared
+  // uncompressed size makes JSZip throw "Bug : uncompressed data size mismatch"
+  // while decompressing, because it checks each entry's actual output length
+  // against the size the central directory declared. Per-entry lying is
+  // therefore caught upstream of us and cannot reach the budget check.
+  //
+  // What DOES reach it is a central directory that lists the same path TWICE
+  // with different declared sizes — the classic duplicate-entry / "zip
+  // confusion" shape. readCentralDirectorySizes sums the small decoy, while
+  // the extraction loop iterates those same (duplicated) names and extracts
+  // the real, large entry on BOTH passes. Every individual entry decompresses
+  // to exactly the length its record declares, so JSZip is satisfied and only
+  // the cumulative budget notices. That is precisely the "lying central
+  // directory" the guard's comment describes.
+  const { dataDir, dbPath } = await makeFixture();
+  const bigBin = randomBytes(1_600_000); // incompressible → stored, ratio ~1
+  await mkdir(join(dataDir, "images", "proj-f14"), { recursive: true });
+  await writeFile(join(dataDir, "images", "proj-f14", "big.bin"), bigBin);
+
+  const backupsDir = join(dataDir, "backups");
+  const { outFile: archive } = await runBackup({
+    dataDir,
+    dbPath,
+    backupsDir,
+    mode: "manual",
+    now: () => new Date(2026, 4, 26, 17, 0, 0),
+  });
+
+  const orig = Buffer.from(await readFile(archive));
+
+  // Locate entries with the SHARED production parser (S9) so the byte offsets
+  // in this test cannot drift from the ones runRestore uses.
+  const entries = [...walkCentralDirectory(orig)];
+  const big = entries.find((e) => e.path === "images/proj-f14/big.bin");
+  const small = entries.find((e) => e.path === "smudge.db");
+  expect(big).toBeDefined();
+  expect(small).toBeDefined();
+
+  // Forge an extra central-directory record: smudge.db's record (small declared
+  // size, valid local-header offset) re-labelled with big.bin's path. Extra and
+  // comment fields are zeroed so the record is exactly 46 + nameLen bytes.
+  const eocd = findEocdOffset(orig);
+  expect(eocd).toBeGreaterThanOrEqual(0);
+  const cdStart = orig.readUInt32LE(eocd + 16);
+  const cdSize = orig.readUInt32LE(eocd + 12);
+
+  const bigName = Buffer.from(big!.path, "utf8");
+  const head = Buffer.from(orig.subarray(small!.sizeFieldOffset - 24, small!.sizeFieldOffset + 22));
+  head.writeUInt16LE(bigName.length, 28); // file name length
+  head.writeUInt16LE(0, 30); // extra field length
+  head.writeUInt16LE(0, 32); // file comment length
+  const forgedRecord = Buffer.concat([head, bigName]);
+
+  // Rebuild: [local data][forged record][original central directory][EOCD],
+  // with the EOCD's record counts, directory size and directory offset fixed
+  // up so both parsers agree the forged record is part of the directory.
+  const newCd = Buffer.concat([forgedRecord, orig.subarray(cdStart, cdStart + cdSize)]);
+  const before = orig.subarray(0, cdStart);
+  const newEocd = Buffer.from(orig.subarray(eocd));
+  newEocd.writeUInt16LE(entries.length + 1, 8); // records on this disk
+  newEocd.writeUInt16LE(entries.length + 1, 10); // total records
+  newEocd.writeUInt32LE(newCd.length, 12);
+  newEocd.writeUInt32LE(before.length, 16);
+  const forgedArchive = Buffer.concat([before, newCd, newEocd]);
+
+  // Sanity: the archive now under-declares. The duplicated path appears twice
+  // in the directory, but the declared total counts the decoy's small size.
+  const forgedEntries = [...walkCentralDirectory(forgedArchive)];
+  const declaredTotal = forgedEntries.reduce((n, e) => n + e.uncompressedSize, 0);
+  expect(forgedEntries.filter((e) => e.path === "images/proj-f14/big.bin")).toHaveLength(2);
+  expect(declaredTotal).toBeLessThan(2 * bigBin.length);
+
+  const forgedPath = join(backupsDir, "smudge-forged.zip");
+  await writeFile(forgedPath, forgedArchive);
+
+  await expect(
+    runRestore({
+      archivePath: forgedPath,
+      dataDir,
+      confirmToken: basename(forgedPath),
+      probePort: async () => false,
+      freeBytes: async () => 10 * 1024 * 1024 * 1024,
+      // Generous caps so the DECLARED-size gate (defense #1) passes and the
+      // cumulative budget is genuinely the thing that stops this.
+      limits: { maxUncompressed: 2 * 1024 ** 3, maxRatio: 1000 },
+      now: () => new Date(2026, 4, 26, 17, 1, 0),
+    }),
+    // The message is the discriminator: this is OUR guard, not JSZip's
+    // size-mismatch and not the generic post-move wrapper. Without asserting
+    // it, this test would pass on any extraction failure — which is exactly
+    // the weakness that let the branch go uncovered.
+  ).rejects.toThrow(/extraction exceeded declared size/);
+});
+
 // ── I2: SMUDGE_BACKUP_KEEP resolution ────────────────────────────────────────
 
 describe("resolveKeep", () => {
