@@ -266,6 +266,25 @@ describe("validateEntryPaths", () => {
     },
   );
 
+  it("S3: escapes control characters in the rejected path (terminal-injection guard)", () => {
+    // The rejected name is up to 65535 arbitrary bytes from an untrusted
+    // archive and is printed straight to the operator's terminal by
+    // scripts/restore.ts. A CR or ANSI erase-line sequence in it can overwrite
+    // the abort message itself, so the operator is told the wrong thing about
+    // a restore that just refused (CWE-117). JSON.stringify is the escaping
+    // idiom already used by resolveBombLimit.
+    const bad = "images/\u001b[2K\revil/../../etc/passwd";
+    try {
+      validateEntryPaths([bad], root);
+      expect.unreachable("expected ZipSlipError");
+    } catch (e) {
+      const message = (e as Error).message;
+      expect(message).not.toMatch(/[\r\n\u001b]/);
+      expect(message).toContain("\\u001b");
+      expect(message).toContain("\\r");
+    }
+  });
+
   it("rejects a sibling directory that shares the root name prefix", () => {
     // "../target-evil/smudge.db" resolves to /tmp/target-evil/smudge.db —
     // a sibling that must not be accepted even though it starts with "/tmp/target".
@@ -1130,6 +1149,147 @@ it("OOSI1: an entry named in the central directory but not extractable fails lou
       now: () => new Date(2026, 4, 26, 18, 1, 0),
     }),
   ).rejects.toThrow(/declared in the central directory but not extractable/);
+});
+
+it("C1: a central-directory name forged to end in '/' cannot smuggle a skip", async () => {
+  // The OOSI1 carve-out must not decide "is this a directory?" from the
+  // CENTRAL-directory name string: that string is exactly the half of the
+  // disagreement an attacker controls. JSZip classifies directories from the
+  // LOCAL header (external-attribute bit, then a trailing-slash fail-safe on
+  // `fileNameStr` — zipEntry.js processAttributes), and keys its map by the
+  // local name. So patching only the CENTRAL name of a real file to an
+  // equal-length string ending in `/` (no offset shift, so every pre-move
+  // check still passes) used to hit `if (name.endsWith("/")) continue` — the
+  // image was dropped and runRestore RESOLVED, which is verbatim the OOSI1
+  // outcome. The existing OOSI1 test patches the LOCAL name, the direction
+  // that already threw.
+  const { dataDir, dbPath } = await makeFixture();
+  const backupsDir = join(dataDir, "backups");
+  const { outFile: archive } = await runBackup({
+    dataDir,
+    dbPath,
+    backupsDir,
+    mode: "manual",
+    now: () => new Date(2026, 4, 26, 18, 0, 0),
+  });
+
+  const forged = Buffer.from(await readFile(archive));
+  const entry = [...walkCentralDirectory(forged)].find((e) => e.path === "images/proj-1/a.png");
+  expect(entry).toBeDefined();
+  // Central record layout: sizeFieldOffset is record+24, so the name starts 22
+  // bytes further on (record+46). Overwrite in place, same byte length.
+  const centralNameOffset = entry!.sizeFieldOffset + 22;
+  expect(forged.subarray(centralNameOffset, centralNameOffset + 19).toString("utf8")).toBe(
+    "images/proj-1/a.png",
+  );
+  forged.write("images/proj-1/a.pn/", centralNameOffset, "utf8");
+
+  const forgedPath = join(backupsDir, "smudge-centralslash.zip");
+  await writeFile(forgedPath, forged);
+
+  await expect(
+    runRestore({
+      archivePath: forgedPath,
+      dataDir,
+      confirmToken: basename(forgedPath),
+      probePort: async () => false,
+      freeBytes: async () => 10 * 1024 * 1024 * 1024,
+      now: () => new Date(2026, 4, 26, 18, 1, 0),
+    }),
+  ).rejects.toThrow(/declared in the central directory but not extractable/);
+});
+
+it("S1: a directory entry marked by the MS-DOS attribute bit is skipped, not rejected", async () => {
+  // JSZip decides `dir` from the external-file-attributes bit FIRST
+  // (zipEntry.js processAttributes) and only then falls back to a trailing
+  // slash. So an archive can carry a directory entry whose name has no slash
+  // at all — JSZip parses it happily, keys it force-slashed, and zip.file()
+  // returns null. Deciding directory-ness from the central name string would
+  // hard-abort that restore mid-extraction; asking `entry.dir` skips it.
+  const { dataDir, dbPath } = await makeFixture();
+  const backupsDir = join(dataDir, "backups");
+  const { outFile: archive } = await runBackup({
+    dataDir,
+    dbPath,
+    backupsDir,
+    mode: "manual",
+    now: () => new Date(2026, 4, 26, 18, 0, 0),
+  });
+
+  const forged = Buffer.from(await readFile(archive));
+  const entry = [...walkCentralDirectory(forged)].find((e) => e.path === "images/proj-1/a.png");
+  expect(entry).toBeDefined();
+  // Central record: external file attributes are 4 bytes at record+38, and
+  // sizeFieldOffset is record+24. Bit 4 (0x10) is the MS-DOS directory flag.
+  forged.writeUInt32LE(0x10, entry!.sizeFieldOffset + 14);
+
+  const forgedPath = join(backupsDir, "smudge-attrdir.zip");
+  await writeFile(forgedPath, forged);
+
+  const zip = await JSZip.loadAsync(forged);
+  // Precondition of the test: JSZip really does classify it as a directory,
+  // under a force-slashed key, and zip.file() really does miss it.
+  expect(zip.files["images/proj-1/a.png/"]?.dir).toBe(true);
+  expect(zip.file("images/proj-1/a.png")).toBeNull();
+
+  await expect(
+    runRestore({
+      archivePath: forgedPath,
+      dataDir,
+      confirmToken: basename(forgedPath),
+      probePort: async () => false,
+      freeBytes: async () => 10 * 1024 * 1024 * 1024,
+      now: () => new Date(2026, 4, 26, 18, 1, 0),
+    }),
+  ).resolves.toMatchObject({ movedAsideTo: expect.any(String) });
+  expect(await readdir(dataDir)).toContain("smudge.db");
+});
+
+it("S4/OOSS1: an unopenable archive is refused pre-move, leaving the live data dir intact", async () => {
+  // JSZip.loadAsync used to run AFTER the move-aside, so an archive that was
+  // never openable at all (nothing pre-move inspects the encrypted bit flag or
+  // the compression method) tore down the working data directory before the
+  // failure was discovered. Opening pre-move turns "data dir destroyed,
+  // partial state" into "refused, nothing touched".
+  const { dataDir, dbPath } = await makeFixture();
+  const backupsDir = join(dataDir, "backups");
+  const { outFile: archive } = await runBackup({
+    dataDir,
+    dbPath,
+    backupsDir,
+    mode: "manual",
+    now: () => new Date(2026, 4, 26, 18, 0, 0),
+  });
+
+  const forged = Buffer.from(await readFile(archive));
+  for (const entry of walkCentralDirectory(forged)) {
+    // General-purpose bit flag is 2 bytes at record+8; sizeFieldOffset is
+    // record+24. Bit 0 = encrypted.
+    const flagOffset = entry.sizeFieldOffset - 16;
+    forged.writeUInt16LE(forged.readUInt16LE(flagOffset) | 0x0001, flagOffset);
+  }
+
+  const forgedPath = join(backupsDir, "smudge-encrypted.zip");
+  await writeFile(forgedPath, forged);
+
+  const before = (await readdir(dataDir)).sort();
+  await expect(
+    runRestore({
+      archivePath: forgedPath,
+      dataDir,
+      confirmToken: basename(forgedPath),
+      probePort: async () => false,
+      freeBytes: async () => 10 * 1024 * 1024 * 1024,
+      now: () => new Date(2026, 4, 26, 18, 1, 0),
+    }),
+  ).rejects.toThrow(RestorePreconditionError);
+  // Nothing touched: the live data dir is exactly as it was, and no
+  // move-aside sibling was created for the operator to have to recover from.
+  expect((await readdir(dataDir)).sort()).toEqual(before);
+  const siblings = (await readdir(dirname(dataDir))).filter((e) =>
+    e.startsWith(`${basename(dataDir)}.before-restore-`),
+  );
+  expect(siblings).toEqual([]);
 });
 
 // ── I2: SMUDGE_BACKUP_KEEP resolution ────────────────────────────────────────
