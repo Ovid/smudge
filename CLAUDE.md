@@ -245,6 +245,22 @@ banner — except the find-replace stale-chapter-drift sub-case
 dismissible notice. Invariant 2's `setEditable(false)` is now expressed as
 machine intent.
 
+**Machine intent reaches TipTap by two routes, and both must stay wired.**
+Post-mount transitions go through the imperative `setEditable` handle;
+**mount-time** editability comes from `Editor`'s `editable` prop, fed from
+`editorMachine.state.editable` through `EditorMainContent` (F-36). Without the
+prop, any mount that happens while the machine already intends `editable:false`
+comes up writable — reachable whenever a mutation is initiated from a surface
+with no editor mounted (snapshot view), because the reconcile effect cannot
+re-run when none of its deps changed. The prop is **not** a second owner of
+editability: `@tiptap/react` 2.27.2's per-render reconcile pins `editable:
+this.editor.isEditable` (`dist/index.js:977`), which is the load-bearing
+third-party guarantee here — a TipTap upgrade that drops it hands editability
+back to the render path. The tripwire is `Editor.test.tsx`'s "keeps imperative
+setEditable(false) authoritative across a re-render", which holds the prop at
+`true` while the handle says `false` — the only combination a dropped pin can
+break. Do not "simplify away" the prop pass-through.
+
 **Unified API error mapping.** All client code that surfaces a user-visible
 message from an API error must route through `mapApiError(err, scope)` in
 `packages/client/src/errors/`. The mapper returns `MappedError<S> = { message,
