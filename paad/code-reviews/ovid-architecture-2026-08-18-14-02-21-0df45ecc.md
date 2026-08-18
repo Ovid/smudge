@@ -6,6 +6,24 @@
 **Files changed:** 9 | **Lines changed:** +365 / -2
 **Diff size category:** Medium
 
+> **History note (added while fixing S5).** Every commit sha this report names
+> was invalidated by the S5 fix: rewording two inaccurate commit messages meant
+> rewriting the branch from `67dae69f` onward, so all 15 commits from there to
+> the tip got new shas. The tree is byte-identical — verified by comparing
+> `HEAD^{tree}` before and after — only the graph changed. The shas quoted below
+> are left as-written because they record the state this review actually ran
+> against. Translate with:
+>
+> | as reviewed | after the rewrite |
+> |---|---|
+> | `0df45ecc` (this report's base) | `c0eadab8` |
+> | `67dae69f` (F-14 fix) | `230546cc` |
+> | `a3d55ca9` (F-36 fix) | `464b80f7` |
+> | `7c81b4d1` (.gitignore) | `a44e7284` |
+>
+> Pre-rewrite history is preserved at `backup/pre-reword-2026-08-18` until this
+> branch lands.
+
 ## Executive Summary
 
 The branch's production change is sound and was verified empirically rather than by
