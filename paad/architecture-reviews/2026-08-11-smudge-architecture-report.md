@@ -640,7 +640,7 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
 - **Status caveat (residual, accepted):** `@tiptap/react`'s `scheduleDestroy` re-applies options **unguarded** (`dist/index.js:1035`), unlike the render path. Reachability in Smudge's lifecycle is **unsettled** — both ordinary re-renders and StrictMode cancel that 1ms timer synchronously, so reaching it needs cleanup and re-attach separated across macrotasks, which could not be constructed from this codebase. Cheapest experiment if it ever matters: spy on `Editor.prototype.setOptions` while driving the real restore flow. Separately: while intent and actual editability disagree, TipTap's options comparison never matches, so each render fires a redundant `setOptions` + `view.updateState` — churn only while a lock banner is up, accepted.
 - **Status caveat (the deeper cause is untouched):** the fix closes the mount path, not the root — `safeSetEditable`'s `false` return still means "not applied" and is still ignored at every call site. Any *other* future consumer of a dropped intent has no guard. Making that return observable is a separate change and was deliberately not bundled.
 - **Status date:** 2026-08-18 07:35 UTC
-- **Status commit:** PENDING
+- **Status commit:** a3d55ca9
 
 ### [F-37] `EditorPageCtrlSFlush` save-failed-banner test flakes ~10% of runs
 - **Category:** 32 (Missing/unreliable test coverage for critical paths)
