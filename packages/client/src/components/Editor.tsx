@@ -91,9 +91,19 @@ interface EditorProps {
    * would push the identical value and stay green.
    *
    * No added churn: the per-render `setOptions` fires unconditionally already,
-   * because `Placeholder.configure` / `imagePasteExtension.configure` and the
-   * inline onUpdate/onBlur closures mint fresh objects every render, so
-   * TipTap's options comparison never matches with or without this prop.
+   * but NOT because of the inline callbacks (corrected 2026-08-18, S2 review).
+   * `EditorInstanceManager.compareOptions` (2.27.2, `dist/index.js:933-935`)
+   * opens with an explicit skip list holding `onUpdate`, `onBlur` and every
+   * other callback key — "we don't want to compare callbacks, they are always
+   * different and only registered once" — so those closures contribute nothing
+   * to the mismatch. What actually defeats the comparison is (a) the
+   * `extensions` array, compared element-by-element at `:940-951` while
+   * `Placeholder.configure` / `imagePasteExtension.configure` mint fresh
+   * extension objects every render, and (b) the inline `editorProps` object
+   * literal passed to `useEditor` below, which is not on the skip list.
+   * Memoizing BOTH is what would make the comparison start matching — and
+   * therefore put `editable` back in the reconcile path — so that change must
+   * re-check this comment rather than trusting it.
    */
   editable?: boolean;
 }
