@@ -21,9 +21,13 @@
 > | `a3d55ca9` (F-36 fix) | `464b80f7` |
 > | `7c81b4d1` (.gitignore) | `a44e7284` |
 >
-> The pre-rewrite history has since been deleted, so the left-hand column no
-> longer resolves in this repository. This table is the only remaining
-> translation between the two.
+> The pre-rewrite commits are no longer reachable from any ref (the rewrite's
+> backup refs are gone, and `git for-each-ref --contains` returns nothing for
+> each), so they will be garbage-collected once the reflog expires. Until then
+> `git show <sha>` still works. This table is the durable translation between
+> the two columns — corrected 2026-08-18 (code-review S6), which checked all
+> four shas with `git cat-file -t` and found the earlier "no longer resolves"
+> wording overstated.
 
 ## Executive Summary
 
