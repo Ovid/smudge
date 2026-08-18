@@ -104,6 +104,7 @@ function buildHarness(opts: HarnessOptions = {}) {
   const setActionError = vi.fn();
   const setActionInfo = vi.fn();
   const applyReloadFailedLock = vi.fn();
+  const reassertEditorEditable = vi.fn();
   const refreshSnapshotCount = vi.fn();
   const refreshSnapshots = vi.fn();
   const exitSnapshotView = vi.fn();
@@ -184,6 +185,7 @@ function buildHarness(opts: HarnessOptions = {}) {
     isActionBusy: () => opts.busy ?? false,
     actionBusyRef,
     applyReloadFailedLock,
+    reassertEditorEditable,
     setActionError,
     setActionInfo,
   };
@@ -208,6 +210,7 @@ function buildHarness(opts: HarnessOptions = {}) {
     setActionError,
     setActionInfo,
     applyReloadFailedLock,
+    reassertEditorEditable,
     refreshSnapshotCount,
     refreshSnapshots,
     exitSnapshotView,
@@ -400,6 +403,58 @@ describe("useSnapshotController — handleRestoreSnapshot mutate callback", () =
     expect(h.applyReloadFailedLock).toHaveBeenCalledWith(
       STRINGS.snapshots.restoreSucceededReloadFailed,
     );
+  });
+
+  it("does not pin the lock banner to an unrelated chapter when the target drifted (OOSS1)", async () => {
+    // OOSS1 (agentic review 2026-08-18): this arm called applyReloadFailedLock
+    // unconditionally while both siblings guard first — useFindReplaceController
+    // computes `stale`, and this file's 2xx-BAD_JSON arm compares
+    // getActiveChapter()?.id. On drift the persistent, NON-dismissible banner
+    // pinned to and disabled a chapter the restore never touched. Simply
+    // skipping the lock is not enough: committed_but_unreloaded leaves the
+    // machine at editable:false (the hook dispatches no terminal event there),
+    // so the re-assert is what keeps the unrelated editor from being stranded
+    // read-only with no banner explaining why.
+    const h = buildHarness({
+      currentChapterId: "ch-2",
+      runResult: {
+        ok: false,
+        stage: "committed_but_unreloaded",
+        data: { staleChapterSwitch: false },
+      },
+    });
+
+    await act(async () => {
+      await h.result.current.handleRestoreSnapshot();
+    });
+
+    expect(h.applyReloadFailedLock).not.toHaveBeenCalled();
+    expect(h.reassertEditorEditable).toHaveBeenCalled();
+    expect(h.setActionError).toHaveBeenLastCalledWith(
+      STRINGS.snapshots.restoreSucceededReloadFailedOnOtherChapter(h.activeChapter.title),
+    );
+    // The restore target's cache is still stale — clear it regardless of drift.
+    expect(mockClearCachedContent).toHaveBeenCalledWith("ch-1");
+    expect(h.refreshSnapshotCount).toHaveBeenCalled();
+  });
+
+  it("still locks when the user is on the chapter the restore targeted", async () => {
+    const h = buildHarness({
+      runResult: {
+        ok: false,
+        stage: "committed_but_unreloaded",
+        data: { staleChapterSwitch: false },
+      },
+    });
+
+    await act(async () => {
+      await h.result.current.handleRestoreSnapshot();
+    });
+
+    expect(h.applyReloadFailedLock).toHaveBeenCalledWith(
+      STRINGS.snapshots.restoreSucceededReloadFailed,
+    );
+    expect(h.reassertEditorEditable).not.toHaveBeenCalled();
   });
 
   it("skips the cache clear and the active-chapter reload on a stale chapter switch", async () => {

@@ -111,21 +111,26 @@ export function checkDeclaredSizes(
 
 export function validateEntryPaths(entryPaths: string[], targetRoot: string): void {
   const root = resolve(targetRoot);
+  // Every rejection below JSON.stringify-s the offending path (the idiom
+  // resolveBombLimit already uses). `p` is up to 65535 arbitrary bytes from an
+  // untrusted archive and these messages are printed straight to the operator's
+  // terminal by scripts/restore.ts, where an embedded CR or ANSI erase-line
+  // sequence could overwrite the abort notice itself (CWE-117).
   for (const p of entryPaths) {
-    if (p.includes("\0")) throw new ZipSlipError(`null byte in entry path: ${p}`);
+    if (p.includes("\0")) throw new ZipSlipError(`null byte in entry path: ${JSON.stringify(p)}`);
     // S3: no blanket whitespace reject — a space is not a traversal vector and the
     // design enumerates only null/absolute/drive/.. /escapes-root. The resolve()
     // containment check below is the real backstop; rejecting whitespace would
     // mislabel a benign filename and break the "any old archive restorable" pledge.
     if (isAbsolute(p) || win32.isAbsolute(p) || /^[a-zA-Z]:/.test(p)) {
-      throw new ZipSlipError(`absolute entry path rejected: ${p}`);
+      throw new ZipSlipError(`absolute entry path rejected: ${JSON.stringify(p)}`);
     }
     if (p.split(/[\\/]/).includes("..")) {
-      throw new ZipSlipError(`'..' segment rejected: ${p}`);
+      throw new ZipSlipError(`'..' segment rejected: ${JSON.stringify(p)}`);
     }
     const dest = resolve(root, p);
     if (dest !== root && !dest.startsWith(root + sep)) {
-      throw new ZipSlipError(`entry escapes target dir: ${p}`);
+      throw new ZipSlipError(`entry escapes target dir: ${JSON.stringify(p)}`);
     }
   }
 }

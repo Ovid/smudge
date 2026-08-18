@@ -53,6 +53,59 @@ interface EditorProps {
   // re-fetched and a retry sees the already-stored row instead of
   // uploading the same file again.
   onImageUploadCommitted?: () => void;
+  /**
+   * The editor's editable state at CONSTRUCTION, sourced from
+   * useEditorMutationMachine's `editable` intent. Ongoing changes still flow
+   * through the imperative `setEditable` handle (Decided Q3) — this prop
+   * exists because that handle cannot reach an editor that is not mounted
+   * yet: `safeSetEditable` no-ops when `editorRef.current` is null and
+   * returns false, which every caller ignores. (That is only accurate as of
+   * OOSI2 — before the handle effect got an unmount cleanup, the ref outlived
+   * its editor, so the F-36 path below actually took the non-null branch,
+   * no-opped against a DESTROYED editor, and reported success.)
+   *
+   * Without it, any mount that happens while the machine already intends
+   * editable:false comes up WRITABLE — the reconcile effect cannot re-run
+   * because none of its deps changed. That is reachable today: a snapshot
+   * restore is initiated from snapshot view, where no editor is mounted, so
+   * the lock-down setEditable(false) is dropped; when the confirming reload
+   * fails, the flow leaves snapshot view and mounts a fresh editor under the
+   * persistent lock banner. Constructing from the intent closes that with no
+   * editable-for-one-tick window. Defaults to true (normal mount).
+   *
+   * Why this does NOT create a second owner of editability, verified against
+   * @tiptap/react 2.27.2 rather than assumed (an earlier version of this
+   * comment claimed "construction-time only", which is false):
+   * `useEditor` refreshes its stored options every render
+   * (`index.js:1051`), and TipTap's per-render reconcile DOES call
+   * `setOptions` — but it explicitly pins `editable: this.editor.isEditable`
+   * (`index.js:977`) precisely so an `editable` option cannot clobber
+   * imperative state. The handle therefore stays authoritative after mount.
+   * That guard is what makes this prop safe, so a TipTap upgrade that drops
+   * it would silently hand editability back to the render path. The canary is
+   * "keeps imperative setEditable(false) authoritative across a re-render"
+   * in Editor.test.tsx (S1), which holds the prop at `true` while the handle
+   * says `false` — the only combination a dropped pin can break. The
+   * "constructs read-only under a lock" test in EditorPageFeatures does NOT
+   * cover it: intent is false throughout there, so a re-applying render path
+   * would push the identical value and stay green.
+   *
+   * No added churn: the per-render `setOptions` fires unconditionally already,
+   * but NOT because of the inline callbacks (corrected 2026-08-18, S2 review).
+   * `EditorInstanceManager.compareOptions` (2.27.2, `dist/index.js:933-935`)
+   * opens with an explicit skip list holding `onUpdate`, `onBlur` and every
+   * other callback key — "we don't want to compare callbacks, they are always
+   * different and only registered once" — so those closures contribute nothing
+   * to the mismatch. What actually defeats the comparison is (a) the
+   * `extensions` array, compared element-by-element at `:940-951` while
+   * `Placeholder.configure` / `imagePasteExtension.configure` mint fresh
+   * extension objects every render, and (b) the inline `editorProps` object
+   * literal passed to `useEditor` below, which is not on the skip list.
+   * Memoizing BOTH is what would make the comparison start matching — and
+   * therefore put `editable` back in the reconcile path — so that change must
+   * re-check this comment rather than trusting it.
+   */
+  editable?: boolean;
 }
 
 const AUTO_SAVE_DEBOUNCE_MS = 1500;
@@ -121,6 +174,7 @@ export function Editor({
   onContentChange,
   editorRef,
   onEditorReady,
+  editable = true,
   projectId,
   onImageAnnouncement,
   onImageUploadCommitted,
@@ -257,6 +311,10 @@ export function Editor({
       imagePasteExtension.configure({ getUploadHandler }),
     ],
     content: content ?? { type: "doc", content: [{ type: "paragraph" }] },
+    // Applied at construction; see the `editable` prop doc. TipTap re-reads
+    // this option every render but pins `editable: this.editor.isEditable`,
+    // so later transitions arrive through the setEditable handle, not here.
+    editable,
     onUpdate: ({ editor: ed }) => {
       dirtyRef.current = true;
       onContentChangeRef.current?.(ed.getJSON() as Record<string, unknown>);
@@ -454,6 +512,16 @@ export function Editor({
         },
       };
     }
+    // OOSI2 (review 2026-08-18): drop the handle on unmount / editor swap,
+    // mirroring editorInstanceRef above. Without this the ref outlived the
+    // editor, so safeSetEditable took its non-null path, called setEditable
+    // on a destroyed instance (a no-op at the guard above), and returned
+    // `true` — the opposite of what its contract documents. Registered after
+    // the unmount-save effect (line ~262) so React's registration-order
+    // cleanup still runs that save against a live ref (S9).
+    return () => {
+      if (editorRef) editorRef.current = null;
+    };
   }, [editor, editorRef]);
 
   useEffect(() => {

@@ -29,6 +29,7 @@ import {
   clientWarn,
 } from "../errors";
 import { safeSetEditable } from "../utils/editorSafeOps";
+import { useReconcileEditable } from "../hooks/useReconcileEditable";
 // F-1 decomposition (2026-05-29): the find-and-replace and snapshot
 // orchestration clusters live in dedicated hooks. The sentinel restore
 // errors and renderSnapshotContent moved with the snapshot cluster.
@@ -377,6 +378,7 @@ export function EditorPage() {
     isActionBusy,
     actionBusyRef,
     applyReloadFailedLock,
+    reassertEditorEditable,
     setActionError,
     setActionInfo,
   });
@@ -596,9 +598,12 @@ export function EditorPage() {
 
   // Remount (chapter switch or chapterReloadKey bump) clears the lock and
   // re-asserts editable — replaces the old lock-message-clearing effect.
-  // Chapter switch creates a new Editor with default editable=true, and a
-  // chapterReloadKey bump remounts with fresh server content; in both cases
-  // the read-only state from the failed reload no longer applies.
+  // Chapter switch creates a new Editor and a chapterReloadKey bump remounts
+  // with fresh server content; in both cases the read-only state from the
+  // failed reload no longer applies. Since F-36 a mount inherits machine
+  // intent via Editor's `editable` prop rather than defaulting to true, so
+  // this dispatch is what makes the new editor writable — not a TipTap
+  // default it merely agrees with.
   useEffect(() => {
     editorMachine.dispatch({ type: "EDITOR_REMOUNTED" });
     // Key ONLY on the remount triggers + the stable useReducer dispatch.
@@ -609,12 +614,9 @@ export function EditorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeChapter?.id, chapterReloadKey, editorMachine.dispatch]);
 
-  // Reconcile editable intent → TipTap (re-enable / re-assert direction only;
-  // the lock-down false is synchronous-imperative in useEditorMutation). Reuses
-  // safeSetEditable so a mid-remount throw is absorbed + logged once.
-  useEffect(() => {
-    safeSetEditable(editorRef, editorMachine.state.editable);
-  }, [editorMachine.state.editable, activeChapter?.id, chapterReloadKey]);
+  // Reconcile editable intent → TipTap. Keyed on the state OBJECT so a
+  // re-assert that moves no boolean still reaches TipTap (S2) — see the hook.
+  useReconcileEditable(editorRef, editorMachine.state, activeChapter?.id, chapterReloadKey);
 
   // Fetch chapter statuses with retry. statusesOp lives in the component
   // body (not inside the effect) so its identity is stable across renders;
@@ -1197,6 +1199,7 @@ export function EditorPage() {
         onSave={handleSaveLockGated}
         onContentChange={handleContentChange}
         onEditorReady={setToolbarEditor}
+        editorEditable={editorMachine.state.editable}
         onImageAnnouncement={(msg) => {
           if (imageAnnouncementTimerRef.current) {
             clearTimeout(imageAnnouncementTimerRef.current);

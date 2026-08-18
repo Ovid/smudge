@@ -211,13 +211,26 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
         }
         // Re-read the editor ref after the mutate await (I3). If the entry-
         // time editor was null (mid-remount) and TipTap finished mounting
-        // during the server round-trip, the new editor starts editable=true
-        // by default. Without locking it here, the reload window below
-        // leaves a fresh editor writable — a user keystroke in that window
-        // would either be lost to the reload or PATCH-ed back over the
-        // server commit on the next auto-save. Swallow throws in the same
-        // spirit as the entry-side setEditable: a TipTap mid-remount throw
-        // here should not discard a server-successful mutate.
+        // during the server round-trip, this block locks and quiesces the
+        // new instance.
+        //
+        // DO NOT DELETE THIS AS DEAD (I2, review 2026-08-18). Since F-36 a
+        // fresh Editor inherits machine intent through its `editable` prop,
+        // and MUTATION_STARTED is dispatched synchronously at run() entry
+        // (above), so a mid-mutate remount usually constructs read-only
+        // already — reading only the setEditable line, this looks redundant.
+        // It is not:
+        //   1. The prop carries whatever intent React has COMMITTED. A mount
+        //      whose render was already in flight when MUTATION_STARTED was
+        //      dispatched still comes up writable, so the imperative lock
+        //      remains the backstop for that window.
+        //   2. markClean() + cancelPendingSaves() below are the real payload
+        //      and have no prop equivalent (I6). They kill the fresh
+        //      instance's fire-and-forget unmount PATCH, which would
+        //      otherwise revert the just-committed server mutation.
+        // Swallow throws in the same spirit as the entry-side setEditable: a
+        // TipTap mid-remount throw here should not discard a
+        // server-successful mutate.
         const editorAfterMutate = editorRef.current;
         if (editorAfterMutate !== null && editorAfterMutate !== editor) {
           try {

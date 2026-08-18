@@ -240,7 +240,59 @@ export async function runRestore(
   } else {
     await ensureFree(dirname(opts.dataDir), declaredTotal); // everything on one partition
   }
-  // 6. move existing data dir aside (never delete). A rename failure here means
+  // 6. open the archive and resolve every declared name to a real JSZip entry —
+  // BEFORE the move-aside, so both failures below leave the live data dir
+  // untouched and surface as RestorePreconditionError ("nothing was touched"),
+  // matching every other defense above.
+  //
+  //   a. loadAsync itself throws on an archive that was never openable at all
+  //      (encrypted bit-flag, unknown compression method) — nothing pre-move
+  //      inspects either field, so opening after the rename destroyed the live
+  //      data dir before discovering the archive was unusable (OOSS1).
+  //   b. `names` comes from the CENTRAL DIRECTORY; JSZip keys its map by each
+  //      entry's LOCAL header name (zipEntry.js readLocalPart overwrites
+  //      fileName; readCentralPart deliberately skips it). Ask JSZip what the
+  //      entry IS rather than inferring it from the central name string: an
+  //      archive can end a central name in `/` while leaving the local name
+  //      intact, so `name.endsWith("/")` is an attacker-controlled proxy for a
+  //      fact only `entry.dir` knows (C1). JSZip also classifies directories
+  //      from the MS-DOS attribute bit before falling back to the trailing
+  //      slash, so a slash-less directory entry it parses happily must not be
+  //      rejected (S1) — hence the `${name}/` lookup, JSZip force-slashes every
+  //      folder key (object.js forceTrailingSlash).
+  //
+  // A miss means the two key spaces disagree, which only happens in a tampered
+  // or corrupt archive. Skipping it silently extracted nothing, resolved
+  // successfully, and left the operator staring at an empty data dir believing
+  // the restore worked (OOSI1). The name is JSON.stringify-ed: it is up to
+  // 65535 arbitrary bytes from an untrusted archive and this message is printed
+  // straight to the operator's terminal, where a CR or ANSI erase-line sequence
+  // could overwrite the very abort notice (CWE-117).
+  let zip: JSZip;
+  try {
+    zip = await JSZip.loadAsync(buf);
+  } catch (e) {
+    throw new RestorePreconditionError(
+      `archive could not be opened: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
+  //
+  // A LIST, not a Map: a lying central directory may declare the same path
+  // twice, and collapsing the duplicate would hide the double write from the
+  // byte-budget assertion below (F-14's T-2 case).
+  const entries: [name: string, entry: JSZip.JSZipObject][] = [];
+  for (const name of names) {
+    const entry = zip.files[name] ?? zip.files[`${name}/`];
+    if (!entry) {
+      throw new RestorePreconditionError(
+        `archive entry declared in the central directory but not extractable: ${JSON.stringify(name)}`,
+      );
+    }
+    // runBackup's JSZip auto-creates `images/` and a folder per project; those
+    // carry no content to write.
+    if (!entry.dir) entries.push([name, entry]);
+  }
+  // 7. move existing data dir aside (never delete). A rename failure here means
   // nothing was touched yet, so it propagates as a precondition-style raw error.
   // pid-qualified (S6): two same-second restores must not compute the same
   // move-aside target (a rename collision would risk the never-delete guarantee).
@@ -257,7 +309,7 @@ export async function runRestore(
     } else throw e;
   });
 
-  // 7. recreate dataDir, move an external DB aside, and extract — all inside one
+  // 8. recreate dataDir, move an external DB aside, and extract — all inside one
   // try so ANY failure after the data-dir move-aside (mkdir recreate, the external
   // DB rename, JSZip internal throws, ENOSPC, the byte-budget overrun) surfaces as
   // RestorePartialError carrying the preservation path(s). The operator always
@@ -279,10 +331,7 @@ export async function runRestore(
       );
     }
     let written = 0;
-    const zip = await JSZip.loadAsync(buf);
-    for (const name of names) {
-      const file = zip.file(name);
-      if (!file) continue;
+    for (const [name, file] of entries) {
       // NOTE: file.async("nodebuffer") decompresses the full entry into memory here —
       // a single entry is fully in RAM before being written. The byte-budget below
       // bounds DISK usage (cumulative write), not RAM (the declared-size cap #1 bounds

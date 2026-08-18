@@ -70,6 +70,69 @@ describe("Editor", () => {
     });
   });
 
+  it("nulls editorRef.current on unmount so a stale handle cannot report success", async () => {
+    // OOSI2 (review 2026-08-18): the handle-publishing effect had no cleanup,
+    // so after unmount the ref kept a handle whose setEditable no-ops against a
+    // destroyed editor while safeSetEditable still returned `true` — inverting
+    // its documented contract. Mirrors the editorInstanceRef clear.
+    const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
+    const { unmount } = render(
+      <Editor
+        projectId="test-project"
+        content={null}
+        onSave={mockOnSave()}
+        editorRef={editorRef}
+      />,
+    );
+    await waitFor(() => {
+      expect(editorRef.current).not.toBeNull();
+    });
+    unmount();
+    expect(editorRef.current).toBeNull();
+  });
+
+  it("keeps imperative setEditable(false) authoritative across a re-render (S1)", async () => {
+    // S1 (review 2026-08-18): the `editable` prop is applied at construction
+    // only because @tiptap/react's per-render reconcile pins
+    // `editable: this.editor.isEditable` (2.27.2 dist/index.js:977). The
+    // regression a dropped pin causes is prop `true` + imperative `false` —
+    // live at EditorPage.tsx's switchToView, which calls safeSetEditable(false)
+    // without dispatching to the machine. The F-36 test cannot see it: it holds
+    // intent at false throughout, so a re-applying render path pushes the same
+    // value and stays green.
+    const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
+    const { container, rerender } = render(
+      <Editor
+        projectId="test-project"
+        content={null}
+        onSave={mockOnSave()}
+        editorRef={editorRef}
+        editable={true}
+      />,
+    );
+    await waitFor(() => {
+      expect(editorRef.current).not.toBeNull();
+    });
+    act(() => {
+      editorRef.current?.setEditable(false);
+    });
+    // Force renders while the prop still says `true`.
+    for (const _ of [0, 1, 2]) {
+      rerender(
+        <Editor
+          projectId="test-project"
+          content={null}
+          onSave={mockOnSave()}
+          editorRef={editorRef}
+          editable={true}
+        />,
+      );
+    }
+    expect(container.querySelector("[role='textbox']")?.getAttribute("contenteditable")).toBe(
+      "false",
+    );
+  });
+
   it("has correct ARIA attributes on the editor", () => {
     const { container } = render(
       <Editor projectId="test-project" content={null} onSave={mockOnSave()} />,

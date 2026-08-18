@@ -36,6 +36,35 @@ for capturing the _choice_ once I already understand it; the explaining happens
 in the message above it. A question whose reasoning is only visible inside the
 picker widget has not been asked.
 
+## Explaining Things to Me
+
+You finish a task holding the whole codebase in working memory. I don't
+have that, and I often can't tell whether I'm confused or you're being
+unclear. Before sending, check:
+
+1. **Name it before you abbreviate it.** First mention in a message is
+   "the restore bug (OOSI1)" — never a bare `OOSI1`, `F-36`, `I2`.
+   Same for hooks, files, and any term from a report I'd have to open.
+2. **One inference per sentence.** If a sentence carries two causal
+   steps ("X, so Y, which means Z"), split it. The step you dropped is
+   usually the one I needed.
+3. **No jargon without its referent.** "the lock", "the machine",
+   "drift", "the seam", "the arm" — say what it locks, what it models,
+   what drifted.
+4. **The thing before the judgment.** "This code never checks whether
+   the user switched chapters" comes before "this is the asymmetry
+   that matters."
+
+Setup sentences are part of the answer, not padding. If I have to ask
+"what does that mean?", the message failed regardless of length.
+
+**This overrides terseness modes for chat prose.** Ponytail (and any
+similar "shortest explanation wins" instruction) governs what you
+BUILD — the code, the diff, the number of files. It does not govern
+how you explain finished work to me. Compressing a four-step causal
+chain into one clause is not laziness, it is a message I have to
+decompress by hand.
+
 ## Ignore `.devcontainer/`
 
 `.devcontainer/` is **third-party content** managed out-of-band
@@ -240,10 +269,30 @@ facts dispatched from distinct sites, so do not merge them.
 `MutationResult` carries `committed_but_unreloaded` as the canonical "server
 committed, display unconfirmed" outcome (2xx `BAD_JSON` on replace/restore,
 reload-GET failure, race-only supersession); it routes to the persistent lock
-banner — except the find-replace stale-chapter-drift sub-case
-(`useFindReplaceController`), which re-enables the now-unrelated editor with a
-dismissible notice. Invariant 2's `setEditable(false)` is now expressed as
+banner — except the stale-chapter-drift sub-case, which re-enables the
+now-unrelated editor with a dismissible, chapter-attributed notice. Both
+controllers implement it (`useFindReplaceController`, `useSnapshotController`);
+a third consumer of `committed_but_unreloaded` must too, because that outcome
+leaves the machine at `editable:false` and the hook dispatches no terminal
+event — skipping the lock without re-asserting strands the editor read-only
+with nothing on screen to explain it. Invariant 2's `setEditable(false)` is now expressed as
 machine intent.
+
+**Machine intent reaches TipTap by two routes, and both must stay wired.**
+Post-mount transitions go through the imperative `setEditable` handle;
+**mount-time** editability comes from `Editor`'s `editable` prop, fed from
+`editorMachine.state.editable` through `EditorMainContent` (F-36). Without the
+prop, any mount that happens while the machine already intends `editable:false`
+comes up writable — reachable whenever a mutation is initiated from a surface
+with no editor mounted (snapshot view), because the reconcile effect cannot
+re-run when none of its deps changed. The prop is **not** a second owner of
+editability: `@tiptap/react` 2.27.2's per-render reconcile pins `editable:
+this.editor.isEditable` (`dist/index.js:977`), which is the load-bearing
+third-party guarantee here — a TipTap upgrade that drops it hands editability
+back to the render path. The tripwire is `Editor.test.tsx`'s "keeps imperative
+setEditable(false) authoritative across a re-render", which holds the prop at
+`true` while the handle says `false` — the only combination a dropped pin can
+break. Do not "simplify away" the prop pass-through.
 
 **Unified API error mapping.** All client code that surfaces a user-visible
 message from an API error must route through `mapApiError(err, scope)` in
