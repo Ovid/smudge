@@ -147,8 +147,6 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
-scratch/
-
 # Playwright
 test-results/
 playwright-report/
@@ -172,3 +170,7 @@ backups/
 *.backup-staging.db
 # Restore moves the data dir aside to <data-dir>.before-restore-<time>/ — never commit it.
 *.before-restore-*/
+
+# Ovid's stuff
+scratch/
+.obsidian/
