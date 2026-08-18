@@ -29,6 +29,7 @@ import {
   clientWarn,
 } from "../errors";
 import { safeSetEditable } from "../utils/editorSafeOps";
+import { useReconcileEditable } from "../hooks/useReconcileEditable";
 // F-1 decomposition (2026-05-29): the find-and-replace and snapshot
 // orchestration clusters live in dedicated hooks. The sentinel restore
 // errors and renderSnapshotContent moved with the snapshot cluster.
@@ -613,12 +614,9 @@ export function EditorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeChapter?.id, chapterReloadKey, editorMachine.dispatch]);
 
-  // Reconcile editable intent → TipTap (re-enable / re-assert direction only;
-  // the lock-down false is synchronous-imperative in useEditorMutation). Reuses
-  // safeSetEditable so a mid-remount throw is absorbed + logged once.
-  useEffect(() => {
-    safeSetEditable(editorRef, editorMachine.state.editable);
-  }, [editorMachine.state.editable, activeChapter?.id, chapterReloadKey]);
+  // Reconcile editable intent → TipTap. Keyed on the state OBJECT so a
+  // re-assert that moves no boolean still reaches TipTap (S2) — see the hook.
+  useReconcileEditable(editorRef, editorMachine.state, activeChapter?.id, chapterReloadKey);
 
   // Fetch chapter statuses with retry. statusesOp lives in the component
   // body (not inside the effect) so its identity is stable across renders;
