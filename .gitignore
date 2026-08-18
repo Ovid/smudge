@@ -171,6 +171,6 @@ backups/
 # Restore moves the data dir aside to <data-dir>.before-restore-<time>/ — never commit it.
 *.before-restore-*/
 
-# Ovid's stuff
+# Local editor/workspace state
 scratch/
 .obsidian/
