@@ -527,14 +527,50 @@ describe("chapter route error-code mappings (service-outcome wiring)", () => {
   });
 });
 
-describe("PATCH /api/chapters/:id — target_word_count removed", () => {
-  it("ignores target_word_count (column removed)", async () => {
+// `UpdateChapterSchema` is `.partial()` without `.strict()`, so Zod STRIPS
+// unknown keys rather than rejecting them. That is a real contract on the
+// autosave endpoint and it was untested: the previous test here claimed to
+// check that `target_word_count` (dropped by migration 010) is ignored, but it
+// never sent the field — it PATCHed `{ title }` and asserted the response
+// lacked a column that no longer exists, so it could only fail if someone
+// re-added the column. `target_word_count` is kept as the concrete case because
+// it is the removed field a stale client is most likely to still send.
+//
+// The two cases pin the strip from both sides, and each was verified to fail
+// under the change it guards: `.passthrough()` breaks the first (an
+// unknown-only body would 200 for a write that changed nothing), `.strict()`
+// breaks the second (a mixed body would 400 and lose the edit). Neither can
+// pass vacuously — which is exactly what the test they replaced could not say.
+describe("PATCH /api/chapters/:id — unknown fields are stripped, not honoured", () => {
+  it("400s a body of only unknown fields rather than reporting a no-op success", async () => {
     const { chapterId } = await createProjectWithChapter(t.app);
+
     const res = await request(t.app)
       .patch(`/api/chapters/${chapterId}`)
-      .send({ title: "Updated Title" });
+      .send({ target_word_count: 500 });
+
+    // Stripping leaves {}, which trips the "at least one field" refine. The
+    // alternative — 200 for a write that changed nothing — is the ambiguity
+    // this codebase spends the most effort avoiding: the client would believe
+    // the update landed.
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("still applies the known fields when an unknown one rides along", async () => {
+    const { chapterId } = await createProjectWithChapter(t.app);
+
+    const res = await request(t.app)
+      .patch(`/api/chapters/${chapterId}`)
+      .send({ title: "Updated Title", target_word_count: 500 });
+
+    // A stale client sending one dead field must not lose the edit it made.
     expect(res.status).toBe(200);
-    expect(res.body).not.toHaveProperty("target_word_count");
+    expect(res.body.title).toBe("Updated Title");
+
+    const reread = await request(t.app).get(`/api/chapters/${chapterId}`);
+    expect(reread.status).toBe(200);
+    expect(reread.body.title).toBe("Updated Title");
   });
 });
 
