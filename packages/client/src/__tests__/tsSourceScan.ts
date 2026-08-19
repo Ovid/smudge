@@ -46,7 +46,7 @@ import { join } from "node:path";
 // Block-comment regex stays non-greedy so adjacent comments don't merge.
 export function stripCommentsFromTsSource(source: string): string {
   return source.replace(
-    /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|(?<=[=(,:[!&|?{};]\s*)\/(?![*\/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^\/\\\n])+\/[dgimsuvy]*)|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g,
+    /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|(?<=[=(,:[!&|?{};]\s*)\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^/\\\n])+\/[dgimsuvy]*)|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g,
     (_match, literal: string | undefined) => literal ?? "",
   );
 }
