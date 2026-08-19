@@ -530,6 +530,66 @@ describe("useProjectEditor", () => {
       expect.anything(),
       expect.anything(),
     );
+    // S3 (round 4): the `stillLatest` rewrite's `: true` arm — a save whose
+    // chapter the ref does not track clears that chapter's draft — was driven
+    // by this test but never asserted. Pin it.
+    const { clearCachedContent } = await import("../hooks/useContentCache");
+    expect(vi.mocked(clearCachedContent)).toHaveBeenCalledWith("ch1");
+  });
+
+  it("I1: a save for a non-active chapter posts the caller's content, not the stale ref", async () => {
+    // Round-4 I1. `latestContentRef` still holds the chapter the user just
+    // left. The gate added by 525bb93f stops handleSave RE-SEEDING that ref
+    // for a non-active chapter, but the read inside the retry loop still
+    // PREFERS the ref whenever its id matches. So the unmount flush — which
+    // hands handleSave the editor's freshest getJSON() — posted the older
+    // ref content instead, and the subsequent clearCachedContent() deleted
+    // the draft. The last keystrokes existed nowhere. Invariant 3.
+    const { clearCachedContent } = await import("../hooks/useContentCache");
+    vi.mocked(api.chapters.get)
+      .mockResolvedValueOnce(mockChapter1)
+      .mockResolvedValueOnce(mockChapter2);
+    vi.mocked(api.chapters.update).mockResolvedValue({ ...mockChapter1, word_count: 2 });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    const staleContent = {
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: "stale" }] }],
+    };
+    // Typing on ch1 seeds latestContentRef with ch1's content.
+    act(() => {
+      result.current.handleContentChange(staleContent);
+    });
+
+    // The user leaves ch1. Nothing clears latestContentRef, so it still
+    // carries { id: "ch1", content: staleContent }.
+    await act(async () => {
+      await result.current.handleSelectChapter("ch2");
+    });
+    expect(result.current.activeChapter?.id).toBe("ch2");
+
+    vi.mocked(api.chapters.update).mockClear();
+    vi.mocked(clearCachedContent).mockClear();
+
+    // ch1's Editor unmounts and flushes its freshest content.
+    const freshContent = {
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: "fresh" }] }],
+    };
+    await act(async () => {
+      await result.current.handleSave(freshContent, "ch1");
+    });
+
+    expect(api.chapters.update).toHaveBeenCalledWith(
+      "ch1",
+      { content: freshContent },
+      expect.any(AbortSignal),
+    );
+    // The cache-clear is what makes the loss unrecoverable, so it is only
+    // sound BECAUSE the posted content is the freshest one.
+    expect(vi.mocked(clearCachedContent)).toHaveBeenCalledWith("ch1");
   });
 
   it("succeeds on retry after transient failure", async () => {
@@ -1918,6 +1978,40 @@ describe("useProjectEditor", () => {
 
     // Restore default mock
     vi.mocked(setCachedContent).mockReturnValue(true);
+  });
+
+  it("S1: a save settling for a chapter the user left does not clear the cacheWarning", async () => {
+    // Round-4 S1. setCacheWarning(false) was the one write in the stillLatest
+    // block scoped to neither the chapter nor the active-chapter gate its
+    // sibling uses. The footer warning says "this draft could not be cached"
+    // about the chapter ON SCREEN, so a save landing for the chapter the user
+    // just left must leave it standing.
+    const { setCachedContent } = await import("../hooks/useContentCache");
+    vi.mocked(api.chapters.get)
+      .mockResolvedValueOnce(mockChapter1)
+      .mockResolvedValueOnce(mockChapter2);
+    vi.mocked(api.chapters.update).mockResolvedValue({ ...mockChapter1, word_count: 1 });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleSelectChapter("ch2");
+    });
+
+    // ch2 (now active) fails to cache its draft — the warning is about ch2.
+    vi.mocked(setCachedContent).mockReturnValue(false);
+    act(() => {
+      result.current.handleContentChange({ type: "doc", content: [] });
+    });
+    expect(result.current.cacheWarning).toBe(true);
+
+    // A save for ch1 (the chapter just left) settles successfully.
+    await act(async () => {
+      await result.current.handleSave({ type: "doc", content: [] }, "ch1");
+    });
+
+    expect(result.current.cacheWarning).toBe(true);
   });
 
   it("handleContentChange preserves error save status instead of overwriting", async () => {
