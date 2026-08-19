@@ -135,11 +135,23 @@ export function extractMutationHandles(source: string): string[] {
  * bindings and TipTap command chains that end in `.run()`, so a blind count
  * false-reds on every one of them. Naming the one unattributable shape and
  * refusing it is the narrower fix.
+ *
+ * `handles` defaults to the file's own bindings and is widened tree-wide by the
+ * offender test, exactly as `countMutationRuns` already is (I1, review round 3,
+ * 2026-08-19). Without the widening the two fixes disagreed about which handle
+ * set to scan, so their INTERSECTION stayed open: a caller whose deps type is
+ * hoisted into a sibling *.types.ts (no local binding, so nothing to iterate)
+ * AND which destructures run() off that deps property (so nothing to count)
+ * escaped both. Over-flagging an unrelated handle name fails toward a false RED,
+ * the direction this file declares safe.
  */
-export function findUncountableRunShapes(source: string): string[] {
+export function findUncountableRunShapes(
+  source: string,
+  handles: string[] = extractMutationHandles(source),
+): string[] {
   const code = stripCommentsFromTsSource(source);
   const reasons: string[] = [];
-  for (const name of extractMutationHandles(source)) {
+  for (const name of handles) {
     const destructure = new RegExp(`\\{[^{}]*\\brun\\b[^{}]*\\}\\s*=\\s*[^;\\n]*\\b${name}\\b`);
     if (destructure.test(code)) reasons.push(`destructures run() off the \`${name}\` handle`);
   }
@@ -197,17 +209,30 @@ const COMMITTED_CALLERS: Record<string, number> = {
   "pages/EditorPage.tsx": 0,
 };
 
-function discoverCallers(): Record<string, number> {
+/**
+ * Every production source in the client tree, paired with the handle names
+ * bound ANYWHERE in it.
+ *
+ * The tree-wide set exists because a consumer that receives `mutation` from a
+ * deps interface declared in a sibling *.types.ts binds no handle of its own
+ * (I1, review 2026-08-19). BOTH scanning passes below take it: keying one pass
+ * on tree-wide names and the other on per-file names is what left their
+ * intersection open (I1, review round 3). Over-matching an unrelated
+ * `mutation.run(` elsewhere fails in the safe direction — a false RED demanding
+ * a decision.
+ */
+function loadClientTree(): { files: (readonly [string, string])[]; allHandles: string[] } {
   const files = collectTsSources(clientSrc).map(
     (file) => [file, readFileSync(file, "utf8")] as const,
   );
-  // Handle names bound ANYWHERE in the tree, not just in the file being
-  // scanned. I1 (review 2026-08-19): a consumer that receives `mutation` from
-  // a deps interface declared in a sibling *.types.ts binds no handle of its
-  // own, so keying on per-file bindings alone left it invisible while it made
-  // real run() calls. Over-matching an unrelated `mutation.run(` elsewhere
-  // would fail in the safe direction (a false RED demanding a decision).
-  const allHandles = [...new Set(files.flatMap(([, source]) => extractMutationHandles(source)))];
+  return {
+    files,
+    allHandles: [...new Set(files.flatMap(([, source]) => extractMutationHandles(source)))],
+  };
+}
+
+function discoverCallers(): Record<string, number> {
+  const { files, allHandles } = loadClientTree();
   const importsHook = importPatternFor("useEditorMutation");
   const found: Record<string, number> = {};
   for (const [file, source] of files) {
@@ -240,9 +265,9 @@ describe("useEditorMutation caller surface (F-07 forcing pause)", () => {
     // shape countMutationRuns cannot attribute leaves both numbers unchanged
     // and ships green (I2, review 2026-08-19), so the shape itself is banned.
     const offenders: string[] = [];
-    for (const file of collectTsSources(clientSrc)) {
-      const source = readFileSync(file, "utf8");
-      for (const reason of findUncountableRunShapes(source)) {
+    const { files, allHandles } = loadClientTree();
+    for (const [file, source] of files) {
+      for (const reason of findUncountableRunShapes(source, allHandles)) {
         offenders.push(`${file.slice(clientSrc.length + 1)}: ${reason}`);
       }
     }
@@ -470,5 +495,29 @@ describe("mutation-handle discovery (I1 alias spellings)", () => {
     const fixture = "const mutationOp = useAbortableAsyncOperation();\nmutationOp.run(f);";
     expect(extractMutationHandles(fixture)).toEqual([]);
     expect(countMutationRuns(fixture)).toBe(0);
+  });
+});
+
+describe("uncountable shapes reach past the declaring file (I1 ∩ I2)", () => {
+  // I1 (review 3, 2026-08-19): discoverCallers() counts run() calls against
+  // handle names bound ANYWHERE in the tree, but findUncountableRunShapes was
+  // left scanning only the file's OWN bindings. A caller that combines both
+  // shapes — deps type hoisted into a sibling *.types.ts AND run() destructured
+  // off the deps property — escapes the counter (no local binding) and the
+  // offender pass (no local handle to iterate), so it ships green.
+
+  it("flags a destructure off a handle the scanned file does not itself bind", () => {
+    const consumer = [
+      'import type { XDeps } from "./useX.types";',
+      "export function useX(deps: XDeps) {",
+      "  const { run } = deps.mutation;",
+      "  return run(async () => {});",
+      "}",
+    ].join("\n");
+    expect(extractMutationHandles(consumer)).toEqual([]);
+    expect(countMutationRuns(consumer, ["mutation"])).toBe(0);
+    expect(findUncountableRunShapes(consumer, ["mutation"])).toEqual([
+      "destructures run() off the `mutation` handle",
+    ]);
   });
 });
