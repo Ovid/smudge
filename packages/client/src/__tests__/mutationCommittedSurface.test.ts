@@ -39,6 +39,14 @@ import {
 //   *** user is still on the chapter the mutation targeted, re-assert editable
 //   *** plus a dismissible notice when they have drifted away. Skipping the
 //   *** lock WITHOUT re-asserting is the failure this guards against.
+//   ***
+//   *** AND read F-07's Status block first (S10, review round 3). A THIRD
+//   *** caller is the recorded trigger for moving the terminal dispatch into
+//   *** run() itself, which is the only option that makes this failure
+//   *** structurally impossible. That was deferred on cost, not rejected —
+//   *** "remains available and is the right one if a third consumer ever
+//   *** lands". Adding a third by-hand handler is the thing that decision says
+//   *** not to do by reflex. Nothing else ties the decision to this trigger.
 //
 // What it does NOT do: verify the handling is CORRECT. The OOSI1 restore bug
 // (useFindReplaceController.ts, the `reloadFailed && stale` branch) was a
