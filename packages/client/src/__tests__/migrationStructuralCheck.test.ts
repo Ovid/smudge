@@ -395,14 +395,37 @@ describe("client source-tree migration structural check", () => {
     // A comment token inside a string stays; a real comment beside it goes.
     expect(stripCommentsFromTsSource(`const s = "a // b"; // gone`)).toBe(`const s = "a // b"; `);
     expect(stripCommentsFromTsSource("const s = 'a /* b */ c';")).toBe("const s = 'a /* b */ c';");
-    // Known remaining ceiling, pinned so it is a decision rather than a
-    // surprise: a REGEX literal containing a quote is still read as opening a
-    // string, so it can pair with a later quote and leave a real comment
-    // unstripped. That fails toward counting a commented reference as code —
-    // a false RED for the count consumers, not a silent green. No such literal
-    // exists in packages/client/src today.
-    const regexCeiling = ['const re = /"/;', '// a " mention', "const x = 1;"].join("\n");
-    expect(stripCommentsFromTsSource(regexCeiling)).toContain("//");
+    // S3 (review round 3, 2026-08-19): a REGEX literal containing a quote used
+    // to be read as opening a string, which swallowed the real comment below
+    // it. Regex literals are now passed through verbatim, like strings.
+    const regexLiteral = ['const re = /"/;', '// a " mention', "const x = 1;"].join("\n");
+    const strippedRegexLiteral = stripCommentsFromTsSource(regexLiteral);
+    expect(strippedRegexLiteral).toContain('const re = /"/;');
+    expect(strippedRegexLiteral).not.toContain("//");
+    // Division is NOT mistaken for a regex — the lookbehind requires a
+    // position where a regex may legally begin.
+    expect(stripCommentsFromTsSource("const r = a / b; // gone")).toBe("const r = a / b; ");
+  });
+
+  it("a regex literal containing a quote does not erase the code below it (S3)", () => {
+    // S3 (review round 3, 2026-08-19): the ceiling above was false in its
+    // load-bearing half. A regex literal read as an opening quote pairs with
+    // the NEXT quote, and the scanner then resumes mid-expression — where a
+    // `/*` inside a glob string can open a block comment that runs to the next
+    // real `*/` anywhere below, DELETING every line in between. Counts go DOWN,
+    // so a file silently drops out of mutationCommittedSurface's caller
+    // discovery: the silent green that ceiling promised was impossible.
+    const erasure = [
+      'const re = /"/;',
+      'const files = glob("**/*.ts");',
+      "const mutation = useEditorMutation({});",
+      "await mutation.run(f);",
+      "/* an ordinary block comment further down */",
+      "export {};",
+    ].join("\n");
+    const stripped = stripCommentsFromTsSource(erasure);
+    expect(stripped).toContain("const mutation = useEditorMutation({});");
+    expect(stripped).toContain("await mutation.run(f);");
   });
 
   it("stripCommentsFromTsSource removes line and block comments (S1/S3)", () => {

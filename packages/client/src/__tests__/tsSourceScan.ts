@@ -26,15 +26,28 @@ import { join } from "node:path";
 // The concrete latent failure was a glob literal — `"**/*.ts"` opened a block
 // comment that ran to the next `*/` anywhere below it.
 //
-// Remaining ceiling, deliberately: a REGEX literal containing a quote (`/"/`)
-// is still read as opening a string, which can leave a real comment unstripped
-// (fails toward counting a commented reference as code). No such literal exists
-// in packages/client/src today. A full tokenizer is the upgrade path if one
-// lands. Block-comment regex stays non-greedy so adjacent comments don't merge.
+// S3 (review round 3, 2026-08-19): REGEX literals are recognised and passed
+// through too. They used to be read as opening a string, and the ceiling
+// recorded here claimed the worst case was "a real comment left unstripped —
+// a false RED, not a silent green". That was wrong in its load-bearing half.
+// The fake string runs to the NEXT quote and the scanner resumes
+// mid-expression, where a `/*` inside a glob literal opens a block comment
+// running to the next real `*/` anywhere below — DELETING every line between.
+// Counts go DOWN, so a file drops silently out of mutationCommittedSurface's
+// caller discovery. Verified with `const re = /"/;` above `glob("**/*.ts")`.
+//
+// The regex branch is deliberately preceded by a lookbehind restricting it to
+// positions where a regex may legally begin, so division (`a / b`) is not
+// mistaken for one. A mis-detection is benign anyway — it passes the span
+// through verbatim, the same thing the string branch does — with one residual:
+// a real comment INSIDE a mis-detected span survives, a false RED. Full
+// tokenizer remains the upgrade path.
+//
+// Block-comment regex stays non-greedy so adjacent comments don't merge.
 export function stripCommentsFromTsSource(source: string): string {
   return source.replace(
-    /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g,
-    (_match, stringLiteral: string | undefined) => stringLiteral ?? "",
+    /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|(?<=[=(,:[!&|?{};]\s*)\/(?![*\/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^\/\\\n])+\/[dgimsuvy]*)|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g,
+    (_match, literal: string | undefined) => literal ?? "",
   );
 }
 
