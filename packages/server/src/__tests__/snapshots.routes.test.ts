@@ -81,7 +81,14 @@ describe("snapshot routes", () => {
       const second = await request(t.app).post(`/api/chapters/${chapterId}/snapshots`).send({});
       expect(second.status).toBe(200);
       expect(second.body.status).toBe("duplicate");
-      expect(second.body.message).toBeDefined();
+      // F-26 (architecture report 2026-08-11): this asserted `message` was
+      // DEFINED — it pinned the server shipping user-facing English on a
+      // success response, which the steering file forbids for the sibling
+      // success contracts ("the client owns the toast, the server ships no
+      // success copy"). The client already renders its own
+      // STRINGS.snapshots.duplicateSkipped and ignored this field, so it was
+      // dead weight that invited a future caller to display it. Inverted.
+      expect(second.body.message).toBeUndefined();
     });
 
     // Safety net for F-34 and F-26 (architecture report 2026-08-11).

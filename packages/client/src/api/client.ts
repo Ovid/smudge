@@ -533,13 +533,14 @@ export const api = {
       ),
 
     create: (chapterId: string, label?: string, signal?: AbortSignal) =>
-      apiFetch<
-        { status: "created"; snapshot: SnapshotRow } | { status: "duplicate"; message: string }
-      >(`/chapters/${enc(chapterId)}/snapshots`, {
-        method: "POST",
-        body: JSON.stringify(label ? { label } : {}),
-        ...(signal ? { signal } : {}),
-      }),
+      apiFetch<{ status: "created"; snapshot: SnapshotRow } | { status: "duplicate" }>(
+        `/chapters/${enc(chapterId)}/snapshots`,
+        {
+          method: "POST",
+          body: JSON.stringify(label ? { label } : {}),
+          ...(signal ? { signal } : {}),
+        },
+      ),
 
     get: (id: string, signal?: AbortSignal) =>
       apiFetch<SnapshotRow>(`/snapshots/${enc(id)}`, signal ? { signal } : undefined),

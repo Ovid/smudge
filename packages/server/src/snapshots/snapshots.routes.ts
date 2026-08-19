@@ -54,10 +54,15 @@ export function snapshotChapterRouter(): Router {
         throw new NotFoundError("Chapter not found.");
       }
       if (result === "duplicate") {
-        res.status(200).json({
-          status: "duplicate",
-          message: "Snapshot skipped — content unchanged since last snapshot.",
-        });
+        // F-34/F-26 note: 200-with-a-discriminator, and NO user-facing copy.
+        // The steering file's rule for the sibling success contracts is "the
+        // client owns the toast, the server ships no success copy"; this
+        // endpoint used to ship an English `message` the client already
+        // ignored in favour of STRINGS.snapshots.duplicateSkipped. The two
+        // status codes stay: 201 says a row was created, 200 says nothing was,
+        // and collapsing them would either claim a creation that did not
+        // happen or turn a benign no-op into an error.
+        res.status(200).json({ status: "duplicate" });
         return;
       }
       res.status(201).json({ status: "created", snapshot: result });

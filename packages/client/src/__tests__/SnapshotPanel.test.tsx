@@ -299,10 +299,7 @@ describe("SnapshotPanel", () => {
 
     it("shows duplicate message when content unchanged", async () => {
       const user = userEvent.setup();
-      vi.mocked(api.snapshots.create).mockResolvedValue({
-        status: "duplicate",
-        message: "Snapshot skipped",
-      });
+      vi.mocked(api.snapshots.create).mockResolvedValue({ status: "duplicate" });
       render(<SnapshotPanel {...defaultProps} />);
 
       await waitFor(() => {
