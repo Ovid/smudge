@@ -383,6 +383,39 @@ describe("client source-tree migration structural check", () => {
     expect(pattern.test("xsaveOp.run(f);")).toBe(false);
   });
 
+  it("stripCommentsFromTsSource does not treat a comment token inside a string as a comment (S6)", () => {
+    // S6 (review 2026-08-19): the stripper moved out of this file verbatim,
+    // where every consumer was a PRESENCE check. mutationCommittedSurface.ts
+    // now derives equality-of-COUNTS decisions from its output, so
+    // over-stripping flips a numeric assertion instead of a boolean — and a
+    // dropped binding silently removes a file from caller discovery.
+    //
+    // The concrete latent failure: a glob string containing `/*` opened a
+    // block comment that ran to the next `*/` anywhere below, erasing every
+    // line in between. Confirmed no such literal exists in packages/client/src
+    // today; this pins the behaviour so one landing later is harmless.
+    const globAboveBinding = [
+      'const files = glob("**/*.ts");',
+      "const mutation = useEditorMutation({});",
+      "await mutation.run(f); /* trailing */",
+    ].join("\n");
+    expect(stripCommentsFromTsSource(globAboveBinding)).toContain(
+      "const mutation = useEditorMutation({});",
+    );
+    expect(stripCommentsFromTsSource(globAboveBinding)).toContain("mutation.run(f);");
+    // A comment token inside a string stays; a real comment beside it goes.
+    expect(stripCommentsFromTsSource(`const s = "a // b"; // gone`)).toBe(`const s = "a // b"; `);
+    expect(stripCommentsFromTsSource("const s = 'a /* b */ c';")).toBe("const s = 'a /* b */ c';");
+    // Known remaining ceiling, pinned so it is a decision rather than a
+    // surprise: a REGEX literal containing a quote is still read as opening a
+    // string, so it can pair with a later quote and leave a real comment
+    // unstripped. That fails toward counting a commented reference as code —
+    // a false RED for the count consumers, not a silent green. No such literal
+    // exists in packages/client/src today.
+    const regexCeiling = ['const re = /"/;', '// a " mention', "const x = 1;"].join("\n");
+    expect(stripCommentsFromTsSource(regexCeiling)).toContain("//");
+  });
+
   it("stripCommentsFromTsSource removes line and block comments (S1/S3)", () => {
     // The helper pins S1/S3 behavior: structural checks must see only
     // executable code, never commented mentions. If this contract drifts

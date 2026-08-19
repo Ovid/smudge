@@ -14,15 +14,28 @@ import { join } from "node:path";
 // that imported the hook with a single `.run(` reference in a JSDoc
 // example silently passed the import-implies-call ban.
 //
-// Strips line (`// ...`) and block (`/* ... */`) comments from
-// TypeScript source so the structural checks see only executable code.
-// The regex pair is deliberately simple: it does not parse strings
-// (so `"// hello"` is shortened to `"`, which is fine for the
-// presence-checks we run downstream — we only care that real
-// references survive, not that the resulting source is parseable).
-// Block-comment regex is non-greedy so adjacent comments don't merge.
+// Strips line (`// ...`) and block (`/* ... */`) comments from TypeScript
+// source so the structural checks see only executable code.
+//
+// S6 (review 2026-08-19): string literals are now recognised and passed
+// through verbatim. This function moved out of migrationStructuralCheck.test.ts,
+// where every consumer was a PRESENCE check and a little over-stripping was
+// harmless; mutationCommittedSurface.test.ts derives equality-of-COUNTS
+// decisions from the output, where over-stripping flips a numeric assertion and
+// a swallowed handle binding silently removes a file from caller discovery.
+// The concrete latent failure was a glob literal — `"**/*.ts"` opened a block
+// comment that ran to the next `*/` anywhere below it.
+//
+// Remaining ceiling, deliberately: a REGEX literal containing a quote (`/"/`)
+// is still read as opening a string, which can leave a real comment unstripped
+// (fails toward counting a commented reference as code). No such literal exists
+// in packages/client/src today. A full tokenizer is the upgrade path if one
+// lands. Block-comment regex stays non-greedy so adjacent comments don't merge.
 export function stripCommentsFromTsSource(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  return source.replace(
+    /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g,
+    (_match, stringLiteral: string | undefined) => stringLiteral ?? "",
+  );
 }
 
 // S4 (review 2026-08-19): the `<binding>.run(` matcher used to be written out
