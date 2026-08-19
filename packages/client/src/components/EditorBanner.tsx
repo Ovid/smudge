@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactElement } from "react";
 import { STRINGS } from "../strings";
 
 type BannerTone = "error" | "info";
@@ -50,8 +50,18 @@ type EditorBannerProps = {
     }
   | {
       onDismiss?: never;
-      /** A trailing control instead of a dismiss (the lock banner's Refresh). */
-      children: ReactNode;
+      /**
+       * A trailing control instead of a dismiss (the lock banner's Refresh).
+       *
+       * `ReactElement`, not `ReactNode` (S1, review round 3, 2026-08-19):
+       * `ReactNode` admits `null` / `undefined` / `false`, so the union enforced
+       * only that the PROP was passed — `{cond && <button/>}` type-checks and
+       * renders an assertive `role="alert"` with no control at all whenever
+       * `cond` is false, which is the state this union exists to outlaw. A
+       * genuinely conditional banner should be conditional at the `<EditorBanner>`
+       * element, not inside its children.
+       */
+      children: ReactElement;
     }
 );
 

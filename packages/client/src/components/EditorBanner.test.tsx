@@ -57,4 +57,20 @@ describe("EditorBanner", () => {
     const orphan = <EditorBanner tone="error" message="Unclearable" />;
     expect(orphan).toBeTruthy();
   });
+
+  it("does not type-check a trailing control that can render nothing", () => {
+    // S1 (review round 3, 2026-08-19): `children: ReactNode` admitted
+    // null/undefined/false, so the union enforced prop PRESENCE, not control
+    // presence — a conditional control that evaluates false type-checks and
+    // renders an assertive role="alert" with nothing to act on, which is the
+    // exact state the union exists to outlaw. `ReactElement` closes it.
+    const showRefresh = false as boolean;
+    const orphan = (
+      <EditorBanner tone="error" message="Unclearable">
+        {/* @ts-expect-error - children must be an element, not a possibly-absent node */}
+        {showRefresh && <button type="button" />}
+      </EditorBanner>
+    );
+    expect(orphan).toBeTruthy();
+  });
 });
