@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, cleanup, act } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, cleanup, act, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { EditorPage } from "../pages/EditorPage";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -2149,6 +2149,59 @@ describe("EditorPage find-and-replace confirmation", () => {
 
     expect(await screen.findByText(STRINGS.editor.lockedRefusal)).toBeInTheDocument();
     expect(screen.queryByText(STRINGS.editor.mutationBusy)).not.toBeInTheDocument();
+  });
+
+  it("keeps the info notice and the lock banner as two distinct regions with their own controls", async () => {
+    // Safety net for EditorMainContent's two inline banners. The info
+    // notice is role="status"/aria-live="polite" and owns a dismiss
+    // button; the lock banner is role="alert" and owns a refresh button.
+    // Every other test in this file reaches these through getByText, so
+    // a rewrite that collapsed them into one component — flipping a role,
+    // dropping the dismiss control, or letting one dismiss clear both —
+    // would leave the whole suite green.
+    vi.mocked(api.search.replace).mockRejectedValueOnce(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+
+    await openPanelAndSearch();
+
+    const replaceOne = await screen.findAllByRole("button", { name: "Replace" }, { timeout: 3000 });
+    await userEvent.click(replaceOne[0]!);
+    await screen.findByText(STRINGS.findReplace.replaceResponseUnreadable);
+
+    // A second click under the lock produces the refusal notice, so both
+    // banners are on screen at once.
+    await userEvent.click(screen.getAllByRole("button", { name: "Replace" })[0]!);
+    const notice = await screen.findByText(STRINGS.editor.lockedRefusal);
+
+    const infoRegion = notice.closest('[role="status"]');
+    expect(infoRegion).not.toBeNull();
+    expect(infoRegion).toHaveAttribute("aria-live", "polite");
+
+    const lockRegion = screen
+      .getByText(STRINGS.findReplace.replaceResponseUnreadable)
+      .closest('[role="alert"]');
+    expect(lockRegion).not.toBeNull();
+    expect(lockRegion).not.toBe(infoRegion);
+    expect(
+      within(lockRegion as HTMLElement).getByRole("button", {
+        name: STRINGS.editor.refreshButton,
+      }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(
+      within(infoRegion as HTMLElement).getByRole("button", { name: STRINGS.a11y.dismissInfo }),
+    );
+
+    await waitFor(
+      () => {
+        expect(screen.queryByText(STRINGS.editor.lockedRefusal)).toBeNull();
+      },
+      { timeout: 3000 },
+    );
+    // Dismissing the notice must not take the lock banner with it: the
+    // lock is persistent and only a reload clears it.
+    expect(screen.getByText(STRINGS.findReplace.replaceResponseUnreadable)).toBeInTheDocument();
   });
 
   it("C-10/C-11: aborting replaceOp via unmount causes api.search.replace to receive an aborted signal", async () => {
