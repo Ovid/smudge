@@ -605,6 +605,7 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
 - **Status note (unifying all three was considered and rejected):** collapsing to a single duration would triple the nav announcement's dwell. That is an a11y behaviour change made to satisfy a tidiness finding, with no evidence about which value is correct. The finding asks for coordinated ownership, not a single value.
 - **Status caveat (what the safety net does and does not pin):** six tests written before the change (commit `722c136f`) pin all three sites at the boundary — still announcing one tick before the dwell expires, cleared exactly on it. They passed **unmodified** across the refactor. They deliberately hard-code their expected durations rather than importing the constants, so they still redden if a value drifts: verified by setting the constants to 4000/1500, which produced exactly three failures, one per site. A test that imported the constant would have passed that check vacuously.
 - **Status date:** 2026-08-19 08:58 UTC
+- **Status commit:** 1ee1396e
 
 ### [F-33] No configuration inventory; eight runtime env vars, `LOG_LEVEL` documented nowhere
 - **Category:** 22 (Configuration sprawl)
