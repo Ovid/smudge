@@ -221,7 +221,10 @@ export function Editor({
   }, [onImageUploadCommitted]);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirtyRef = useRef(false);
-  const editorInstanceRef = useRef<{ getJSON: () => Record<string, unknown> } | null>(null);
+  const editorInstanceRef = useRef<{
+    getJSON: () => Record<string, unknown>;
+    isEditable?: boolean;
+  } | null>(null);
 
   const debouncedSave = useCallback(
     (editorInstance: { getJSON: () => Record<string, unknown>; isEditable?: boolean }) => {
@@ -289,6 +292,19 @@ export function Editor({
         clearTimeout(debounceTimerRef.current);
       }
       if (dirtyRef.current && editorInstanceRef.current) {
+        // Backlog 4d5b9e81: skip the PATCH when the editor is locked, the same
+        // gate debouncedSave and the blur handler already apply. A lock means
+        // the server has committed something this editor is not showing (a
+        // persistent failure lock) or is about to (an in-flight
+        // useEditorMutation), so PATCHing the on-screen content overwrites the
+        // server's version with pre-mutation text.
+        //
+        // flushSave's C1 exemption below does NOT extend here: flushSave is
+        // called deliberately BY the mutation to commit typing before it runs,
+        // and unmount is nobody's deliberate flush. Nothing is destroyed by
+        // skipping — dirtyRef stays true and the content cache still holds the
+        // draft (CLAUDE.md save-pipeline invariant 3).
+        if (editorInstanceRef.current.isEditable === false) return;
         // Fire-and-forget: don't set dirtyRef=false here since the save is async.
         // The content cache persists the data until save succeeds.
         // mountChapterId is captured above so this cleanup targets THIS
