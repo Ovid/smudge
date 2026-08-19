@@ -2188,6 +2188,17 @@ describe("EditorPage find-and-replace confirmation", () => {
         name: STRINGS.editor.refreshButton,
       }),
     ).toBeInTheDocument();
+    // S1 (review 2026-08-19): the lock banner's non-dismissibility used to be
+    // structural — making it dismissible meant writing a button. Since the
+    // three banners were consolidated into EditorBanner it is one omitted
+    // `onDismiss` prop, identical in shape to the two sibling call sites two
+    // lines below it in EditorMainContent. A dismissible lock banner lets the
+    // writer clear the only on-screen explanation for a read-only editor.
+    expect(
+      within(lockRegion as HTMLElement).queryByRole("button", {
+        name: STRINGS.a11y.dismissError,
+      }),
+    ).toBeNull();
 
     await userEvent.click(
       within(infoRegion as HTMLElement).getByRole("button", { name: STRINGS.a11y.dismissInfo }),
