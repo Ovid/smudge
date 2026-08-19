@@ -404,10 +404,12 @@ outtakes" — and one consumer, the card's "Insert into editor".
 **Why it went.** It was never argued for. The roadmap sketch (`docs/roadmap.md`
 §4c.2) lists four bullets and the capture one reads "A writer can move text from
 the editor to outtakes (cut selection -> paste to outtakes) and vice versa";
-there is no manual-create bullet. The design doc mentions manual create exactly
-once, as a parenthetical inside the §2 scope list, while every other choice in
-that document earns a numbered entry in §3 "Design Decisions (with rationale)" —
-manual create is not among the four. It entered as an unexamined default: the
+there is no manual-create bullet. The design doc mentions manual create three
+times — a parenthetical in the §2 scope list (`design.md:36`), the component
+inventory (`:276-277`), and the test plan (`:356`) — but every one of those
+specifies MECHANISM. Not one is a rationale: every other choice in that document
+earns a numbered entry in §3 "Design Decisions (with rationale)", and manual
+create is not among the four. It entered as an unexamined default: the
 CRUD surface had a POST endpoint, so the panel got a create button. Everything
 downstream of that treats it as settled and argues only about mechanism (this
 log's item 3 is about wrapping a textarea string into a TipTap doc, not about

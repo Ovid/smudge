@@ -809,6 +809,13 @@ outtakes: {
 },
 ```
 
+> **Superseded 2026-08-18: the blank-create form was removed** (see the Task D2
+> marker below and the §2 scope-list marker in the design doc). Two entries above
+> are stale: `newBlank` no longer exists, and `empty` was rewritten — "Stash cut
+> text here to find it later" pointed at a textarea that is gone, so an empty
+> state naming no reachable gesture read as broken. The delivered copy names the
+> toolbar action instead, sharing one constant with the button's accessible name.
+
 **Step 5 — Commit:** `feat(4c.2): outtakes error scopes + strings`
 
 ---
