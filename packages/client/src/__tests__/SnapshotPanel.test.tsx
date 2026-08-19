@@ -315,9 +315,11 @@ describe("SnapshotPanel", () => {
     });
 
     // F-34: the schema's cap, enforced where the writer can see it — matching
-    // OuttakeCard's label input. Never stricter than the server, which trims
-    // and sanitizes before measuring, so it cannot block a label the API would
-    // have taken.
+    // OuttakeCard's label input. Pins the NUMBER only. It is deliberately not a
+    // claim that the input and the server agree: the server measures
+    // LABEL_MAX_UNITS after sanitizing and trimming, this attribute measures
+    // the raw value, so the input is the stricter of the two. See the comment
+    // at the attribute itself.
     it("caps the label input at the schema's limit (F-34)", async () => {
       const user = userEvent.setup();
       render(<SnapshotPanel {...defaultProps} />);
