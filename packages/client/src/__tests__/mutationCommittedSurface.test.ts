@@ -70,12 +70,18 @@ const clientSrc = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const COMMITTED_RE = /stage === "committed_but_unreloaded"/;
 
-// A file can obtain a useEditorMutation handle exactly two ways, and
-// TypeScript forces the hook's own name to be spelled out in both:
+// The three spellings that name the hook where a handle is bound:
 //
 //   const NAME = useEditorMutation({...})           // the owner constructs it
 //   NAME: ReturnType<typeof useEditorMutation>      // a consumer declares it
 //   NAME: UseEditorMutationReturn                   // ...or names the return type
+//
+// These are NOT exhaustive, and TypeScript forces none of them: a one-step
+// `const { run } = useEditorMutation({...})` destructure binds no name, and a
+// deps interface hoisted into a sibling *.types.ts moves the declaration out
+// of the consuming file entirely. Both were verified to yield [] here (review
+// I1, 2026-08-19). discoverCallers() therefore does not rely on this regex
+// alone — see its three signals.
 //
 // I1 (review 2026-08-19): discovery used to be `/\bmutation\.run\s*[<(]/` —
 // keyed on the literal receiver name. A third caller spelling its handle
@@ -141,7 +147,11 @@ export function findUncountableRunShapes(source: string): string[] {
 }
 
 /**
- * Counts `<handle>.run(...)` calls in `source` for every handle it binds.
+ * Counts `<handle>.run(...)` calls in `source`.
+ *
+ * `handles` defaults to the file's own bindings; discoverCallers passes the
+ * names bound ANYWHERE in the tree instead, so a consumer whose deps type was
+ * hoisted into a sibling *.types.ts is still counted (I1, review 2026-08-19).
  *
  * The call shape is owned by `runCallPattern` in tsSourceScan.ts, shared with
  * the sibling drift detector (S4, review 2026-08-19) so the two cannot answer
@@ -150,10 +160,13 @@ export function findUncountableRunShapes(source: string): string[] {
  * below (I2, review 2026-08-19), because a destructure that ADDS a call
  * rather than replacing one leaves the count unchanged and passes green.
  */
-export function countMutationRuns(source: string): number {
+export function countMutationRuns(
+  source: string,
+  handles: string[] = extractMutationHandles(source),
+): number {
   const code = stripCommentsFromTsSource(source);
   let total = 0;
-  for (const name of extractMutationHandles(source)) {
+  for (const name of handles) {
     total += code.match(runCallPattern(name, "g"))?.length ?? 0;
   }
   return total;
@@ -185,15 +198,34 @@ const COMMITTED_CALLERS: Record<string, number> = {
 };
 
 function discoverCallers(): Record<string, number> {
+  const files = collectTsSources(clientSrc).map(
+    (file) => [file, readFileSync(file, "utf8")] as const,
+  );
+  // Handle names bound ANYWHERE in the tree, not just in the file being
+  // scanned. I1 (review 2026-08-19): a consumer that receives `mutation` from
+  // a deps interface declared in a sibling *.types.ts binds no handle of its
+  // own, so keying on per-file bindings alone left it invisible while it made
+  // real run() calls. Over-matching an unrelated `mutation.run(` elsewhere
+  // would fail in the safe direction (a false RED demanding a decision).
+  const allHandles = [...new Set(files.flatMap(([, source]) => extractMutationHandles(source)))];
+  const importsHook = importPatternFor("useEditorMutation");
   const found: Record<string, number> = {};
-  for (const file of collectTsSources(clientSrc)) {
-    const source = readFileSync(file, "utf8");
-    // Every file HOLDING a handle is listed, including the owner that makes no
-    // run() call (EditorPage.tsx, count 0). Listing it means the day it starts
-    // calling run() the surface assertion goes red rather than silently
-    // acquiring an unguarded caller.
-    if (extractMutationHandles(source).length === 0) continue;
-    found[file.slice(clientSrc.length + 1)] = countMutationRuns(source);
+  for (const [file, source] of files) {
+    // Three independent signals, because no one of them covers the others:
+    //   - holds a handle: the owner that makes no run() call is still listed
+    //     (EditorPage.tsx, count 0), so the day it starts calling run() the
+    //     surface assertion goes red rather than silently acquiring a caller;
+    //   - calls run() on a tree-wide handle name: the sibling-.types.ts shape;
+    //   - imports the hook: `const { run } = useEditorMutation({...})` binds no
+    //     handle and calls no `<handle>.run(`, leaving the import as the only
+    //     trace. The sibling detector already treats "imports the hook but
+    //     yields no binding" as an offender rather than a skip
+    //     (migrationStructuralCheck.test.ts) — this is the same gate.
+    const runs = countMutationRuns(source, allHandles);
+    if (extractMutationHandles(source).length === 0 && runs === 0 && !importsHook.test(source)) {
+      continue;
+    }
+    found[file.slice(clientSrc.length + 1)] = runs;
   }
   return found;
 }
@@ -278,6 +310,46 @@ describe("countCodeMatches (drift-detector self-tests)", () => {
       '  if (result.stage === "committed_but_unreloaded") {',
     ].join("\n");
     expect(countCodeMatches(fixture, COMMITTED_RE)).toBe(1);
+  });
+});
+
+describe("caller discovery reaches past the declaring file (I1)", () => {
+  // I1 (review 2026-08-19): discoverCallers() skipped any file yielding no
+  // handle of its own. A new caller whose deps type is declared in a sibling
+  // *.types.ts (useProjectEditor.types.ts is the established local precedent
+  // for exactly that hoist) contributes no key, so the surface assertion stays
+  // GREEN — the one direction this file exists to block. Two widenings close
+  // it: the tree-wide handle-name set, and the import edge.
+
+  it("counts a run() in a file whose deps type lives in a sibling module", () => {
+    const consumer = [
+      'import type { FindReplaceControllerDeps } from "./useFindReplaceController.types";',
+      "export function useC(deps: FindReplaceControllerDeps) {",
+      "  return deps.mutation.run(f);",
+      "}",
+    ].join("\n");
+    // Invisible when only its own bindings are considered...
+    expect(extractMutationHandles(consumer)).toEqual([]);
+    // ...visible against the handle names the tree declares elsewhere.
+    expect(countMutationRuns(consumer, ["mutation"])).toBe(1);
+  });
+
+  it("sees the import edge for a file that binds no handle at all", () => {
+    const oneStepDestructure = [
+      'import { useEditorMutation } from "../hooks/useEditorMutation";',
+      "const { run } = useEditorMutation({ editorRef, projectEditor, dispatch });",
+      "await run(f);",
+    ].join("\n");
+    expect(extractMutationHandles(oneStepDestructure)).toEqual([]);
+    expect(countMutationRuns(oneStepDestructure, ["mutation"])).toBe(0);
+    // The import is the only remaining signal — and it must fire.
+    expect(importPatternFor("useEditorMutation").test(oneStepDestructure)).toBe(true);
+  });
+
+  it("matches a type-only import of the hook", () => {
+    // Both live controllers reach useEditorMutation this way.
+    const src = 'import type { useEditorMutation } from "./useEditorMutation";';
+    expect(importPatternFor("useEditorMutation").test(src)).toBe(true);
   });
 });
 
