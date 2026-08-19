@@ -2,7 +2,12 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve, join } from "node:path";
-import { collectTsSources, stripCommentsFromTsSource } from "./tsSourceScan";
+import {
+  collectTsSources,
+  importPatternFor,
+  runCallPattern,
+  stripCommentsFromTsSource,
+} from "./tsSourceScan";
 import { tmpdir } from "node:os";
 
 // Consolidates the four near-identical "no raw seq-ref patterns" tests that
@@ -46,17 +51,6 @@ export function extractAbortableAsyncOperationBindings(source: string): string[]
     if (name !== undefined) names.push(name);
   }
   return names;
-}
-
-// Builds an import-statement regex for a named symbol. Matches a real ES
-// import (start of line, possibly indented) — not a bare reference,
-// comment, or string literal. Review (2026-05-24, Copilot) flagged the
-// prior bare-identifier match as too lax: a future comment or string
-// mention of the hook would have silently satisfied the assertion. The
-// `[^}]*` segments span newlines so multi-line `import { … }` blocks
-// still match.
-export function importPatternFor(name: string): RegExp {
-  return new RegExp(`^\\s*import\\s*\\{[^}]*\\b${name}\\b[^}]*\\}\\s*from\\s*["']`, "m");
 }
 
 // 4b.3d S13: known delegation helpers — functions that accept an
@@ -190,8 +184,7 @@ describe("client source-tree migration structural check", () => {
         // uses single-level generics today; a future nested-generic
         // call would surface as an offender, forcing the regex to be
         // extended deliberately rather than silently false-passing.
-        const callPattern = new RegExp(`\\b${name}\\.run\\s*(?:<[^>]*>)?\\s*\\(`);
-        if (callPattern.test(source)) continue;
+        if (runCallPattern(name).test(source)) continue;
         // 4b.3d S13: accept delegation — the binding passed as an
         // argument to a known helper that calls .run() internally.
         // The helper's own tests confirm it calls .run() on the param,
@@ -367,6 +360,27 @@ describe("client source-tree migration structural check", () => {
     expect(liveBindings).toEqual(["saveOp"]);
     const livePattern = new RegExp(`\\b${liveBindings[0]}\\.run\\s*(?:<[^>]*>)?\\s*\\(`);
     expect(livePattern.test(liveFixture)).toBe(true);
+  });
+
+  it("runCallPattern answers identically for both detectors (S4, review 2026-08-19)", () => {
+    // S4: the `<binding>.run(` matcher was duplicated here and in
+    // mutationCommittedSurface.test.ts, and the copies had diverged — the
+    // newer one tolerated a Prettier line-wrap and optional chaining, this
+    // one tolerated neither. The same source text got two different answers
+    // from two detectors scanning the same tree for the same construct, and
+    // here the wrapped shape produced a false RED (a cosmetic reflow of a
+    // real `.run(` call would report the binding as dead). One shared
+    // parameterised pattern in tsSourceScan.ts owns the shape now.
+    const pattern = runCallPattern("saveOp");
+    expect(pattern.test("saveOp.run(f);")).toBe(true);
+    expect(pattern.test("saveOp.run<SaveLoopOutcome>(f);")).toBe(true);
+    // The three shapes this copy used to miss.
+    expect(pattern.test("await saveOp\n  .run(f);")).toBe(true);
+    expect(pattern.test("saveOp?.run(f);")).toBe(true);
+    // Nested generic (review I2): `[^>]*` stopped at the inner `>`.
+    expect(pattern.test("saveOp.run<Array<string>>(f);")).toBe(true);
+    // Word boundary on the LEFT survives the rewrite.
+    expect(pattern.test("xsaveOp.run(f);")).toBe(false);
   });
 
   it("stripCommentsFromTsSource removes line and block comments (S1/S3)", () => {

@@ -25,6 +25,40 @@ export function stripCommentsFromTsSource(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
 }
 
+// S4 (review 2026-08-19): the `<binding>.run(` matcher used to be written out
+// twice — once in migrationStructuralCheck.test.ts and once in
+// mutationCommittedSurface.test.ts — and the two copies had drifted apart, so
+// the same source text got different answers from two detectors scanning the
+// same tree for the same construct. This is the single owner of the shape.
+//
+// Tolerated: an optional generic argument list (including a NESTED one — the
+// lazy `<.*?>` is what the earlier `<[^>]*>` got wrong, stopping at the inner
+// `>`), optional chaining (`op?.run(`), and a Prettier line wrap between the
+// receiver and `.run`. Not tolerated, deliberately: a destructured
+// `const { run } = op`, which each caller must detect and reject on its own
+// terms — see mutationCommittedSurface.test.ts, where it is an offender.
+export function runCallPattern(name: string, flags = ""): RegExp {
+  return new RegExp(`\\b${name}\\s*\\??\\.\\s*run\\s*(?:<.*?>)?\\s*\\(`, flags);
+}
+
+// Builds an import-statement regex for a named symbol. Matches a real ES
+// import (start of line, possibly indented) — not a bare reference, comment,
+// or string literal. Review (2026-05-24, Copilot) flagged the prior
+// bare-identifier match as too lax: a future comment or string mention of the
+// hook would have silently satisfied the assertion. The `[^}]*` segments span
+// newlines so multi-line `import { … }` blocks still match.
+//
+// I1 (review 2026-08-19): `import type { … }` matches too. It did not before,
+// and useSnapshotController.ts / useFindReplaceController.ts both reach
+// useEditorMutation exactly that way — a type-only import gate that missed
+// them would have gated nothing.
+export function importPatternFor(name: string): RegExp {
+  return new RegExp(
+    `^\\s*import\\s*(?:type\\s+)?\\{[^}]*\\b${name}\\b[^}]*\\}\\s*from\\s*["']`,
+    "m",
+  );
+}
+
 export function collectTsSources(root: string): string[] {
   const results: string[] = [];
   for (const entry of readdirSync(root)) {

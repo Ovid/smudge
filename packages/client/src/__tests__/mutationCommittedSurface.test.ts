@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { collectTsSources, stripCommentsFromTsSource } from "./tsSourceScan";
+import { collectTsSources, runCallPattern, stripCommentsFromTsSource } from "./tsSourceScan";
 
 // ===========================================================================
 // F-07 forcing-pause: every useEditorMutation.run() caller owns the
@@ -92,19 +92,18 @@ export function extractMutationHandles(source: string): string[] {
 /**
  * Counts `<handle>.run(...)` calls in `source` for every handle it binds.
  *
- * Tolerates an optional generic argument list, optional chaining, and a
- * Prettier line wrap between receiver and `.run`. A `const { run } = mutation`
- * destructure is deliberately NOT matched: the file then reports fewer runs
- * than the committed surface records, which is a false RED demanding a
- * decision — the safe direction. Same trade-off the sibling detector documents
- * for its own non-nested-generic matcher.
+ * The call shape is owned by `runCallPattern` in tsSourceScan.ts, shared with
+ * the sibling drift detector (S4, review 2026-08-19) so the two cannot answer
+ * differently for the same text. A `const { run } = mutation` destructure is
+ * deliberately NOT matched here — it is caught by its own offender assertion
+ * below (I2, review 2026-08-19), because a destructure that ADDS a call
+ * rather than replacing one leaves the count unchanged and passes green.
  */
 export function countMutationRuns(source: string): number {
   const code = stripCommentsFromTsSource(source);
   let total = 0;
   for (const name of extractMutationHandles(source)) {
-    const callPattern = new RegExp(`\\b${name}\\s*\\??\\.\\s*run\\s*(?:<[^>]*>)?\\s*\\(`, "g");
-    total += code.match(callPattern)?.length ?? 0;
+    total += code.match(runCallPattern(name, "g"))?.length ?? 0;
   }
   return total;
 }
