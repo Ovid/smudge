@@ -61,10 +61,11 @@ import {
 // (2026-08-19) corrected an earlier claim here that any other spelling "fails
 // toward red": that holds only when an unseen shape REPLACES a counted call.
 // Add one and both numbers are unchanged, so the unguarded caller ships GREEN.
-// The one shape a caller could plausibly reach for — `const { run } = mutation`
-// — is therefore refused outright by findUncountableRunShapes below rather than
-// relied on to fail. If you need a spelling neither the counter nor the refusal
-// covers, extend one of them; do not assume the numbers will notice.
+// The two shapes a caller could plausibly reach for — `const { run } = mutation`
+// and the one-step `const { run } = useEditorMutation({...})` — are therefore
+// refused outright by findUncountableRunShapes below rather than relied on to
+// fail. If you need a spelling neither the counter nor the refusal covers,
+// extend one of them; do not assume the numbers will notice.
 
 const clientSrc = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -122,6 +123,21 @@ export function extractMutationHandles(source: string): string[] {
   return [...names];
 }
 
+// The one-step `const { run } = useEditorMutation({...})` destructure, refused
+// WITHOUT reference to any handle name.
+//
+// I2 (review round 3, 2026-08-19): this shape binds no handle and calls no
+// `<handle>.run(`, so the only trace it leaves is the import — and the import
+// signal added for it in round 2 merely converts a file from INVISIBLE to
+// LISTED. A file already in COMMITTED_CALLERS gains no key, no run count and no
+// committed branch from it, so both numeric assertions compare unchanged
+// numbers and the unguarded caller ships green. pages/EditorPage.tsx is listed
+// and owns the shared instance, making it the single most likely host.
+//
+// The handle loop above cannot reach it: `useEditorMutation` is spelled with a
+// capital M, so `\bmutation\b` finds no word boundary inside it.
+const ONE_STEP_DESTRUCTURE_RE = /\{[^{}]*\brun\b[^{}]*\}\s*=\s*[^;\n]*useEditorMutation\s*[<(]/;
+
 /**
  * Run-call shapes in `source` that `countMutationRuns` cannot attribute.
  *
@@ -154,6 +170,9 @@ export function findUncountableRunShapes(
   for (const name of handles) {
     const destructure = new RegExp(`\\{[^{}]*\\brun\\b[^{}]*\\}\\s*=\\s*[^;\\n]*\\b${name}\\b`);
     if (destructure.test(code)) reasons.push(`destructures run() off the \`${name}\` handle`);
+  }
+  if (ONE_STEP_DESTRUCTURE_RE.test(code)) {
+    reasons.push("destructures run() straight off useEditorMutation()");
   }
   return reasons;
 }
@@ -409,6 +428,26 @@ describe("uncountable run() shapes (I2 additive hole)", () => {
     ].join("\n");
     expect(findUncountableRunShapes(fixture)).toEqual([
       "destructures run() off the `mutation` handle",
+    ]);
+  });
+
+  it("flags a one-step destructure straight off useEditorMutation()", () => {
+    // I2 (review round 3, 2026-08-19): the import signal added for this shape
+    // only converts a file from INVISIBLE to LISTED. A file already on the
+    // committed surface — pages/EditorPage.tsx above all, which owns the shared
+    // instance — gains no key, no run count and no committed branch from it, so
+    // both numeric assertions compare unchanged numbers and it ships green.
+    // The refusal must therefore be handle-INDEPENDENT: `useEditorMutation` is
+    // spelled with a capital M, so `\bmutation\b` never matches it.
+    const fixture = [
+      "const mutation = useEditorMutation({});",
+      "await mutation.run(f);",
+      "const { run } = useEditorMutation({ editorRef, projectEditor, dispatch });",
+      "await run(g);",
+    ].join("\n");
+    expect(countMutationRuns(fixture)).toBe(1);
+    expect(findUncountableRunShapes(fixture)).toEqual([
+      "destructures run() straight off useEditorMutation()",
     ]);
   });
 
