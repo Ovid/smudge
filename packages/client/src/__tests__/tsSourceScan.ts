@@ -1,6 +1,8 @@
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
+import ts from "typescript";
+
 // Shared source-tree scanning helpers for the structural drift-detector tests
 // (migrationStructuralCheck.test.ts, mutationCommittedSurface.test.ts). They
 // live in a plain module rather than in either test file because importing a
@@ -17,38 +19,55 @@ import { join } from "node:path";
 // Strips line (`// ...`) and block (`/* ... */`) comments from TypeScript
 // source so the structural checks see only executable code.
 //
-// S6 (review 2026-08-19): string literals are now recognised and passed
-// through verbatim. This function moved out of migrationStructuralCheck.test.ts,
-// where every consumer was a PRESENCE check and a little over-stripping was
-// harmless; mutationCommittedSurface.test.ts derives equality-of-COUNTS
-// decisions from the output, where over-stripping flips a numeric assertion and
-// a swallowed handle binding silently removes a file from caller discovery.
-// The concrete latent failure was a glob literal — `"**/*.ts"` opened a block
-// comment that ran to the next `*/` anywhere below it.
+// I2 (review round 4, 2026-08-19): this was a hand-written regex, patched in
+// three consecutive review rounds — for strings (round 2, S6), then regex
+// literals (round 3, S3), and it was still deleting executable code in two
+// common positions. Its regex-literal lookbehind class held no `>` and no
+// keyword, so `=> /…/` and `return /…/` never entered the regex branch and
+// fell through to the string alternative, which has no newline exclusion and
+// runs to the next quote anywhere below. Counts go DOWN, which is the
+// silent-green direction: a file drops out of mutationCommittedSurface's
+// caller discovery and the F-07 forcing pause ships green on an unguarded
+// caller. Rather than a fourth hand-patch, the job is now done by the
+// TypeScript parser that already ships as a root devDependency. Both
+// consumers are Node-side test files, so the cost is test-time only.
 //
-// S3 (review round 3, 2026-08-19): REGEX literals are recognised and passed
-// through too. They used to be read as opening a string, and the ceiling
-// recorded here claimed the worst case was "a real comment left unstripped —
-// a false RED, not a silent green". That was wrong in its load-bearing half.
-// The fake string runs to the NEXT quote and the scanner resumes
-// mid-expression, where a `/*` inside a glob literal opens a block comment
-// running to the next real `*/` anywhere below — DELETING every line between.
-// Counts go DOWN, so a file drops silently out of mutationCommittedSurface's
-// caller discovery. Verified with `const re = /"/;` above `glob("**/*.ts")`.
+// Why the parser and not `ts.createScanner`: whether `/` opens a regex
+// literal or is a division operator is a PARSER decision (the scanner exposes
+// `reScanSlashToken` for exactly this reason), so a bare token loop
+// reintroduces the round-3 bug. Parsing first and then removing the comment
+// ranges TypeScript itself reports gets regex literals, nested template
+// substitutions, and JSX text right by construction — the last of which the
+// regex never handled at all.
 //
-// The regex branch is deliberately preceded by a lookbehind restricting it to
-// positions where a regex may legally begin, so division (`a / b`) is not
-// mistaken for one. A mis-detection is benign anyway — it passes the span
-// through verbatim, the same thing the string branch does — with one residual:
-// a real comment INSIDE a mis-detected span survives, a false RED. Full
-// tokenizer remains the upgrade path.
-//
-// Block-comment regex stays non-greedy so adjacent comments don't merge.
+// Comments reachable two ways: a comment preceded by a newline is LEADING
+// trivia of the following token, and a same-line comment is TRAILING trivia of
+// the preceding one. Both are collected, keyed by start position so the
+// overlap between the two views dedupes.
 export function stripCommentsFromTsSource(source: string): string {
-  return source.replace(
-    /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|(?<=[=(,:[!&|?{};]\s*)\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^/\\\n])+\/[dgimsuvy]*)|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g,
-    (_match, literal: string | undefined) => literal ?? "",
+  const sourceFile = ts.createSourceFile(
+    "scan.tsx",
+    source,
+    ts.ScriptTarget.Latest,
+    /* setParentNodes */ true,
+    ts.ScriptKind.TSX,
   );
+  const comments = new Map<number, number>();
+  const visit = (node: ts.Node): void => {
+    for (const r of ts.getLeadingCommentRanges(source, node.pos) ?? []) comments.set(r.pos, r.end);
+    for (const r of ts.getTrailingCommentRanges(source, node.end) ?? []) comments.set(r.pos, r.end);
+    for (const child of node.getChildren(sourceFile)) visit(child);
+  };
+  visit(sourceFile);
+
+  let out = "";
+  let cursor = 0;
+  for (const [pos, end] of [...comments.entries()].sort((a, b) => a[0] - b[0])) {
+    if (pos < cursor) continue;
+    out += source.slice(cursor, pos);
+    cursor = end;
+  }
+  return out + source.slice(cursor);
 }
 
 // S4 (review 2026-08-19): the `<binding>.run(` matcher used to be written out

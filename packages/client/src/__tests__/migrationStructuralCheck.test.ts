@@ -402,8 +402,8 @@ describe("client source-tree migration structural check", () => {
     const strippedRegexLiteral = stripCommentsFromTsSource(regexLiteral);
     expect(strippedRegexLiteral).toContain('const re = /"/;');
     expect(strippedRegexLiteral).not.toContain("//");
-    // Division is NOT mistaken for a regex — the lookbehind requires a
-    // position where a regex may legally begin.
+    // Division is NOT mistaken for a regex. Under the parser this is decided
+    // correctly by construction rather than by a lookbehind heuristic (I2).
     expect(stripCommentsFromTsSource("const r = a / b; // gone")).toBe("const r = a / b; ");
   });
 
@@ -426,6 +426,46 @@ describe("client source-tree migration structural check", () => {
     const stripped = stripCommentsFromTsSource(erasure);
     expect(stripped).toContain("const mutation = useEditorMutation({});");
     expect(stripped).toContain("await mutation.run(f);");
+  });
+
+  it("I2: a regex or template in a position the old lookbehind missed does not erase code", () => {
+    // I2 (review round 4, 2026-08-19). The stripper was a hand-written regex
+    // whose regex-literal lookbehind class (`[=(,:[!&|?{};]`) held no `>` and
+    // admitted no keyword. So `=> /…/` and `return /…/` — two of the most
+    // common regex positions in TypeScript — never entered the regex branch.
+    // They fell through to the STRING alternative, which has no newline
+    // exclusion, so a fake literal ran to the next quote anywhere below and
+    // everything in between was deleted. Counts go DOWN: a file silently drops
+    // out of mutationCommittedSurface's caller discovery and the F-07 forcing
+    // pause ships green on an unguarded caller.
+    //
+    // Round 3's fixture (`const re = /"/;`) sits in a position the class DID
+    // admit, which is why the round-3 fix looked complete.
+    const afterArrow = "const isAbsolute = (s) => /^https?:\\/\\//.test(s) && mutation.run(f);";
+    expect(stripCommentsFromTsSource(afterArrow)).toBe(afterArrow);
+
+    const afterReturn = [
+      'function hasQuote(s) { return /"/.test(s); }',
+      'const files = glob("**/*.ts");',
+      "const mutation = useEditorMutation({});",
+      "await mutation.run(f);",
+      "/* an ordinary block comment further down */",
+    ].join("\n");
+    const strippedReturn = stripCommentsFromTsSource(afterReturn);
+    expect(strippedReturn).toContain("const mutation = useEditorMutation({});");
+    expect(strippedReturn).toContain("await mutation.run(f);");
+    expect(strippedReturn).not.toContain("an ordinary block comment");
+
+    // A `${…}` substitution holding a nested template: the old backtick
+    // alternative could not span it, so it closed early and deleted the rest.
+    const nestedTemplate =
+      'const css = `${rules.map((r) => `//${r}`).join("")}`; await mutation.run(f);';
+    expect(stripCommentsFromTsSource(nestedTemplate)).toBe(nestedTemplate);
+
+    // JSX text containing comment tokens is not code and not a comment. The
+    // regex had no notion of JSX at all; the parser does.
+    const jsxText = "const el = <div>see http://x and /* not a comment */</div>;";
+    expect(stripCommentsFromTsSource(jsxText)).toBe(jsxText);
   });
 
   it("stripCommentsFromTsSource removes line and block comments (S1/S3)", () => {
