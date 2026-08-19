@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { renderHook, waitFor, fireEvent } from "@testing-library/react";
+import { renderHook, waitFor, fireEvent, act } from "@testing-library/react";
 import type { Chapter, ProjectWithChapters } from "@smudge/shared";
 import { useKeyboardShortcuts } from "../useKeyboardShortcuts";
 import { STRINGS } from "../../strings";
@@ -220,5 +220,79 @@ describe("Ctrl+Shift+Arrow chapter navigation announcement (F-13)", () => {
     await waitFor(() => {
       expect(setNavAnnouncement).toHaveBeenCalledWith(ARRIVED);
     });
+  });
+});
+
+// Safety net for F-32 (architecture report 2026-08-11). The nav announcement's
+// dwell time is an inline literal here, and a duplicated one lives in two image
+// components — F-32 is about giving the three a single named owner. Nothing
+// pinned any of the three durations, so the refactor could have silently
+// changed how long a screen reader has to speak a chapter change. These pin the
+// CURRENT behaviour at the boundary: still present one tick before the dwell
+// expires, cleared exactly on it.
+describe("nav announcement dwell time (F-32 safety net)", () => {
+  const DWELL_MS = 1000;
+
+  async function setupAndSettle() {
+    const setNavAnnouncement = vi.fn();
+    const handleSelectChapterWithFlush = vi.fn().mockResolvedValue(true);
+
+    renderHook(() =>
+      useKeyboardShortcuts({
+        shortcutHelpOpen: false,
+        deleteTarget: null,
+        projectSettingsOpen: false,
+        exportDialogOpen: false,
+        viewMode: "editor",
+        activeChapter: CHAPTER_ONE,
+        project: PROJECT,
+        chapterWordCount: 0,
+        setShortcutHelpOpen: vi.fn(),
+        toggleSidebar: vi.fn(),
+        handleCreateChapter: vi.fn(),
+        handleSelectChapterWithFlush,
+        setWordCountAnnouncement: vi.fn(),
+        setNavAnnouncement,
+        switchToView: vi.fn().mockResolvedValue(true),
+        togglePanel: vi.fn(),
+      }),
+    );
+
+    fireEvent.keyDown(document, { key: "ArrowDown", ctrlKey: true, shiftKey: true });
+    // Let the navigation promise and its .then(settle) run: settle is what arms
+    // the clear timer, so advancing timers before this would measure nothing.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(setNavAnnouncement).toHaveBeenCalledWith(ARRIVED);
+    setNavAnnouncement.mockClear();
+    return setNavAnnouncement;
+  }
+
+  it("still shows the announcement one tick before the dwell time expires", async () => {
+    vi.useFakeTimers();
+    try {
+      const setNavAnnouncement = await setupAndSettle();
+      act(() => {
+        vi.advanceTimersByTime(DWELL_MS - 1);
+      });
+      expect(setNavAnnouncement).not.toHaveBeenCalledWith("");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears the announcement exactly on the dwell time", async () => {
+    vi.useFakeTimers();
+    try {
+      const setNavAnnouncement = await setupAndSettle();
+      act(() => {
+        vi.advanceTimersByTime(DWELL_MS);
+      });
+      expect(setNavAnnouncement).toHaveBeenCalledWith("");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

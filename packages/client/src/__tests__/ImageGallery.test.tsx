@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup, waitFor } from "@testing-library/react";
+import { render, screen, cleanup, waitFor, act, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ImageGallery } from "../components/ImageGallery";
 import { api, ApiRequestError } from "../api/client";
@@ -1411,5 +1411,84 @@ describe("ImageGallery", () => {
     // into the same mutationOp as the upload handler and aborted it.
     expect(uploadSig.aborted).toBe(true);
     expect(updateSig.aborted).toBe(false);
+  });
+});
+
+// Safety net for F-32 (architecture report 2026-08-11). ANNOUNCEMENT_DURATION
+// is module-private here while EditorPage repeats the same 3000 as an inline
+// literal for the same concept; F-32 gives them one owner. No test pinned how
+// long the live region holds its message, so the refactor could have changed
+// the dwell time for screen-reader users without anything going red. These pin
+// the CURRENT behaviour at the boundary.
+//
+// Timer strategy: only setTimeout/clearTimeout are faked. Faking the whole
+// clock breaks RTL's waitFor (it schedules its own polling) and userEvent's
+// internal delays, so the setup below flushes microtasks by hand instead of
+// awaiting waitFor. The api mocks resolve through promises, which stay real.
+describe("announcement dwell time (F-32 safety net)", () => {
+  const DWELL_MS = 3000;
+
+  // This describe is a sibling of the main one above, so it inherits neither
+  // its mock reset nor its cleanup(). Without its own, the first test's gallery
+  // stays mounted and the second finds two of every control.
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.mocked(api.images.list).mockResolvedValue([]);
+    vi.mocked(api.images.references).mockResolvedValue({ chapters: [] });
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  async function flush() {
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  }
+
+  async function announceInsert() {
+    const image = makeImage({ filename: "hero.png" });
+    vi.mocked(api.images.list).mockResolvedValue([image]);
+    vi.mocked(api.images.update).mockResolvedValue(image);
+    vi.mocked(api.images.references).mockResolvedValue({ chapters: [] });
+    render(<ImageGallery {...defaultProps} />);
+    await flush();
+
+    fireEvent.click(screen.getByRole("button", { name: imageButtonName(image) }));
+    await flush();
+
+    fireEvent.click(screen.getByText(S.insertButton));
+    await flush();
+
+    expect(screen.getByText(S.insertSuccess("hero.png"))).toBeInTheDocument();
+  }
+
+  it("still shows the announcement one tick before the dwell time expires", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      await announceInsert();
+      await act(async () => {
+        vi.advanceTimersByTime(DWELL_MS - 1);
+      });
+      expect(screen.getByText(S.insertSuccess("hero.png"))).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears the announcement exactly on the dwell time", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      await announceInsert();
+      await act(async () => {
+        vi.advanceTimersByTime(DWELL_MS);
+      });
+      expect(screen.queryByText(S.insertSuccess("hero.png"))).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
