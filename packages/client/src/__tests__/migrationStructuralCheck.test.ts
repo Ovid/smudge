@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve, join } from "node:path";
+import { collectTsSources, stripCommentsFromTsSource } from "./tsSourceScan";
 import { tmpdir } from "node:os";
 
 // Consolidates the four near-identical "no raw seq-ref patterns" tests that
@@ -13,22 +14,6 @@ import { tmpdir } from "node:os";
 // convention (`*SeqRef`) that would signal someone hand-rolled a new
 // counter. One grep across the whole client source tree is enough.
 const clientSrcRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-
-// S1/S3 (review 2026-05-25): the prior `.run(` import-implies-call check
-// matched commented occurrences as if they were live code. A file
-// that imported the hook with a single `.run(` reference in a JSDoc
-// example silently passed the import-implies-call ban.
-//
-// Strips line (`// ...`) and block (`/* ... */`) comments from
-// TypeScript source so the structural checks see only executable code.
-// The regex pair is deliberately simple: it does not parse strings
-// (so `"// hello"` is shortened to `"`, which is fine for the
-// presence-checks we run downstream — we only care that real
-// references survive, not that the resulting source is parseable).
-// Block-comment regex is non-greedy so adjacent comments don't merge.
-export function stripCommentsFromTsSource(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
-}
 
 // Extracts every variable name bound from a `useAbortableAsyncOperation()`
 // call site. Re-review S1 (2026-05-25) fixed a regex false-pass: the prior
@@ -72,29 +57,6 @@ export function extractAbortableAsyncOperationBindings(source: string): string[]
 // still match.
 export function importPatternFor(name: string): RegExp {
   return new RegExp(`^\\s*import\\s*\\{[^}]*\\b${name}\\b[^}]*\\}\\s*from\\s*["']`, "m");
-}
-
-export function collectTsSources(root: string): string[] {
-  const results: string[] = [];
-  for (const entry of readdirSync(root)) {
-    // Skip the __tests__ directory AND any co-located *.test.ts[x] file.
-    // Both forms are test code, not production: the __tests__ directory
-    // holds fixtures that intentionally reference `xSeqRef` in string
-    // literals to prove the ESLint rule catches them, and co-located test
-    // files (e.g. hooks/useAbortableSequence.test.ts) may grow similar
-    // fixtures in the future. Without the filename check, adding
-    // `xSeqRef` to any co-located test would false-positive this grep.
-    if (entry === "__tests__") continue;
-    if (/\.test\.(ts|tsx)$/.test(entry)) continue;
-    const full = join(root, entry);
-    const stat = statSync(full);
-    if (stat.isDirectory()) {
-      results.push(...collectTsSources(full));
-    } else if (/\.(ts|tsx)$/.test(entry)) {
-      results.push(full);
-    }
-  }
-  return results;
 }
 
 // 4b.3d S13: known delegation helpers — functions that accept an

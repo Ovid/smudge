@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import { collectTsSources, stripCommentsFromTsSource } from "./tsSourceScan";
 
 // ===========================================================================
 // F-07 forcing-pause: every useEditorMutation.run() caller owns the
@@ -55,22 +56,20 @@ const clientSrc = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const RUN_RE = /\bmutation\.run\s*[<(]/;
 const COMMITTED_RE = /stage === "committed_but_unreloaded"/;
 
-// Lines that are comments carry these tokens in prose all over the editor
-// hooks; only real code counts.
-export function isComment(line: string): boolean {
-  return /^\s*(\/\/|\/\*|\*)/.test(line);
-}
-
-/** Counts non-comment lines matching `re`. */
+/**
+ * Counts occurrences of `re` in executable code only.
+ *
+ * I2 (review 2026-08-19): this used to keep whole lines that did not *start*
+ * with a comment token, then test the pattern against the entire line —
+ * so a trailing `// stage === "committed_but_unreloaded"` counted as a
+ * handler branch and a block-comment interior line not beginning with `*`
+ * counted as code. A prose mention could stand in for a deleted handler.
+ * Reuse the sibling drift detector's stripper instead: it removes comments
+ * wherever they occur, not only at line start.
+ */
 export function countCodeMatches(source: string, re: RegExp): number {
-  return source.split("\n").filter((l) => !isComment(l) && re.test(l)).length;
-}
-
-function listSourceFiles(): string[] {
-  return readdirSync(clientSrc, { recursive: true, encoding: "utf8" })
-    .filter((p) => /\.tsx?$/.test(p))
-    .filter((p) => !p.includes("__tests__") && !/\.test\.tsx?$/.test(p))
-    .map((p) => resolve(clientSrc, p));
+  const global = new RegExp(re.source, re.flags.includes("g") ? re.flags : `${re.flags}g`);
+  return stripCommentsFromTsSource(source).match(global)?.length ?? 0;
 }
 
 // --- Committed caller surface. Update ONLY after reading the header. --------
@@ -82,7 +81,7 @@ const COMMITTED_CALLERS: Record<string, number> = {
 
 function discoverCallers(): Record<string, number> {
   const found: Record<string, number> = {};
-  for (const file of listSourceFiles()) {
+  for (const file of collectTsSources(clientSrc)) {
     const count = countCodeMatches(readFileSync(file, "utf8"), RUN_RE);
     if (count > 0) found[file.slice(clientSrc.length + 1)] = count;
   }
@@ -108,7 +107,9 @@ describe("countCodeMatches (drift-detector self-tests)", () => {
     const fixture = [
       "  // await mutation.run(...) is the seam every caller routes through",
       "  /* mutation.run( in a block comment */",
+      "  /**",
       "   * mutation.run( in a jsdoc continuation",
+      "   */",
       "  const a = await mutation.run<Data>(async () => {});",
       "  const b = await mutation.run(async () => {});",
     ].join("\n");
@@ -124,6 +125,22 @@ describe("countCodeMatches (drift-detector self-tests)", () => {
     const after = `${before}\n  const s = await mutation.run<D>(async () => {});`;
     expect(countCodeMatches(before, RUN_RE)).toBe(1);
     expect(countCodeMatches(after, RUN_RE)).toBe(2);
+  });
+
+  it("ignores a trailing comment on an otherwise-code line", () => {
+    // I2 (review 2026-08-19): a prose mention parked after real code must not
+    // stand in for a deleted handler branch.
+    const fixture = '  return; // stage === "committed_but_unreloaded" is handled upstream';
+    expect(countCodeMatches(fixture, COMMITTED_RE)).toBe(0);
+  });
+
+  it("ignores block-comment interior lines that do not begin with *", () => {
+    const fixture = ["/*", '  stage === "committed_but_unreloaded" prose', "*/"].join("\n");
+    expect(countCodeMatches(fixture, COMMITTED_RE)).toBe(0);
+  });
+
+  it("does not mint a phantom caller from a trailing comment", () => {
+    expect(countCodeMatches("  const x = 1; // see mutation.run( upstream", RUN_RE)).toBe(0);
   });
 
   it("counts committed_but_unreloaded branches the same way", () => {
