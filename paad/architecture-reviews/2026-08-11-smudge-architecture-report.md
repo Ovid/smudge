@@ -467,7 +467,7 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
 - **Status note (the safety net was written first and survived unmodified):** the Safety Net phase found the info banner's `role="status"`/`aria-live="polite"` and its dismiss control (`STRINGS.a11y.dismissInfo`) asserted **nowhere** — that string was referenced exactly once in the whole client, at the component itself. Every existing test reached the notice through `getByText`, which a role flip or a dropped dismiss button survives. A test was written first (commit `89bc9361`) pinning two distinct regions, distinct roles, each owning its own control, and one dismiss not clearing the other; it was confirmed red twice by negative control before this change. It then **passed unmodified** across the refactor, which is what it was written for. No test file was touched by this fix.
 - **Status caveat:** `EditorBanner` takes four props (`tone`, `message`, `onDismiss?`, `children?`) for three call sites, which is the over-parameterised-shared-component risk that argues against this option. It was chosen over the narrower alternative (folding only the byte-identical lock banner into `ActionErrorBanner`) because that one leaves two of the three layout strings standing. If a fourth banner ever wants a different shape, split the component rather than growing the props.
 - **Status date:** 2026-08-19 10:05 UTC
-- **Status commit:** PENDING
+- **Status commit:** fc8cea1d
 
 ### [F-19] The steering file has drifted from the tree
 - **Category:** 13 (Inconsistent boundaries)
