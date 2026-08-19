@@ -1,4 +1,3 @@
-import { useState, type ComponentProps } from "react";
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -32,16 +31,6 @@ vi.mock("../../api/client", () => {
 });
 
 const S = STRINGS.outtakes;
-
-// I6 (agentic-review 2026-08-05): the blank-note draft is owned by EditorPage
-// now, so the panel is a controlled component. This host supplies the state the
-// app supplies; every test below drives it exactly as the real page does.
-// OuttakesEditorEntryPoints.test.tsx covers the reason the state moved (the
-// draft surviving a tab switch), which is untestable from here by construction.
-function Panel(props: Omit<ComponentProps<typeof OuttakesPanel>, "draft" | "onDraftChange">) {
-  const [draft, setDraft] = useState<string | null>(null);
-  return <OuttakesPanel {...props} draft={draft} onDraftChange={setDraft} />;
-}
 
 function docFromLines(...lines: string[]): Record<string, unknown> {
   return {
@@ -92,7 +81,7 @@ describe("OuttakesPanel", () => {
       makeOuttake({ id: "a", label: "Alpha" }),
       makeOuttake({ id: "b", label: "Beta" }),
     ]);
-    render(<Panel {...defaultProps} />);
+    render(<OuttakesPanel {...defaultProps} />);
     await waitFor(() => {
       expect(screen.getByDisplayValue("Alpha")).toBeInTheDocument();
     });
@@ -101,7 +90,7 @@ describe("OuttakesPanel", () => {
 
   it("shows the empty state when there are no outtakes", async () => {
     vi.mocked(api.outtakes.list).mockResolvedValue([]);
-    render(<Panel {...defaultProps} />);
+    render(<OuttakesPanel {...defaultProps} />);
     await waitFor(() => {
       expect(screen.getByText(S.empty)).toBeInTheDocument();
     });
@@ -118,7 +107,7 @@ describe("OuttakesPanel", () => {
         settle = res;
       }),
     );
-    render(<Panel {...defaultProps} />);
+    render(<OuttakesPanel {...defaultProps} />);
     await waitFor(() => expect(api.outtakes.list).toHaveBeenCalled());
 
     expect(screen.queryByText(S.empty)).not.toBeInTheDocument();
@@ -134,7 +123,7 @@ describe("OuttakesPanel", () => {
       makeOuttake({ id: "b", label: "Beta" }),
     ]);
     const user = userEvent.setup();
-    render(<Panel {...defaultProps} />);
+    render(<OuttakesPanel {...defaultProps} />);
     await waitFor(() => expect(screen.getByDisplayValue("Alpha")).toBeInTheDocument());
 
     await user.type(screen.getByRole("textbox", { name: S.filterPlaceholder }), "beta");
@@ -148,7 +137,7 @@ describe("OuttakesPanel", () => {
       makeOuttake({ id: "b", label: "Beta" }),
     ]);
     const user = userEvent.setup();
-    render(<Panel {...defaultProps} />);
+    render(<OuttakesPanel {...defaultProps} />);
     await waitFor(() => expect(screen.getByDisplayValue("Alpha")).toBeInTheDocument());
 
     await user.type(screen.getByRole("textbox", { name: S.filterPlaceholder }), "zzznope");
@@ -162,7 +151,7 @@ describe("OuttakesPanel", () => {
       makeOuttake({ id: "a", label: "Keep", content: docFromLines("Hello", "World") }),
     ]);
     const user = userEvent.setup();
-    render(<Panel {...defaultProps} />);
+    render(<OuttakesPanel {...defaultProps} />);
     await waitFor(() => expect(screen.getByDisplayValue("Keep")).toBeInTheDocument());
 
     // "oW" only appears if "Hello" and "World" are concatenated without a
@@ -176,79 +165,15 @@ describe("OuttakesPanel", () => {
     expect(screen.getByDisplayValue("Keep")).toBeInTheDocument();
   });
 
-  it("creates an outtake from the textarea, POSTing a valid doc, and prepends it", async () => {
-    vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "old", label: "Old" })]);
-    const created = makeOuttake({ id: "new", label: null, content: docFromLines("Fresh text") });
-    vi.mocked(api.outtakes.create).mockResolvedValue(created);
-    const user = userEvent.setup();
-    render(<Panel {...defaultProps} />);
-    await waitFor(() => expect(screen.getByDisplayValue("Old")).toBeInTheDocument());
-
-    await user.click(screen.getByRole("button", { name: S.newBlank }));
-    await user.type(screen.getByRole("textbox", { name: S.newPlaceholder }), "Fresh text");
-    await user.click(screen.getByRole("button", { name: S.save }));
-
-    await waitFor(() => expect(api.outtakes.create).toHaveBeenCalled());
-    const body = vi.mocked(api.outtakes.create).mock.calls[0]![1];
-    const content = body.content as Record<string, unknown>;
-    expect(content.type).toBe("doc");
-    expect(JSON.stringify(content)).toContain("Fresh text");
-
-    // Prepended: two card label inputs now (the new null-label row + Old).
-    await waitFor(() => {
-      expect(screen.getAllByRole("textbox", { name: S.labelAriaLabel })).toHaveLength(2);
-    });
-    const labelValues = screen
-      .getAllByRole("textbox", { name: S.labelAriaLabel })
-      .map((el) => (el as HTMLInputElement).value);
-    expect(labelValues).toEqual(["", "Old"]); // new row prepended before Old
-  });
-
-  // I3 (agentic-review 2026-08-04): the worst of the three unmount-abort cases.
-  // ReferencePanel renders `{activeTab?.panel ?? null}` and the panel renders
-  // only while open, so "Save a blank note, then click Images (or Ctrl+.)"
-  // unmounted this panel mid-POST: the request was aborted AND the `draft` state
-  // died with the component. Unrecoverable text, from the one panel whose stated
-  // job is not losing the writer's text. Un-aborted, the row lands and the next
-  // mount's load surfaces it.
-  it("unmounting the panel does not cancel an in-flight blank-note create (I3)", async () => {
-    vi.mocked(api.outtakes.create).mockReturnValue(new Promise(() => {}));
-    const user = userEvent.setup();
-    const { unmount } = render(<Panel {...defaultProps} />);
-    await waitFor(() => expect(api.outtakes.list).toHaveBeenCalled());
-
-    await user.click(screen.getByRole("button", { name: S.newBlank }));
-    await user.type(screen.getByRole("textbox", { name: S.newPlaceholder }), "Only copy");
-    await user.click(screen.getByRole("button", { name: S.save }));
-    await waitFor(() => expect(api.outtakes.create).toHaveBeenCalled());
-
-    unmount();
-
-    const signal = vi
-      .mocked(api.outtakes.create)
-      .mock.calls[0]!.find((a): a is AbortSignal => a instanceof AbortSignal);
-    expect(signal?.aborted ?? false).toBe(false);
-  });
-
-  it("does not create an outtake from an empty textarea", async () => {
-    const user = userEvent.setup();
-    render(<Panel {...defaultProps} />);
-    await waitFor(() => expect(api.outtakes.list).toHaveBeenCalled());
-
-    await user.click(screen.getByRole("button", { name: S.newBlank }));
-    await user.click(screen.getByRole("button", { name: S.save }));
-    expect(api.outtakes.create).not.toHaveBeenCalled();
-  });
-
   it("prepends a captured outtake without a reload (I1)", async () => {
     vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "a", label: "Alpha" })]);
-    const { rerender } = render(<Panel {...defaultProps} capturedOuttake={null} />);
+    const { rerender } = render(<OuttakesPanel {...defaultProps} capturedOuttake={null} />);
     await waitFor(() => expect(screen.getByDisplayValue("Alpha")).toBeInTheDocument());
 
     // A toolbar capture hands the created row down; it appears immediately with
     // no second list() call, so a concurrent card mutation cannot drop it.
     const captured = makeOuttake({ id: "b", label: "Captured" });
-    rerender(<Panel {...defaultProps} capturedOuttake={captured} />);
+    rerender(<OuttakesPanel {...defaultProps} capturedOuttake={captured} />);
     await waitFor(() => expect(screen.getByDisplayValue("Captured")).toBeInTheDocument());
     expect(screen.getByDisplayValue("Alpha")).toBeInTheDocument();
     expect(api.outtakes.list).toHaveBeenCalledTimes(1);
@@ -257,11 +182,11 @@ describe("OuttakesPanel", () => {
   it("the captured row survives a card delete fired right after (I1)", async () => {
     vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "a", label: "Alpha" })]);
     const user = userEvent.setup();
-    const { rerender } = render(<Panel {...defaultProps} capturedOuttake={null} />);
+    const { rerender } = render(<OuttakesPanel {...defaultProps} capturedOuttake={null} />);
     await waitFor(() => expect(screen.getByDisplayValue("Alpha")).toBeInTheDocument());
 
     const captured = makeOuttake({ id: "b", label: "Captured" });
-    rerender(<Panel {...defaultProps} capturedOuttake={captured} />);
+    rerender(<OuttakesPanel {...defaultProps} capturedOuttake={captured} />);
     await waitFor(() => expect(screen.getByDisplayValue("Captured")).toBeInTheDocument());
 
     // Deleting the other row (which seq.abort()s any in-flight reload) must not
@@ -277,10 +202,10 @@ describe("OuttakesPanel", () => {
     const captured = makeOuttake({ id: "b", label: "Captured" });
     // The mount load already contains the row (a prior reload surfaced it).
     vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "a" }), captured]);
-    const { rerender } = render(<Panel {...defaultProps} capturedOuttake={null} />);
+    const { rerender } = render(<OuttakesPanel {...defaultProps} capturedOuttake={null} />);
     await waitFor(() => expect(screen.getByDisplayValue("Captured")).toBeInTheDocument());
 
-    rerender(<Panel {...defaultProps} capturedOuttake={captured} />);
+    rerender(<OuttakesPanel {...defaultProps} capturedOuttake={captured} />);
     await new Promise((r) => setTimeout(r, 0));
     // Prepend dedups by id — no duplicate React row for "b".
     expect(screen.getAllByDisplayValue("Captured")).toHaveLength(1);
@@ -293,7 +218,7 @@ describe("OuttakesPanel", () => {
     // horizontal scrollbar, clipped by the aside), above it a dead gutter and
     // a duplicate border. jsdom does no layout, so the class list IS the
     // contract — the sibling tab (ImageGallery) is just "flex flex-col h-full".
-    const { container } = render(<Panel {...defaultProps} />);
+    const { container } = render(<OuttakesPanel {...defaultProps} />);
     await waitFor(() => expect(api.outtakes.list).toHaveBeenCalled());
 
     const root = container.firstElementChild!;
@@ -313,7 +238,7 @@ describe("OuttakesPanel", () => {
       captured,
       makeOuttake({ id: "a", label: "Alpha" }),
     ]);
-    render(<Panel {...defaultProps} capturedOuttake={captured} />);
+    render(<OuttakesPanel {...defaultProps} capturedOuttake={captured} />);
 
     await waitFor(() => expect(screen.getByDisplayValue("Alpha")).toBeInTheDocument());
     expect(screen.getAllByDisplayValue("Captured")).toHaveLength(1);
@@ -324,7 +249,7 @@ describe("OuttakesPanel", () => {
     // for project B: the stale row must not appear at all.
     const projectARow = makeOuttake({ id: "cap", project_id: "proj-A", label: "From A" });
     vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "b", label: "B row" })]);
-    render(<Panel {...defaultProps} projectId="proj-B" capturedOuttake={projectARow} />);
+    render(<OuttakesPanel {...defaultProps} projectId="proj-B" capturedOuttake={projectARow} />);
 
     await waitFor(() => expect(screen.getByDisplayValue("B row")).toBeInTheDocument());
     expect(screen.queryByDisplayValue("From A")).not.toBeInTheDocument();
@@ -338,129 +263,14 @@ describe("OuttakesPanel", () => {
     // B's first render, so the id differs and the prepend effect fires. The row
     // belongs to A and must be dropped on its project_id, not on a ref seed.
     vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "b", label: "B row" })]);
-    const { rerender } = render(<Panel {...defaultProps} projectId="proj-B" />);
+    const { rerender } = render(<OuttakesPanel {...defaultProps} projectId="proj-B" />);
     await waitFor(() => expect(screen.getByDisplayValue("B row")).toBeInTheDocument());
 
     const projectARow = makeOuttake({ id: "cap", project_id: "proj-A", label: "From A" });
-    rerender(<Panel {...defaultProps} projectId="proj-B" capturedOuttake={projectARow} />);
+    rerender(<OuttakesPanel {...defaultProps} projectId="proj-B" capturedOuttake={projectARow} />);
 
     await waitFor(() => expect(screen.getByDisplayValue("B row")).toBeInTheDocument());
     expect(screen.queryByDisplayValue("From A")).not.toBeInTheDocument();
-  });
-
-  it("drops a created row that came back for a different project (I1)", async () => {
-    // Same guard, reached through the blank-note create rather than the toolbar
-    // capture: handleCreate has no project re-check after its await either, so
-    // applyServerRow is the one place that has to refuse the row.
-    const user = userEvent.setup();
-    vi.mocked(api.outtakes.list).mockResolvedValue([]);
-    vi.mocked(api.outtakes.create).mockResolvedValue(
-      makeOuttake({ id: "new", project_id: "proj-OTHER", label: "Wrong project" }),
-    );
-    render(<Panel {...defaultProps} projectId="proj-1" />);
-    await waitFor(() => expect(screen.getByText(S.empty)).toBeInTheDocument());
-
-    await user.click(screen.getByRole("button", { name: S.newBlank }));
-    await user.type(screen.getByLabelText(S.newPlaceholder), "stashed text");
-    await user.click(screen.getByRole("button", { name: S.save }));
-
-    await waitFor(() => expect(api.outtakes.create).toHaveBeenCalled());
-    expect(screen.queryByDisplayValue("Wrong project")).not.toBeInTheDocument();
-  });
-
-  it("drops a created row when the project changed while the POST was in flight (I1)", async () => {
-    // The test above holds projectId CONSTANT and stages a server-echoed wrong
-    // project_id, so applyServerRow's closure is still current there — it cannot
-    // see the real hazard. Here the row is correct for the project it was
-    // created in (A) and the panel has since moved to B. handleCreate is a plain
-    // function body, so its running invocation pins the click-time
-    // applyServerRow — the one closed over A's projectId — and the guard then
-    // compares A against A and lets the row into B's list. Its Insert pastes A's
-    // private text into a B chapter; its Delete HARD-deletes a real project-A
-    // outtake (no deleted_at — CLAUDE.md §Data Model).
-    const user = userEvent.setup();
-    let resolveCreate!: (r: OuttakeRow) => void;
-    vi.mocked(api.outtakes.create).mockReturnValue(
-      new Promise<OuttakeRow>((res) => {
-        resolveCreate = res;
-      }),
-    );
-    vi.mocked(api.outtakes.list).mockResolvedValue([]);
-    const { rerender } = render(<Panel {...defaultProps} projectId="proj-A" />);
-    await waitFor(() => expect(screen.getByText(S.empty)).toBeInTheDocument());
-
-    await user.click(screen.getByRole("button", { name: S.newBlank }));
-    await user.type(screen.getByLabelText(S.newPlaceholder), "A's private text");
-    await user.click(screen.getByRole("button", { name: S.save }));
-    await waitFor(() => expect(api.outtakes.create).toHaveBeenCalled());
-
-    rerender(<Panel {...defaultProps} projectId="proj-B" />);
-    resolveCreate(makeOuttake({ id: "cap", project_id: "proj-A", label: "From A" }));
-    await new Promise((r) => setTimeout(r, 0));
-
-    expect(screen.queryByDisplayValue("From A")).not.toBeInTheDocument();
-  });
-
-  it("keeps the draft and the form open when the created row is refused (S2)", async () => {
-    // The refusal above is the ordinary project-switch-mid-create path, not an
-    // exotic one. Tearing the form down on a row that was never added closes the
-    // form, shows no card and says nothing — the writer's text vanishes from the
-    // one panel whose whole job is not losing it. The row DID commit (in A), so
-    // the text is recoverable there; keeping it on screen is what lets the writer
-    // notice and decide.
-    const user = userEvent.setup();
-    let resolveCreate!: (r: OuttakeRow) => void;
-    vi.mocked(api.outtakes.create).mockReturnValue(
-      new Promise<OuttakeRow>((res) => {
-        resolveCreate = res;
-      }),
-    );
-    vi.mocked(api.outtakes.list).mockResolvedValue([]);
-    const { rerender } = render(<Panel {...defaultProps} projectId="proj-A" />);
-    await waitFor(() => expect(screen.getByText(S.empty)).toBeInTheDocument());
-
-    await user.click(screen.getByRole("button", { name: S.newBlank }));
-    await user.type(screen.getByLabelText(S.newPlaceholder), "A's private text");
-    await user.click(screen.getByRole("button", { name: S.save }));
-    await waitFor(() => expect(api.outtakes.create).toHaveBeenCalled());
-
-    rerender(<Panel {...defaultProps} projectId="proj-B" />);
-    resolveCreate(makeOuttake({ id: "cap", project_id: "proj-A", label: "From A" }));
-    await new Promise((r) => setTimeout(r, 0));
-
-    expect(screen.getByLabelText(S.newPlaceholder)).toHaveValue("A's private text");
-    expect(screen.getByText(S.createdElsewhere)).toBeInTheDocument();
-  });
-
-  it("does not paint project A's create failure onto project B (I3)", async () => {
-    // The success arm guards the mid-POST project switch; the catch arm did not,
-    // so A's failure banner landed on B AFTER the projectId clearing effect had
-    // run — nothing removes it for the rest of the session. Worse, the draft is
-    // deliberately retained, so the writer sees A's prose in B's panel under an
-    // unattributed banner, and clicking Save files it under B.
-    const user = userEvent.setup();
-    let rejectCreate!: (err: unknown) => void;
-    vi.mocked(api.outtakes.create).mockReturnValue(
-      new Promise<OuttakeRow>((_res, rej) => {
-        rejectCreate = rej;
-      }),
-    );
-    vi.mocked(api.outtakes.list).mockResolvedValue([]);
-    const { rerender } = render(<Panel {...defaultProps} projectId="proj-A" />);
-    await waitFor(() => expect(screen.getByText(S.empty)).toBeInTheDocument());
-
-    await user.click(screen.getByRole("button", { name: S.newBlank }));
-    await user.type(screen.getByLabelText(S.newPlaceholder), "A's private text");
-    await user.click(screen.getByRole("button", { name: S.save }));
-    await waitFor(() => expect(api.outtakes.create).toHaveBeenCalled());
-
-    rerender(<Panel {...defaultProps} projectId="proj-B" />);
-    rejectCreate(new Error("boom"));
-    await new Promise((r) => setTimeout(r, 0));
-
-    expect(screen.queryByText(STRINGS.error.createOuttakeFailed)).not.toBeInTheDocument();
-    expect(screen.getByText(S.createFailedElsewhere)).toBeInTheDocument();
-    expect(screen.getByLabelText(S.newPlaceholder)).toHaveValue("A's private text");
   });
 
   // I5 (agentic-review 2026-08-05): the sibling of the create-drift guard above,
@@ -478,7 +288,7 @@ describe("OuttakesPanel", () => {
         rejectRename = rej;
       }),
     );
-    const { rerender } = render(<Panel {...defaultProps} projectId="proj-A" />);
+    const { rerender } = render(<OuttakesPanel {...defaultProps} projectId="proj-A" />);
     const input = await screen.findByDisplayValue("Before");
 
     await user.clear(input);
@@ -487,7 +297,7 @@ describe("OuttakesPanel", () => {
     await waitFor(() => expect(api.outtakes.updateLabel).toHaveBeenCalled());
 
     vi.mocked(api.outtakes.list).mockResolvedValue([]);
-    rerender(<Panel {...defaultProps} projectId="proj-B" />);
+    rerender(<OuttakesPanel {...defaultProps} projectId="proj-B" />);
     await waitFor(() => expect(screen.getByText(S.empty)).toBeInTheDocument());
     rejectRename(new Error("boom"));
     await new Promise((r) => setTimeout(r, 0));
@@ -506,7 +316,7 @@ describe("OuttakesPanel", () => {
         rejectDelete = rej;
       }),
     );
-    const { rerender } = render(<Panel {...defaultProps} projectId="proj-A" />);
+    const { rerender } = render(<OuttakesPanel {...defaultProps} projectId="proj-A" />);
     await screen.findByDisplayValue("A row");
 
     await user.click(screen.getByRole("button", { name: S.delete }));
@@ -514,7 +324,7 @@ describe("OuttakesPanel", () => {
     await waitFor(() => expect(api.outtakes.delete).toHaveBeenCalled());
 
     vi.mocked(api.outtakes.list).mockResolvedValue([]);
-    rerender(<Panel {...defaultProps} projectId="proj-B" />);
+    rerender(<OuttakesPanel {...defaultProps} projectId="proj-B" />);
     await waitFor(() => expect(screen.getByText(S.empty)).toBeInTheDocument());
     rejectDelete(new Error("boom"));
     await new Promise((r) => setTimeout(r, 0));
@@ -535,7 +345,7 @@ describe("OuttakesPanel", () => {
     const row = makeOuttake({ id: "a", label: "A row" });
     vi.mocked(api.outtakes.list).mockResolvedValueOnce([row]);
     vi.mocked(api.outtakes.delete).mockRejectedValue(new Error("boom"));
-    const { rerender } = render(<Panel {...defaultProps} />);
+    const { rerender } = render(<OuttakesPanel {...defaultProps} />);
     await screen.findByDisplayValue("A row");
 
     // A capture came back 2xx BAD_JSON: EditorPage bumps the refresh key, so a
@@ -545,7 +355,7 @@ describe("OuttakesPanel", () => {
         resolveReload = res;
       }),
     );
-    rerender(<Panel {...defaultProps} externalRefreshKey={1} />);
+    rerender(<OuttakesPanel {...defaultProps} externalRefreshKey={1} />);
     await waitFor(() => expect(api.outtakes.list).toHaveBeenCalledTimes(2));
 
     await user.click(screen.getByRole("button", { name: S.delete }));
@@ -569,7 +379,7 @@ describe("OuttakesPanel", () => {
     const user = userEvent.setup();
     vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "a", label: "A row" })]);
     vi.mocked(api.outtakes.delete).mockRejectedValue(new Error("boom"));
-    render(<Panel {...defaultProps} />);
+    render(<OuttakesPanel {...defaultProps} />);
     await screen.findByDisplayValue("A row");
 
     await user.click(screen.getByRole("button", { name: S.delete }));
@@ -580,32 +390,6 @@ describe("OuttakesPanel", () => {
     // must not live inside it at any depth.
     const scrollContainer = screen.getByRole("list").parentElement!;
     expect(scrollContainer.contains(banner)).toBe(false);
-  });
-
-  // S3 (agentic-review 2026-08-05): outtake.create was the one write scope with
-  // no 404 arm, though outtakes.routes throws NotFoundError("Project not found.")
-  // when the project was soft-deleted while the editor was open. The generic
-  // fallback reads as transient and invites a retry that 404s identically,
-  // forever, with the writer's text sitting in the textarea. db36f8a2 fixed the
-  // sibling defect for update and delete only.
-  it("names the cause when a create 404s because the project is gone (S3)", async () => {
-    const user = userEvent.setup();
-    vi.mocked(api.outtakes.list).mockResolvedValue([]);
-    vi.mocked(api.outtakes.create).mockRejectedValue(
-      new ApiRequestError("Project not found.", 404, "NOT_FOUND"),
-    );
-    render(<Panel {...defaultProps} />);
-    await waitFor(() => expect(screen.getByText(S.empty)).toBeInTheDocument());
-
-    await user.click(screen.getByRole("button", { name: S.newBlank }));
-    await user.type(screen.getByLabelText(S.newPlaceholder), "Rescued prose");
-    await user.click(screen.getByRole("button", { name: S.save }));
-
-    await waitFor(() =>
-      expect(screen.getByText(STRINGS.error.createOuttakeProjectGone)).toBeInTheDocument(),
-    );
-    // The text stays put — this panel exists to not lose it.
-    expect(screen.getByLabelText(S.newPlaceholder)).toHaveValue("Rescued prose");
   });
 
   it("a project switch clears the previous project's rows and sticky notice (I3)", async () => {
@@ -620,11 +404,11 @@ describe("OuttakesPanel", () => {
     const warn = expectConsole("warn");
     const error = expectConsole("error");
     vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "a", label: "A row" })]);
-    const { rerender } = render(<Panel {...defaultProps} projectId="proj-A" />);
+    const { rerender } = render(<OuttakesPanel {...defaultProps} projectId="proj-A" />);
     await waitFor(() => expect(screen.getByDisplayValue("A row")).toBeInTheDocument());
 
     vi.mocked(api.outtakes.list).mockRejectedValue(new Error("boom"));
-    rerender(<Panel {...defaultProps} projectId="proj-B" />);
+    rerender(<OuttakesPanel {...defaultProps} projectId="proj-B" />);
 
     await waitFor(() => {
       expect(screen.getByText(STRINGS.error.loadOuttakesFailed)).toBeInTheDocument();
@@ -638,7 +422,7 @@ describe("OuttakesPanel", () => {
     const warn = expectConsole("warn");
     const error = expectConsole("error");
     vi.mocked(api.outtakes.list).mockRejectedValue(new Error("boom"));
-    render(<Panel {...defaultProps} />);
+    render(<OuttakesPanel {...defaultProps} />);
     await waitFor(() => {
       expect(screen.getByText(STRINGS.error.loadOuttakesFailed)).toBeInTheDocument();
     });
@@ -649,7 +433,7 @@ describe("OuttakesPanel", () => {
   it("deletes an outtake and removes it from the list", async () => {
     vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "a", label: "Doomed" })]);
     const user = userEvent.setup();
-    render(<Panel {...defaultProps} />);
+    render(<OuttakesPanel {...defaultProps} />);
     await waitFor(() => expect(screen.getByDisplayValue("Doomed")).toBeInTheDocument());
 
     await user.click(screen.getByRole("button", { name: S.delete }));
@@ -670,7 +454,7 @@ describe("OuttakesPanel", () => {
       makeOuttake({ id: "a", label: "After", content: docFromLines("Server body") }),
     );
     const user = userEvent.setup();
-    render(<Panel {...defaultProps} />);
+    render(<OuttakesPanel {...defaultProps} />);
     const input = await screen.findByDisplayValue("Before");
     expect(screen.getByText("Original body")).toBeInTheDocument();
 
@@ -685,69 +469,6 @@ describe("OuttakesPanel", () => {
     expect(screen.queryByText("Original body")).not.toBeInTheDocument();
   });
 
-  it("save is disabled while a create is in flight, then re-enabled", async () => {
-    vi.mocked(api.outtakes.list).mockResolvedValue([]);
-    let resolveCreate!: (row: OuttakeRow) => void;
-    vi.mocked(api.outtakes.create).mockReturnValue(
-      new Promise<OuttakeRow>((res) => {
-        resolveCreate = res;
-      }),
-    );
-    const user = userEvent.setup();
-    render(<Panel {...defaultProps} />);
-    await waitFor(() => expect(api.outtakes.list).toHaveBeenCalled());
-
-    await user.click(screen.getByRole("button", { name: S.newBlank }));
-    await user.type(screen.getByRole("textbox", { name: S.newPlaceholder }), "New body");
-    const save = screen.getByRole("button", { name: S.save });
-    expect(save).toBeEnabled();
-
-    await user.click(save);
-    await waitFor(() => expect(save).toBeDisabled());
-    expect(api.outtakes.create).toHaveBeenCalledTimes(1);
-
-    resolveCreate(makeOuttake({ id: "new", label: null, content: docFromLines("New body") }));
-    // After success the form closes; open it again and Save is enabled.
-    await waitFor(() =>
-      expect(screen.queryByRole("button", { name: S.save })).not.toBeInTheDocument(),
-    );
-    await user.click(screen.getByRole("button", { name: S.newBlank }));
-    expect(screen.getByRole("button", { name: S.save })).toBeEnabled();
-  });
-
-  it("a settling create does not wipe a newer draft the writer started (I2)", async () => {
-    // Cancel carries no disabled={creating} — only Save does — so the writer can
-    // close the form and start a second note while the first POST is still out.
-    // The tail of handleCreate must not clear text it never sent. This is the
-    // same current === attempted discipline OuttakeCard.commitLabel already uses.
-    vi.mocked(api.outtakes.list).mockResolvedValue([]);
-    let resolveCreate!: (row: OuttakeRow) => void;
-    vi.mocked(api.outtakes.create).mockReturnValue(
-      new Promise<OuttakeRow>((res) => {
-        resolveCreate = res;
-      }),
-    );
-    const user = userEvent.setup();
-    render(<Panel {...defaultProps} />);
-    await waitFor(() => expect(api.outtakes.list).toHaveBeenCalled());
-
-    await user.click(screen.getByRole("button", { name: S.newBlank }));
-    await user.type(screen.getByRole("textbox", { name: S.newPlaceholder }), "scene A");
-    await user.click(screen.getByRole("button", { name: S.save }));
-    await waitFor(() => expect(api.outtakes.create).toHaveBeenCalledTimes(1));
-
-    // Writer gives up waiting, cancels, and starts a different note.
-    await user.click(screen.getByRole("button", { name: S.cancel }));
-    await user.click(screen.getByRole("button", { name: S.newBlank }));
-    await user.type(screen.getByRole("textbox", { name: S.newPlaceholder }), "scene B");
-
-    resolveCreate(makeOuttake({ id: "new", label: "Saved A", content: docFromLines("scene A") }));
-    await waitFor(() => expect(screen.getByDisplayValue("Saved A")).toBeInTheDocument());
-
-    // "scene B" is still on screen, in an open form, unsent and unlost.
-    expect(screen.getByRole("textbox", { name: S.newPlaceholder })).toHaveValue("scene B");
-  });
-
   it("a delete does not abort an in-flight label update (independent ops)", async () => {
     vi.mocked(api.outtakes.list).mockResolvedValue([
       makeOuttake({ id: "a", label: "Renamed target", content: docFromLines("Body A") }),
@@ -760,7 +481,7 @@ describe("OuttakesPanel", () => {
       }),
     );
     const user = userEvent.setup();
-    render(<Panel {...defaultProps} />);
+    render(<OuttakesPanel {...defaultProps} />);
     const input = await screen.findByDisplayValue("Renamed target");
 
     // Start an in-flight label update on row "a".
@@ -789,7 +510,7 @@ describe("OuttakesPanel", () => {
       .mockRejectedValueOnce(new Error("boom"))
       .mockResolvedValueOnce(makeOuttake({ id: "a", label: "After" }));
     const user = userEvent.setup();
-    render(<Panel {...defaultProps} />);
+    render(<OuttakesPanel {...defaultProps} />);
     const input = await screen.findByDisplayValue("Before");
 
     await user.clear(input);
@@ -824,7 +545,7 @@ describe("OuttakesPanel", () => {
       new ApiRequestError("Outtake not found.", 404, "NOT_FOUND"),
     );
     const user = userEvent.setup();
-    render(<Panel {...defaultProps} />);
+    render(<OuttakesPanel {...defaultProps} />);
     const input = await screen.findByDisplayValue("Before");
 
     await user.clear(input);
@@ -854,7 +575,7 @@ describe("OuttakesPanel", () => {
       new ApiRequestError("bad body", 200, "BAD_JSON"),
     );
     const user = userEvent.setup();
-    render(<Panel {...defaultProps} />);
+    render(<OuttakesPanel {...defaultProps} />);
     await screen.findByDisplayValue("Alpha");
 
     const betaInput = screen.getByDisplayValue("Beta");
@@ -875,54 +596,14 @@ describe("OuttakesPanel", () => {
     expect(screen.queryByDisplayValue("Alpha")).not.toBeInTheDocument();
   });
 
-  it("does not duplicate a created row a concurrent reload already added (I2)", async () => {
-    // S17 (agentic-review 2026-08-04): this used to stage the concurrent reload
-    // by switching projectId, which after the I1 fix makes applyServerRow refuse
-    // the row OUTRIGHT — `toHaveLength(1)` would then pass without the dedup
-    // branch ever running. Stage the reload inside ONE project instead, via the
-    // explicit reload a card delete triggers while the create is still out.
-    const created = makeOuttake({ id: "new", label: "New" });
-    let resolveCreate!: (r: OuttakeRow) => void;
-    vi.mocked(api.outtakes.create).mockReturnValue(
-      new Promise<OuttakeRow>((res) => {
-        resolveCreate = res;
-      }),
-    );
-    let resolveMountLoad!: (rows: OuttakeRow[]) => void;
-    vi.mocked(api.outtakes.list)
-      .mockReturnValueOnce(
-        new Promise<OuttakeRow[]>((res) => {
-          resolveMountLoad = res;
-        }),
-      )
-      .mockResolvedValue([created]);
-    const user = userEvent.setup();
-    render(<Panel {...defaultProps} projectId="proj-1" />);
-    await waitFor(() => expect(api.outtakes.list).toHaveBeenCalledTimes(1));
-
-    await user.click(screen.getByRole("button", { name: S.newBlank }));
-    await user.type(screen.getByRole("textbox", { name: S.newPlaceholder }), "New body");
-    await user.click(screen.getByRole("button", { name: S.save }));
-    await waitFor(() => expect(api.outtakes.create).toHaveBeenCalled());
-
-    // The mount GET lands the server's copy of the new row before the POST
-    // resolves — same project throughout, so the row reaches the dedup branch
-    // rather than being refused by the project guard.
-    resolveMountLoad([created]);
-    await waitFor(() => expect(screen.getByDisplayValue("New")).toBeInTheDocument());
-
-    // The create resolves; the prepend must dedup by id, not double-render.
-    resolveCreate(created);
-    await new Promise((r) => setTimeout(r, 0));
-    expect(screen.getAllByRole("textbox", { name: S.labelAriaLabel })).toHaveLength(1);
-  });
-
   it("re-issues a list load a mutation superseded mid-flight (I3)", async () => {
     // seq.abort() DISCARDS an outstanding load rather than reconciling it, so a
     // mutation landing before the load resolves used to throw the rows away
     // permanently — the panel has no other refetch trigger.
+    // Driven through the toolbar capture, which is now the only producer that
+    // reaches applyServerRow (and so reconcile) from outside a card.
     const existing = makeOuttake({ id: "a", label: "Alpha" });
-    const created = makeOuttake({ id: "new", label: "New" });
+    const captured = makeOuttake({ id: "new", label: "New" });
     let resolveMountLoad!: (rows: OuttakeRow[]) => void;
     vi.mocked(api.outtakes.list)
       .mockReturnValueOnce(
@@ -930,15 +611,12 @@ describe("OuttakesPanel", () => {
           resolveMountLoad = res;
         }),
       )
-      .mockResolvedValue([created, existing]);
-    vi.mocked(api.outtakes.create).mockResolvedValue(created);
-    const user = userEvent.setup();
-    render(<Panel {...defaultProps} />);
+      .mockResolvedValue([captured, existing]);
+    const { rerender } = render(<OuttakesPanel {...defaultProps} capturedOuttake={null} />);
     await waitFor(() => expect(api.outtakes.list).toHaveBeenCalledTimes(1));
 
-    await user.click(screen.getByRole("button", { name: S.newBlank }));
-    await user.type(screen.getByRole("textbox", { name: S.newPlaceholder }), "New body");
-    await user.click(screen.getByRole("button", { name: S.save }));
+    // The capture prepends while the mount GET is still out, staling it.
+    rerender(<OuttakesPanel {...defaultProps} capturedOuttake={captured} />);
     await waitFor(() => expect(screen.getByDisplayValue("New")).toBeInTheDocument());
 
     // The superseded mount GET resolves and is (correctly) discarded; the
@@ -951,41 +629,15 @@ describe("OuttakesPanel", () => {
   it("does not refetch when no load was outstanding", async () => {
     // The re-issue above is a race repair, not a post-mutation reload — the
     // optimistic prepend is still what surfaces the row in the common case.
+    const captured = makeOuttake({ id: "new", label: "New" });
     vi.mocked(api.outtakes.list).mockResolvedValue([]);
-    vi.mocked(api.outtakes.create).mockResolvedValue(makeOuttake({ id: "new", label: "New" }));
-    const user = userEvent.setup();
-    render(<Panel {...defaultProps} />);
+    const { rerender } = render(<OuttakesPanel {...defaultProps} capturedOuttake={null} />);
     await waitFor(() => expect(api.outtakes.list).toHaveBeenCalledTimes(1));
+    await screen.findByText(S.empty);
 
-    await user.click(screen.getByRole("button", { name: S.newBlank }));
-    await user.type(screen.getByRole("textbox", { name: S.newPlaceholder }), "New body");
-    await user.click(screen.getByRole("button", { name: S.save }));
+    rerender(<OuttakesPanel {...defaultProps} capturedOuttake={captured} />);
     await waitFor(() => expect(screen.getByDisplayValue("New")).toBeInTheDocument());
     expect(api.outtakes.list).toHaveBeenCalledTimes(1);
-  });
-
-  it("recovers from a 2xx BAD_JSON create by refetching, keeping the draft (S3)", async () => {
-    const created = makeOuttake({ id: "new", label: "New" });
-    vi.mocked(api.outtakes.list).mockResolvedValueOnce([]).mockResolvedValue([created]);
-    vi.mocked(api.outtakes.create).mockRejectedValue(
-      new ApiRequestError("bad body", 200, "BAD_JSON"),
-    );
-    const user = userEvent.setup();
-    render(<Panel {...defaultProps} />);
-    await waitFor(() => expect(api.outtakes.list).toHaveBeenCalledTimes(1));
-
-    await user.click(screen.getByRole("button", { name: S.newBlank }));
-    await user.type(screen.getByRole("textbox", { name: S.newPlaceholder }), "New body");
-    await user.click(screen.getByRole("button", { name: S.save }));
-
-    // The authoritative list is refetched so the row (which did land) appears...
-    await waitFor(() => expect(screen.getByDisplayValue("New")).toBeInTheDocument());
-    // ...and the notice survives that refetch's own setError(null), so the user
-    // is told the outcome was ambiguous rather than silently repaired.
-    expect(screen.getByText(STRINGS.error.possiblyCommitted)).toBeInTheDocument();
-    // The draft is the writer's TEXT, not a label — never discard it on an
-    // outcome the server may never have received.
-    expect(screen.getByRole("textbox", { name: S.newPlaceholder })).toHaveValue("New body");
   });
 
   it("does not revert a rename the server may have committed (S3)", async () => {
@@ -996,7 +648,7 @@ describe("OuttakesPanel", () => {
       new ApiRequestError("bad body", 200, "BAD_JSON"),
     );
     const user = userEvent.setup();
-    render(<Panel {...defaultProps} />);
+    render(<OuttakesPanel {...defaultProps} />);
     const input = await screen.findByDisplayValue("Before");
 
     await user.clear(input);
@@ -1029,7 +681,7 @@ describe("OuttakesPanel", () => {
           }),
     );
     const user = userEvent.setup();
-    render(<Panel {...defaultProps} />);
+    render(<OuttakesPanel {...defaultProps} />);
     await screen.findByDisplayValue("Alpha");
 
     // Start delete A (in flight), then delete B (in flight). With a single shared

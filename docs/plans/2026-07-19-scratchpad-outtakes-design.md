@@ -35,6 +35,13 @@ invariants).
 - **Non-destructive capture:** "Send selection to outtakes" (a _copy_ of the
   editor selection — the chapter is untouched) and manual create (plain
   textarea).
+  > **Superseded 2026-08-18: manual create was removed.** It is the only item in
+  > this scope list with no entry in §3 "Design Decisions", because it was never
+  > argued for — the CRUD surface had a POST, so the panel got a create button —
+  > and it contradicts §3 decision 3 ("the panel is not an editor"). The drawer
+  > now has one producer, the toolbar capture. See
+  > `docs/roadmap-decisions/2026-07-19-phase-4c-2-scratchpad-outtakes.md`
+  > § "Blank-outtake compose form removed".
 - **Insert back into the editor:** insert an outtake's content at the cursor
   (a normal edit, autosaved).
 
@@ -269,6 +276,11 @@ delete(id, signal?) }`, mirroring `api.snapshots` (204 → resolves `undefined`)
     the label + `toPlainText(content)`), create controls ("New outtake" →
     textarea; "Send selection to outtakes" handled from the toolbar too), and
     the list of cards newest-first.
+    > **Superseded 2026-08-18: the "New outtake" → textarea controls were
+    > removed** (see the §2 scope-list marker above). The panel has no create
+    > controls at all — the toolbar capture is the only producer, and it lives
+    > outside the panel. Rebuilding from this line would re-add exactly the form
+    > that was deleted.
   - `OuttakeCard.tsx` — inline label edit, content preview with expand, created
     date, a word count computed client-side via `countWords(content)`, and the
     actions **Insert into editor / Copy / Delete**. Copy uses `toPlainText`.
@@ -351,6 +363,11 @@ involvement).
   count); **Insert edge cases** (inline cursor, empty doc, over selection); scope
   → `mapApiError` mapping; tab wiring; toolbar button + `editorEntryPointSurface`
   snapshot update. All console assertions via `expectConsole()`.
+  > **Superseded 2026-08-18: "create-from-textarea" is no longer required** — the
+  > form it tested was removed (see the §2 scope-list marker). Its deletion took
+  > the only assertion for `outtake.create`'s 404 arm with it; that arm is live
+  > (capture hits the same route) and is now pinned in
+  > `apiErrorMapper.test.ts` § "SCOPES — outtake.create" instead.
 - **e2e (Playwright):** capture-from-selection → outtake appears in panel →
   insert into a chapter → delete with confirm. aXe-core pass on the panel.
 - Coverage floors (95% stmt / 85% branch / 90% fn / 95% line) maintained;

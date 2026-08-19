@@ -64,7 +64,11 @@ test.describe("Outtakes E2e Tests", () => {
 
     // Empty state before any capture.
     await expect(
-      outtakesPanel.getByText("No outtakes yet. Stash cut text here to find it later."),
+      // STRINGS.outtakes.empty — names the only way text gets in now that the
+      // panel has no compose form (2026-08-18).
+      outtakesPanel.getByText(
+        "No outtakes yet. Select text in a chapter and use “Send selection to outtakes” to stash it here.",
+      ),
     ).toBeVisible();
 
     // Select the chapter text and send it to outtakes.
@@ -116,7 +120,11 @@ test.describe("Outtakes E2e Tests", () => {
     // The card is gone and the empty state returns.
     await expect(outtakesPanel.getByText(CHAPTER_TEXT)).not.toBeVisible();
     await expect(
-      outtakesPanel.getByText("No outtakes yet. Stash cut text here to find it later."),
+      // STRINGS.outtakes.empty — names the only way text gets in now that the
+      // panel has no compose form (2026-08-18).
+      outtakesPanel.getByText(
+        "No outtakes yet. Select text in a chapter and use “Send selection to outtakes” to stash it here.",
+      ),
     ).toBeVisible();
   });
 

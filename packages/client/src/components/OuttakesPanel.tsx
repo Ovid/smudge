@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { OuttakeRow } from "@smudge/shared";
 import { toPlainText } from "@smudge/shared";
 import { api } from "../api/client";
-import { mapApiError, applyMappedError, STOP } from "../errors";
+import { mapApiError, applyMappedError } from "../errors";
 import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
 import { useAbortableSequence } from "../hooks/useAbortableSequence";
 import { STRINGS } from "../strings";
@@ -15,45 +15,22 @@ interface OuttakesPanelProps {
   onInsert: (outtake: OuttakeRow) => void;
   /**
    * The row EditorPage just captured via the toolbar. A new object identity is
-   * prepended optimistically (I1) — mirroring handleCreate — so surfacing the
-   * capture never depends on a reload that a concurrent card delete/rename
-   * could stale. Null before the first capture.
+   * prepended optimistically (I1) so surfacing the capture never depends on a
+   * reload that a concurrent card delete/rename could stale. Null before the
+   * first capture. This is now the ONLY producer of new outtakes: the drawer
+   * holds text taken from the manuscript, and composing fresh prose into it
+   * is not a thing it does (design §3 decision 3). Capture COPIES the
+   * selection — the chapter is untouched; the destructive cut is Phase 4c.2a.
    */
   capturedOuttake: OuttakeRow | null;
   /**
    * S1: bumped by EditorPage when a toolbar capture came back 2xx BAD_JSON —
    * the server most likely committed the row but there is no body to prepend,
-   * so only an authoritative refetch can surface it. The three write paths the
-   * panel owns itself route this through `requestReload`; this is the same
-   * signal reaching in from the one that lives outside it.
+   * so only an authoritative refetch can surface it. The write paths the panel
+   * owns itself route this through `requestReload`; this is the same signal
+   * reaching in from the one that lives outside it.
    */
   externalRefreshKey: number;
-  /**
-   * I6 (agentic-review 2026-08-05): the unsent blank-note text, OWNED BY
-   * EditorPage. `null` closes the form; `""` opens it empty. This panel
-   * unmounts on an ordinary click — ReferencePanel renders only the active tab
-   * and the panel renders only while open — so holding the draft in local state
-   * meant one Ctrl+. or arrow key destroyed the writer's text with no confirm,
-   * no warning and no server copy (the POST had not fired). The owner outlives
-   * both, which also gives handleCreate's un-abortable POST a live setter to
-   * hand the text back to when it settles after the panel is gone.
-   */
-  draft: string | null;
-  onDraftChange: (draft: string | null) => void;
-}
-
-/** Wrap a textarea's plain string into a TipTap doc, one paragraph per line. */
-function textToDoc(text: string): Record<string, unknown> {
-  return {
-    type: "doc",
-    content: text
-      .split("\n")
-      .map((line) =>
-        line
-          ? { type: "paragraph", content: [{ type: "text", text: line }] }
-          : { type: "paragraph" },
-      ),
-  };
 }
 
 export function OuttakesPanel({
@@ -61,8 +38,6 @@ export function OuttakesPanel({
   onInsert,
   capturedOuttake,
   externalRefreshKey,
-  draft,
-  onDraftChange,
 }: OuttakesPanelProps) {
   const [outtakes, setOuttakes] = useState<OuttakeRow[]>([]);
   const [filter, setFilter] = useState("");
@@ -75,9 +50,6 @@ export function OuttakesPanel({
   // which was given separate state for exactly this hazard and stopped there.
   const [listError, setListError] = useState<string | null>(null);
   const [committedNotice, setCommittedNotice] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
-  // The form is open exactly when the owner is holding a draft for us.
-  const showNew = draft !== null;
   // S6 (agentic-review 2026-08-04): the empty state used to render for the FULL
   // duration of every load — there was no loading flag, and the projectId effect
   // empties the list before the new load even starts. A writer with fifty
@@ -86,24 +58,15 @@ export function OuttakesPanel({
   // happens before the load effect runs, doesn't flash it either.
   const [loading, setLoading] = useState(true);
 
-  // I2: read the LIVE draft from inside handleCreate's post-await tail, whose
-  // closure captured the value as of the click. Mirrors the projectRef pattern
-  // used across the hooks.
-  const draftRef = useRef(draft);
-  draftRef.current = draft;
-
   // The LIST GET only. Unmount-abort is right for a read: nothing is lost by
   // discarding rows nobody is looking at, and the next mount refetches.
   //
-  // I3 (agentic-review 2026-08-04): the blank-note POST deliberately does NOT
-  // run on an op. This panel unmounts on an ordinary click (ReferencePanel
-  // renders `{activeTab?.panel ?? null}`, and the panel renders only while
-  // open), so "Save a blank note, then switch to Images" aborted the POST *and*
-  // took the `draft` state down with the component — unrecoverable text, from
-  // the one panel whose stated job is not losing the writer's text (see the S3
-  // note in the catch below). Un-aborted, the row lands and the next mount's
-  // load surfaces it. Per-row delete/rename mutations dropped their ops for the
-  // same reason; see OuttakeCard.
+  // I3 (agentic-review 2026-08-04): writes deliberately do NOT run on an op.
+  // This panel unmounts on an ordinary click (ReferencePanel renders
+  // `{activeTab?.panel ?? null}`, and the panel renders only while open), so
+  // cancelling a possibly-committed write is worse than letting it land.
+  // Per-row delete/rename mutations dropped their ops for that reason; see
+  // OuttakeCard.
   const loadOp = useAbortableAsyncOperation();
   // Arbitrates reload-vs-mutation staleness (invariant 4). Reloads replace the
   // whole list, so a reload that started BEFORE an optimistic mutation landed
@@ -187,37 +150,60 @@ export function OuttakesPanel({
     [requestReload],
   );
 
-  // S6: one place where a server-confirmed row joins the list, shared by the
-  // blank-note create and the toolbar capture. Prepend (newest-first) and dedup
-  // by id so a reload that already surfaced the server's copy can't leave a
-  // duplicate React key.
+  // S6: one place where a server-confirmed row joins the list. Prepend
+  // (newest-first) and dedup by id so a reload that already surfaced the
+  // server's copy can't leave a duplicate React key.
   // I1 (agentic-review 2026-08-04): read the LIVE project, not the one this
-  // callback closed over. `applyServerRow` is a useCallback keyed on projectId,
-  // but handleCreate is a plain function body — its running invocation pins the
-  // click-time callback, so the guard below compared A's row against A's
-  // captured projectId, passed, and prepended into what was by then B's list.
-  // Same ref discipline as draftRef above and the projectRef pattern in the
-  // hooks. Returns whether the row was accepted (S2).
+  // callback closed over, so a row cannot be matched against a stale projectId.
   const projectIdRef = useRef(projectId);
+  // Written during render on purpose, and the only place in components/ that
+  // does it — the same live-prop mirror the hooks use (useFindReplaceController's
+  // slugRef, useEditorMutation's projectEditorRef). The two readers need the live
+  // value for DIFFERENT reasons, and both reasons are load-bearing:
+  //
+  //   * callbacksFor (below) — OuttakeCard's delete/rename carry no AbortSignal,
+  //     so they genuinely settle after a project switch or unmount. The value has
+  //     to be current the moment they look, not one effect-flush later.
+  //   * applyServerRow (below) — does NOT run from an async settle; its only call
+  //     site is the capture effect, which runs post-commit with that commit's
+  //     props and no await in between. It needs the ref because its useCallback
+  //     dep chain is LIFETIME-STABLE (reconcile ← seq/requestReload, all pinned),
+  //     so its identity never changes and a closure over the `projectId` prop
+  //     would freeze the FIRST render's project id forever. Adding `projectId` to
+  //     its deps would be safe (surfacedCaptureIdRef makes the extra re-run a
+  //     no-op) — but closing over the prop WITHOUT that dep would not be, and
+  //     that is the mistake this ref forecloses.
+  //
+  // An effect-based mirror would make correctness depend on this effect being
+  // DECLARED before the capture effect, which is a sharper edge than the write it
+  // replaces.
+  //
+  // I1/S1 (agentic-review 2026-08-19): the rule started reporting when
+  // `handleCreate`'s BODY was deleted, not when the blank-note form's `draftRef`
+  // write was. Verified by piping main's file through `npx eslint --stdin`:
+  // unmodified → 0 reports; `draftRef` write deleted only → still 0;
+  // `handleCreate` deleted only → the rule fires on both ref writes. That
+  // function was making eslint-plugin-react-hooks bail out of analysing the whole
+  // component, so any hook violation added while it existed went unreported too.
+  // eslint-disable-next-line react-hooks/refs -- live-prop mirror; see the two readers above
   projectIdRef.current = projectId;
 
   const applyServerRow = useCallback(
-    (row: OuttakeRow): boolean => {
+    (row: OuttakeRow) => {
       // I1 (review 2026-07-26): the row's OWN project is the authority on
-      // whether it belongs here. Neither producer re-checks the project after
-      // its await — the capture POST lives in `useOuttakeCapture` and the blank-note
-      // POST in handleCreate below — and this panel is not keyed on project, so
-      // an A→B switch mid-POST delivers project A's row to a panel showing B.
-      // The C1 ref seed only covers the MOUNT path; this covers the prop-change
-      // path and the create path too, because every write to the list funnels
-      // through here. A leaked row is not cosmetic: its Insert button pastes A's
-      // private text into a B chapter, and its Delete HARD-deletes a real
-      // project-A outtake (outtakes carry no deleted_at — CLAUDE.md §Data Model).
-      if (row.project_id !== projectIdRef.current) return false;
+      // whether it belongs here. The capture POST in `useOuttakeCapture` does
+      // not re-check the project after its await, and this panel is not keyed
+      // on project, so an A→B switch mid-POST delivers project A's row to a
+      // panel showing B. The C1 ref seed only covers the MOUNT path; this
+      // covers the prop-change path too, because every write to the list
+      // funnels through here. A leaked row is not cosmetic: its Insert button
+      // pastes A's private text into a B chapter, and its Delete HARD-deletes a
+      // real project-A outtake (outtakes carry no deleted_at — CLAUDE.md
+      // §Data Model).
+      if (row.project_id !== projectIdRef.current) return;
       reconcile();
       setOuttakes((prev) => [row, ...prev.filter((o) => o.id !== row.id)]);
       setError(null);
-      return true;
     },
     [reconcile],
   );
@@ -231,85 +217,14 @@ export function OuttakesPanel({
   // outtake until a page refresh, and leaking project A's row into project B.
   const surfacedCaptureIdRef = useRef<string | null>(capturedOuttake?.id ?? null);
 
-  // I1: prepend a toolbar-captured row the moment EditorPage hands it down,
-  // exactly as handleCreate does for the blank-note flow. Fires only for a row
-  // this panel has not already surfaced.
+  // I1: prepend a toolbar-captured row the moment EditorPage hands it down.
+  // Fires only for a row this panel has not already surfaced.
   useEffect(() => {
     if (!capturedOuttake) return;
     if (surfacedCaptureIdRef.current === capturedOuttake.id) return;
     surfacedCaptureIdRef.current = capturedOuttake.id;
     applyServerRow(capturedOuttake);
   }, [capturedOuttake, applyServerRow]);
-
-  async function handleCreate() {
-    if (!draft?.trim()) {
-      onDraftChange(null);
-      return;
-    }
-    // I2 (review 2026-07-26): the text we are actually sending. Cancel carries
-    // no disabled={creating} — only Save does — so the writer can close the form
-    // and start a second note while this POST is still out. Clearing
-    // unconditionally on success then erased text the server never saw, with no
-    // banner and no undo. Same current === attempted discipline as
-    // OuttakeCard.commitLabel; see the S3 note below for why this panel treats
-    // the writer's text as the thing it exists to protect.
-    const attempted = draft;
-    // I3 (agentic-review 2026-08-04): the project this POST is aimed at. The
-    // success arm already refuses a row whose project drifted mid-flight; the
-    // failure arms wrote to the panel unconditionally, so project A's banner
-    // painted project B — after the projectId clearing effect had run, so
-    // nothing removed it for the rest of the session.
-    const startedForProject = projectId;
-    setCreating(true);
-    try {
-      const row = await api.outtakes.create(projectId, {
-        content: textToDoc(attempted),
-        label: null,
-      });
-      // S2: the ordinary refusal here is a project switch mid-POST — the row
-      // committed, but in the project the writer just left. Tearing the form
-      // down would close it, show no card and say nothing, losing the text from
-      // the one panel whose job is not losing it. Keep it on screen and name
-      // where it went, so the writer can decide rather than retype.
-      if (!applyServerRow(row)) {
-        setCommittedNotice(S.createdElsewhere);
-        return;
-      }
-      // Only tear down the form when it still holds the text we sent.
-      if (draftRef.current === attempted) onDraftChange(null);
-    } catch (err) {
-      // I3: the drifted case gets ONE notice covering both failure shapes —
-      // definite and possibly-committed. The distinction is A's business and
-      // the writer has to go look there either way; what B's panel must say is
-      // that the note is not here and that Save now targets B.
-      // `ref.current !== local`, not the mirror: the mirrored form is what the
-      // no-restricted-syntax sequence-ref rule targets, and this is a
-      // project-drift check (one of the patterns its comment names as
-      // legitimate), not an epoch comparison.
-      if (projectIdRef.current !== startedForProject) {
-        setCommittedNotice(S.createFailedElsewhere);
-        return;
-      }
-      const mapped = mapApiError(err, "outtake.create");
-      applyMappedError(mapped, {
-        onMessage: setError,
-        // S3: a 2xx BAD_JSON means the server likely committed the outtake but
-        // the response body was unreadable. Refetch so the row (if it landed)
-        // appears, and hold the ambiguity notice. Unlike SnapshotPanel we do
-        // NOT clear the draft: there the draft is a label, here it is the
-        // writer's text, and discarding content the server may never have
-        // received is the one failure this panel exists to prevent. A manual
-        // retry can mint a duplicate — the accepted trade-off for image upload
-        // (F-8), and the row is now visible right below the form.
-        onCommitted: () => {
-          if (mapped.message !== null) notePossiblyCommitted(mapped.message);
-          return STOP;
-        },
-      });
-    } finally {
-      setCreating(false);
-    }
-  }
 
   // Reconcile the list by id after a card's own awaited server call succeeds.
   // No api/abort here — the card owns the request (and its per-row op); these
@@ -383,43 +298,6 @@ export function OuttakesPanel({
           onChange={(e) => setFilter(e.target.value)}
           className="text-sm border border-border/40 rounded px-2 py-1 bg-white text-text-primary placeholder:text-text-secondary/60 font-sans focus:outline-none focus:ring-1 focus:ring-accent"
         />
-        {!showNew ? (
-          <button
-            type="button"
-            onClick={() => onDraftChange("")}
-            className="w-full text-sm font-medium text-accent border border-accent/40 rounded px-3 py-1.5 hover:bg-accent/10 transition-colors font-sans"
-          >
-            {S.newBlank}
-          </button>
-        ) : (
-          <div className="flex flex-col gap-2">
-            <textarea
-              aria-label={S.newPlaceholder}
-              placeholder={S.newPlaceholder}
-              value={draft ?? ""}
-              onChange={(e) => onDraftChange(e.target.value)}
-              rows={4}
-              className="text-sm border border-border/40 rounded px-2 py-1 bg-white text-text-primary placeholder:text-text-secondary/60 font-serif focus:outline-none focus:ring-1 focus:ring-accent"
-            />
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={handleCreate}
-                disabled={creating}
-                className="text-sm font-medium text-white bg-accent rounded px-3 py-1 hover:bg-accent/90 transition-colors font-sans disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {S.save}
-              </button>
-              <button
-                type="button"
-                onClick={() => onDraftChange(null)}
-                className="text-sm text-text-secondary hover:text-text-primary transition-colors font-sans"
-              >
-                {S.cancel}
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* UAT (2026-08-11): these three banners used to be the first children of

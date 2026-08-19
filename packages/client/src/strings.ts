@@ -5,6 +5,18 @@ import {
   MAX_IMAGE_UPLOAD_LABEL,
 } from "@smudge/shared";
 
+// The outtakes drawer has exactly one way in — the toolbar action — so its
+// label is reused by the empty state that tells a writer where to find it.
+// Named once so the two cannot drift apart.
+//
+// S7 (agentic-review 2026-08-19): the two uses are NOT the same kind of string.
+// The toolbar control is an icon-only <button>, so there the label is an
+// ACCESSIBLE NAME (aria-label + title) and never visible text; in the empty
+// state it is visible body copy. Screen-reader users therefore get an exact
+// name match with the copy, and sighted users get it on hover via the native
+// title tooltip. Rewording this constant changes both registers at once.
+const SEND_SELECTION_TO_OUTTAKES = "Send selection to outtakes";
+
 export const STRINGS = {
   app: {
     name: "Smudge",
@@ -139,8 +151,13 @@ export const STRINGS = {
     createOuttakeTooLarge: "Outtake is too large to save. Capture a smaller selection.",
     // S3 (agentic-review 2026-08-05): the create endpoint's only 404 producer is
     // "Project not found." — the project was soft-deleted while the editor was
-    // open. Shared by the panel's blank-note form and the toolbar capture, so
-    // the copy cannot promise the writer their text is still in a textarea.
+    // open.
+    // S3 (agentic-review 2026-08-19): the copy was worded generically because it
+    // was shared by the panel's blank-note form and the toolbar capture. That
+    // form is gone, so capture is the only caller — but the wording still stands
+    // on its own terms: capture keeps no draft anywhere, so promising the writer
+    // their text is recoverable would be false. Pinned by the 404 case in
+    // apiErrorMapper.test.ts's "SCOPES — outtake.create".
     createOuttakeProjectGone: "This project is no longer available, so the outtake wasn't saved.",
     updateOuttakeFailed: "Failed to update outtake",
     // S5: the only 400 the rename endpoint emits is the label cap. The generic
@@ -550,9 +567,13 @@ export const STRINGS = {
   },
   outtakes: {
     tab: "Outtakes",
-    empty: "No outtakes yet. Stash cut text here to find it later.",
+    // The drawer has no compose form: text arrives by selecting it in the editor
+    // and using the toolbar action. The old copy said "stash cut text here",
+    // which pointed at a textarea that no longer exists — an empty state naming
+    // no reachable gesture reads as broken.
+    empty: `No outtakes yet. Select text in a chapter and use “${SEND_SELECTION_TO_OUTTAKES}” to stash it here.`,
     noMatches: "No outtakes match your filter.",
-    newFromSelection: "Send selection to outtakes",
+    newFromSelection: SEND_SELECTION_TO_OUTTAKES,
     selectionRequired: "Select some text first, then send it to outtakes.",
     selectionHasNoText: "That selection has no text to stash — images aren't kept in outtakes.",
     // S3 (agentic-review 2026-08-04): the toolbar button lives OUTSIDE the
@@ -576,15 +597,6 @@ export const STRINGS = {
     // and no retry path, leaving the field asserting a label the server never
     // received.
     renameInFlight: "Still renaming that outtake — wait, then click away again to save.",
-    newBlank: "New outtake",
-    createdElsewhere:
-      "Saved to the project you were in when you clicked Save — it isn't in this project's outtakes. Your text is still below.",
-    // I3 (agentic-review 2026-08-04): the same mid-POST project switch on the
-    // failure arms. Covers both the definite failure and the possibly-committed
-    // one: either way the note is not in THIS project, the other project is
-    // where to look, and the retained draft now targets the project on screen.
-    createFailedElsewhere:
-      "That note didn't land in this project — it was aimed at the project you were in when you clicked Save. Check there before retrying; saving now files your text under this project.",
     filterPlaceholder: "Filter outtakes…",
     untitled: "Untitled outtake",
     fromChapterPrefix: "From ",
@@ -600,9 +612,6 @@ export const STRINGS = {
     confirmDeleteTitle: "Delete this outtake?",
     confirmDeleteBody: "This can't be undone.",
     labelAriaLabel: "Outtake label",
-    newPlaceholder: "Paste or type text to stash here…",
-    save: "Save",
-    cancel: "Cancel",
     // S7 (agentic-review 2026-08-04): outtakes are hard-deleted, so an
     // apparently-empty card is an invitation to destroy the last copy of JSON a
     // human could still recover by hand. Say what actually happened.

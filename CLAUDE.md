@@ -505,7 +505,15 @@ Core tables, all using UUID primary keys (except `settings` and `chapter_statuse
 - **daily_snapshots** — id, project_id (FK), date, total_word_count, created_at. One row per project per day; upserted on each save.
 - **outtakes** — id, project_id (FK), label, content (TipTap JSON, images
   stripped on capture), created_at, updated_at. Per-project store of cut/stashed
-  text. **Degraded read:** a row whose stored `content` is unparseable (or parses
+  text. Text enters **only** by capture from a chapter (the toolbar's "Send
+  selection to outtakes") — the panel has no compose form, so the drawer holds
+  text taken from the manuscript and nothing composed directly into it
+  (2026-08-18; rationale in
+  `docs/roadmap-decisions/2026-07-19-phase-4c-2-scratchpad-outtakes.md`).
+  Capture is **non-destructive**: it copies the selection and leaves the chapter
+  untouched. The destructive version ("Cut selection to outtakes") is Phase
+  4c.2a and has not shipped — do not describe capture as moving text out.
+  **Degraded read:** a row whose stored `content` is unparseable (or parses
   to a non-node) is returned with `content` replaced by a valid empty doc and a
   `content_corrupt: true` flag on the wire type, never as a 500 — the row must
   keep listing, because listing is what keeps it deletable. The substituted doc

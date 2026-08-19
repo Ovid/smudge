@@ -521,10 +521,11 @@ export const SCOPES = {
   "outtake.create": {
     fallback: STRINGS.error.createOuttakeFailed,
     committed: STRINGS.error.possiblyCommitted,
-    // S1: an oversized capture/blank note that trips the express.json limit
-    // 413s; the generic fallback invites a doomed retry, so give the same
-    // "too large" hint the sibling write scopes carry. Near-unreachable (a
-    // captured selection is a subset of a chapter that already fit).
+    // S1: an oversized capture that trips the express.json limit 413s; the
+    // generic fallback invites a doomed retry, so give the same "too large"
+    // hint the sibling write scopes carry. Near-unreachable (a captured
+    // selection is a subset of a chapter that already fit) — and more so since
+    // the blank-note form, the other producer this arm once named, was removed.
     // S3: 404 has exactly one producer on this route (the project was
     // soft-deleted while the editor was open), so a status-keyed arm is safe
     // here — unlike the 400 case that S8 had to move to byCode. The fallback

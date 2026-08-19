@@ -62,7 +62,7 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 4b.16   | Dialog Lifecycle Hook                     | Extract `useDialogLifecycle({ open, onClose, initialFocusRef, blockEscapePropagation }) => { dialogRef, onBackdropClick }` and migrate the 5 dialogs (Confirm, Export, NewProject, ProjectSettings, ShortcutHelp) one at a time; preserve `stopImmediatePropagation` as an opt-in (`blockEscapePropagation`); ARIA `role` stays in JSX and the `showModal/close` try/catch is an always-on guard.                                                                                                                                                                                                                                                                          | Done        |
 | 4b.17   | AbortController ESLint Rule               | Add ESLint rule banning hand-rolled `useRef<AbortController>` allocations; convert `migrationStructuralCheck.test.ts`'s `PHASE_4B_3B_ALLOWLIST` + companion assertion to inline `// eslint-disable-next-line` annotations on each of the 6 surviving allocation sites across 5 files (post F-2 split). Split from Phase 4b.4 on 2026-05-28 per §Pull Request Scope one-feature rule.                                                                                                                                                                                                                                                                                       | Done        |
 | 4b.18   | Persisted-Setting Storage Helper          | Dedup the four hand-rolled `getSaved* + try/catch` localStorage readers (`useReferencePanelState` width/open/active-tab, `useSidebarState` width) behind one helper. Each reader validates differently (range clamp, strict boolean, string default), so the helper must take the validator — a bare `getSavedString` would re-open the unvalidated-read bug fixed in 4c.0 (review item I1). `useContentCache` is out of scope (own `clientWarn` logging, JSON payloads, not a setting). Raised as a Suggestion in the 4c.0 review (`paad/code-reviews/ovid-4c0-reference-panel-tabs-2026-07-12-14-55-59-3f7822c.md`); split out per §Pull Request Scope one-feature rule. | Done        |
-| 4c      | Notes, Tags & Outtakes                    | Inline notes, paragraph tags, scratchpad for cut text (split into 4c.0–4c.3; 4c.0 done)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | In Progress |
+| 4c      | Notes, Tags & Outtakes                    | Inline notes, paragraph tags, scratchpad for cut text (split into 4c.0–4c.3; 4c.0 done, 4c.1 data layer only — UI rescheduled as 4c.1a)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | In Progress |
 | 5a      | Fiction: Characters                       | Character sheets with structured fields and freeform notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Planned     |
 | 5b      | Fiction: Scene Cards                      | Scene cards / outline mode with drag-and-drop                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Planned     |
 | 5c      | Fiction: World-Building                   | World-building bible, "who's in the room" tracker                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Planned     |
@@ -1933,16 +1933,29 @@ codec)` plus three codec factories (`numberInRange`, `flag`, `text`). The
 >   (`docs/plans/2026-07-12-4c0-reference-panel-tabs-plan.md`). `ReferencePanel`
 >   now takes a `tabs[]` + `activeTabId` + `onSelectTab` API; Images stays the
 >   only tab (no behavior change). Unblocks 4c.1.
-> - **4c.1** Inline Notes — ✅ **Done** (design
->   `docs/plans/2026-07-12-notes-design.md`; shipped and merged to `main` —
->   verified via merged `feat(4c.1)`/`fix(4c.1)` commits).
+> - **4c.1** Inline Notes — ⚠️ **Partly done: data layer only, no UI** (design
+>   `docs/plans/2026-07-12-notes-design.md`, plan
+>   `docs/plans/2026-07-12-notes-plan.md`). Plan Tasks 1–6 shipped: the
+>   `stripNoteMarks`/`extractNotes` walkers, the `note` TipTap mark, the
+>   `.note-highlight` CSS, and the strips in export/preview/`replaceInDoc`.
+>   **Plan Tasks 7–14 did not ship** — there is no way for a writer to create,
+>   see, or delete a note. Remaining work is scheduled as **4c.1a** below.
+>
+>   > **Correction (2026-08-18):** this entry previously read "✅ Done —
+>   > verified via merged `feat(4c.1)`/`fix(4c.1)` commits." That check
+>   > confirmed commits bearing the label existed, not that the plan's tasks
+>   > were finished; the four `feat(4c.1)` commits are Tasks 1–3 plus the CSS.
+>   > Verify a phase against its plan's task list, not against commit labels.
 > - **4c.2** Scratchpad / Outtakes — 🔨 **In Progress** (brainstormed
 >   2026-07-19; design `docs/plans/2026-07-19-scratchpad-outtakes-design.md`,
 >   plan `docs/plans/2026-07-19-scratchpad-outtakes-plan.md`, decisions
 >   `docs/roadmap-decisions/2026-07-19-phase-4c-2-scratchpad-outtakes.md`).
+> - **4c.1a** Inline Notes UI — 📋 **Planned; next after 4c.2.** Completes
+>   4c.1 by delivering plan Tasks 7–14 (see §4c.1a below). **Blocks 4c.3**,
+>   which adds a second editor-only mark on this foundation.
 > - **4c.2a** "Cut selection to outtakes" (destructive) — planned; split from
 >   4c.2, designed when reached.
-> - **4c.3** Tags & Cross-References — planned.
+> - **4c.3** Tags & Cross-References — planned. Do not start before **4c.1a**.
 
 ### Goal
 
@@ -1965,13 +1978,58 @@ Notes attached to specific text ranges in the manuscript. Visible while editing,
 
 **Implementation:** TipTap custom mark. The note text is stored as a mark attribute on the relevant text range in the TipTap JSON. No separate database table needed — the notes live inside the document structure.
 
+#### 4c.1a Inline Notes UI
+
+Completes Phase 4c.1, whose data layer shipped without any user-facing surface.
+Scope is exactly plan Tasks 7–14 of `docs/plans/2026-07-12-notes-plan.md`; the
+design (`docs/plans/2026-07-12-notes-design.md`) already covers this work and
+does not need re-brainstorming.
+
+**Remaining tasks:**
+
+| Task | Deliverable |
+| ---- | ----------- |
+| 7  | `STRINGS.notes` group (add label, dialog title, placeholder, overlap warning) |
+| 8  | `packages/client/src/editor/noteCommands.ts` — `setNote`, `updateNote`, `removeNote`, `noteRangeAt`, `selectionOverlapState` |
+| 9  | `NoteDialog` — modal `<dialog>` via `useDialogLifecycle`, mirroring `ConfirmDialog` |
+| 10 | Lift a position-tagged note list from `Editor.tsx`'s `onUpdate` up to `EditorPage` |
+| 11 | `NotesPanel.tsx` + a Notes tab registered through the 4c.0 tab API |
+| 12 | "Add note" toolbar button + Ctrl/Cmd+Alt+M shortcut |
+| 13 | Record the new entry points in `editorEntryPointSurface.test.ts`; pin word-count invariance with and without notes |
+| 14 | `e2e/notes.spec.ts` — capture, list, preview-strip, aXe scan |
+
+**Carried-forward constraints** (from the 4c.1 pushback rounds — do not
+re-derive):
+
+- The note dialog is a **modal `<dialog>`**; the selection-anchored inline
+  popover was explicitly rejected.
+- Opening that modal moves focus out of the editor and drops the ProseMirror
+  selection, so the target range must be **captured before `showModal()`** and
+  Save applied to the captured range.
+- Add/edit/delete-note are **editor-mutating entry points**: each no-ops while
+  the editor is locked or busy, and each is enumerated in the entry-point
+  surface test per CLAUDE.md F-1.
+- A note's identity is its **document position** — the mark deliberately has no
+  `id`. Adjacent notes with identical text merging into one is accepted
+  behavior.
+- Notes persist via **normal autosave**; there is no server round-trip, so
+  `useEditorMutation` does not apply.
+
+**Sequencing.** Slotted after 4c.2 (in progress) and before 4c.2a. The hard
+constraint is that it precedes **4c.3**, which introduces a second editor-only
+mark sharing this foundation and the same render-strip chokepoint. The ordering
+against 4c.2a is a preference, not a dependency: 4c.1a finishes a feature that
+is currently invisible to the writer, whereas 4c.2a adds a destructive
+convenience to a feature that already works. Swap them freely.
+
+
 #### 4c.2 Scratchpad / Outtakes Folder
 
 A per-project space for text that's been cut from the manuscript but might be useful later. Writers call these "killed darlings."
 
-- Outtakes are free-form text entries with an optional label (e.g., "Cut from Chapter 7 — the marketplace scene").
+- Outtakes are free-form text entries with an optional label (e.g., "Cut from Chapter 7 — the marketplace scene"). *(2026-08-18: they are created only by capturing text from a chapter — the drawer has no compose form. See `docs/roadmap-decisions/2026-07-19-phase-4c-2-scratchpad-outtakes.md`.)*
 - Outtakes are searchable.
-- A writer can move text from the editor to outtakes (cut selection -> paste to outtakes) and vice versa.
+- A writer can move text from the editor to outtakes (cut selection -> paste to outtakes) and vice versa. *(Shipped in 4c.2 as a **non-destructive copy** — the chapter is untouched. The "cut" half of this bullet, which removes the selection, is Phase 4c.2a and has not shipped.)*
 - Outtakes are not included in the manuscript word count, preview, or export.
 
 #### 4c.3 Tags and Cross-References

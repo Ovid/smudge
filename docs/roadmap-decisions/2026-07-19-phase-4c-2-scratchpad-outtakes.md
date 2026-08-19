@@ -392,3 +392,106 @@ against the exception getting stronger, not the exception getting broader. A
 list that grows after being recorded is the signal to split, and the next branch
 should treat a second round of discovered out-of-scope work as the trigger,
 not the third.
+
+---
+
+## 2026-08-18 — Blank-outtake compose form removed (scope narrowing)
+
+**Decision:** the "New outtake" control and its textarea are removed. The
+Outtakes drawer now has exactly one producer — the toolbar's "Send selection to
+outtakes" — and one consumer, the card's "Insert into editor".
+
+**Why it went.** It was never argued for. The roadmap sketch (`docs/roadmap.md`
+§4c.2) lists four bullets and the capture one reads "A writer can move text from
+the editor to outtakes (cut selection -> paste to outtakes) and vice versa";
+there is no manual-create bullet. The design doc mentions manual create three
+times — a parenthetical in the §2 scope list (`design.md:36`), the component
+inventory (`:276-277`), and the test plan (`:356`) — but every one of those
+specifies MECHANISM. Not one is a rationale: every other choice in that document
+earns a numbered entry in §3 "Design Decisions (with rationale)", and manual
+create is not among the four. It entered as an unexamined default: the
+CRUD surface had a POST endpoint, so the panel got a create button. Everything
+downstream of that treats it as settled and argues only about mechanism (this
+log's item 3 is about wrapping a textarea string into a TipTap doc, not about
+whether the textarea should exist).
+
+It also contradicted a decision that *was* argued: §3 decision 3, "the panel is
+not an editor" — content is deliberately not re-editable in the panel, so a
+compose form let a writer create prose they then could not revise in place.
+
+**What was deleted.** The form JSX, `handleCreate`, `textToDoc`, the panel's
+`draft`/`onDraftChange` props, EditorPage's lifted `outtakeDraft` state, its two
+entries in the `editorEntryPointSurface` snapshot, and six strings. Roughly 200
+lines of it were safety code added by three review rounds (I6's draft lifting,
+I3's un-abortable POST, the `createdElsewhere`/`createFailedElsewhere`
+project-drift banners). **If blank-create is ever rebuilt, it comes back naive** —
+read the I2/I3/I6/S2/S3 notes in commit `f94bd1a2`..`HEAD` before doing so,
+because each closed a real data-loss path.
+
+**What survives and why.** `POST /api/projects/{id}/outtakes` stays — the
+toolbar capture is its caller. No server, schema, or migration change.
+
+**No "there is no compose form" test was added.** See the note below; the
+absence is held by the deleted code and this record, not by an assertion.
+
+### Tests that assert an absence — when they earn their place
+
+A negative assertion is worth keeping when a **live mechanism could still
+produce the forbidden state**, so the test can fail for some reason other than
+someone deliberately re-adding the feature. Smudge's good examples: the DOCX
+note-leak test (a new export walker can leak notes), the outtake
+word-count/export/search exclusion tests (a future "iterate all project content"
+change can sweep them in), the `deleted_at IS NULL` filters.
+
+It is **not** worth keeping when nothing can produce the state — when the only
+way to turn it red is a deliberate re-implementation, whose author deletes the
+test in the same commit. Such a test carries no signal and actively misleads: a
+reader assumes a guarded hazard exists where none does.
+
+For a deletion, asserting-the-absence is legitimate **scaffolding** — it proves
+in the RED step that the code actually went, rather than that a file was edited
+— and is removed in REFACTOR once the code is gone. Where re-addition is
+plausible by accident, the tool is a forcing pause
+(`editorEntryPointSurface.test.ts`, `editorExtensions.test.ts`), which
+interrupts rather than forbids. Where it is plausible on purpose, the tool is a
+record like this one, because only a document can carry the *why*.
+
+**Pre-existing instance, fixed 2026-08-18 (commit `71bba74a`):**
+`packages/server/src/__tests__/chapters.test.ts` — "ignores target_word_count
+(column removed)" PATCHed `{ title }` without ever sending
+`target_word_count`, then asserted the response lacked it. It could not fail
+except by someone re-adding the column, and its name claimed an input-handling
+behaviour it did not exercise. Replaced by two cases covering what was actually
+untested: `UpdateChapterSchema` is `.partial()` without `.strict()`, so Zod
+strips unknown keys — an unknown-only body therefore 400s (rather than
+reporting a no-op success), and a mixed body still applies its known field.
+
+The replacement carries the check the original lacked: **each case was verified
+to fail under the change it guards** (`.passthrough()` breaks the first,
+`.strict()` the second). That verification is worth doing whenever a test's
+subject is an absence — it is the difference between a guard and a tombstone,
+and it is cheap. It also caught two assertions in the first draft that survived
+the `.passthrough()` run, i.e. that had reproduced the original defect; they
+were dropped.
+
+The `migration-004.test.ts` schema-shape assertions are a different case and
+fine: migrations are cumulative and re-run on every new migration, so a live
+mechanism can genuinely re-add a column.
+
+**Scope exception (one-feature rule), granted 2026-08-19.** Commit `71bba74a`
+is a server-side, chapters-domain test change on a branch whose feature is the
+outtakes compose-form removal. It shares no code path with outtakes and
+references no roadmap phase, so CLAUDE.md § Pull Request Scope would otherwise
+require it to be its own PR. Recorded here as the explicit exception that
+section calls for. **Why granted:** the rule exists to stop bundles that make
+review intractable — the precedent is the 17,000-insertion
+`ovid/snapshots-find-and-replace` branch that took 16 review rounds. This is 44
+lines of test-only change with no production surface, and reverting it would
+restore a tombstone that tests nothing. **What the exception costs:** "it's only
+44 lines" is the argument that precedes every bundle, so this is a precedent for
+*size and blast radius*, not for topical drift generally — a second unrelated
+change on the same branch would not qualify, because the thing being bounded is
+the total review surface, not the per-item one. **Where a future reader will
+look:** this is a chapters decision recorded in an outtakes phase log, which is
+the wrong shelf. It is here because the branch is here; `git log 71bba74a`
+points back.

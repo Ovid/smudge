@@ -809,6 +809,13 @@ outtakes: {
 },
 ```
 
+> **Superseded 2026-08-18: the blank-create form was removed** (see the Task D2
+> marker below and the §2 scope-list marker in the design doc). Two entries above
+> are stale: `newBlank` no longer exists, and `empty` was rewritten — "Stash cut
+> text here to find it later" pointed at a textarea that is gone, so an empty
+> state naming no reachable gesture read as broken. The delivered copy names the
+> toolbar action instead, sharing one constant with the button's accessible name.
+
 **Step 5 — Commit:** `feat(4c.2): outtakes error scopes + strings`
 
 ---
@@ -903,6 +910,12 @@ substring over `label + toPlainText(content)`), a "New outtake" control, and the
 newest-first list of `OuttakeCard`. Errors route through
 `mapApiError(err, "outtake.list")` → `applyMappedError`. Prepends on local
 create; removes on delete.
+
+> **Superseded 2026-08-18 — the blank-create form was removed entirely.**
+> Everything in this task about the textarea, `textToDoc`, the `draft` /
+> `onDraftChange` props and the create POST is historical: do NOT rebuild it
+> from this text. The panel's only producer is the toolbar capture. Rationale in
+> `docs/roadmap-decisions/2026-07-19-phase-4c-2-scratchpad-outtakes.md`.
 
 **"New outtake" textarea → TipTap doc (alignment #3).** A `<textarea>` yields a
 plain string, but `CreateOuttakeSchema.content` requires a valid doc. Wrap lines
