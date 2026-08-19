@@ -311,7 +311,26 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       if (!savingChapterId) return false;
       // Seed the latest-content ref so the first attempt posts the caller's content.
       // Subsequent keystrokes during backoff replace this via handleContentChange.
-      latestContentRef.current = { id: savingChapterId, content };
+      //
+      // Backlog 1f9d4b27: only for the ACTIVE chapter. `latestContentRef` means
+      // "the newest content for the chapter the user is editing right now" — the
+      // one writer besides this line, handleContentChange, writes exactly that.
+      // A save targeting a different chapter (the old Editor's unmount cleanup
+      // after a switch passes its mount-time id) used to overwrite the active
+      // chapter's entry with a foreign id, which the loop below then fails to
+      // match, falling back to the closure `content` and dropping keystrokes
+      // typed during backoff.
+      //
+      // That symptom is currently MASKED, and the mask is an accident of an
+      // unrelated mechanism: the same handleSave call that clobbers also runs
+      // `saveSeq.start()` and `saveOp.run()` two lines down, so the in-flight
+      // save's token goes stale and its loop returns `aborted` at the next
+      // iteration's first line — before it ever reads the ref. Nothing states
+      // that coupling near either site, so the gate is here to make the ref's
+      // meaning true rather than incidentally true.
+      if (savingChapterId === activeChapterRef.current?.id) {
+        latestContentRef.current = { id: savingChapterId, content };
+      }
       const token = saveSeq.start();
       const MAX_RETRIES = SAVE_BACKOFF_MS.length;
 
@@ -405,9 +424,14 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
             // Only clear the localStorage cache if no newer content has arrived
             // since we started this attempt. Otherwise the pending typing would
             // be dropped.
+            // "No newer content arrived for THIS chapter since the attempt
+            // started." When the ref tracks a different chapter (a save for a
+            // non-active chapter, which no longer seeds it — see above), nothing
+            // newer can have arrived for this one, so the answer is yes.
             const stillLatest =
-              latestContentRef.current?.id === savingChapterId &&
-              latestContentRef.current.content === postedContent;
+              latestContentRef.current?.id === savingChapterId
+                ? latestContentRef.current.content === postedContent
+                : true;
             if (stillLatest) {
               clearCachedContent(savingChapterId);
               setCacheWarning(false);

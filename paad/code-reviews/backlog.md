@@ -164,18 +164,6 @@
 - **Last seen:** 2026-04-27 on branch `ovid/devcontainer-and-e2e-isolation` at `5f46256`
 - **Severity:** Suggestion
 
-## `1f9d4b27` — `latestContentRef` clobbered by unmount-cleanup save targeting old chapter
-- **File (at first sighting):** `packages/client/src/hooks/useProjectEditor.ts:273`
-- **Symbol:** `handleSave` (the `latestContentRef.current = { id: savingChapterId, content }` assignment)
-- **Bug class:** Concurrency
-- **Description:** `handleSave` unconditionally writes `latestContentRef.current = { id: savingChapterId, content }`. When the OLD Editor's unmount cleanup (Editor.tsx:218) fires `onSave(getJSON, mountChapterId)` after a chapter switch, `savingChapterId` is the old chapter id but the user is already typing on the new one, whose draft just landed in `latestContentRef`. The cleanup-save overwrites the new chapter's `latestContentRef` entry with the old chapter's id+content. A subsequent backoff-retry for the new chapter reads `latestContentRef`, sees the id mismatch, and falls back to the closure `content` rather than picking up keystrokes typed during the backoff window. Pre-existing race; surfaced during the Cluster A review while reading the new lastErr capture path.
-- **Suggested fix:** Gate the `latestContentRef.current = ...` assignment on `activeChapterRef.current?.id === savingChapterId`, OR have the unmount-cleanup save bypass `handleSave` entirely (call `api.chapters.update` directly with no shared-state side effects).
-- **Confidence:** Medium
-- **Found by:** Concurrency & State (`general-purpose (claude-opus-4-7)`)
-- **First seen:** 2026-04-27 on branch `ovid/cluster-a-error-mapping` at `4b43b07`
-- **Last seen:** 2026-05-25 on branch `abortsignal-threading-completion` at `63c3049`
-- **Severity:** Important
-
 ## `20eccaf3` — `restoreFollowupAbortRef` allocation could leak controller past unmount in a theoretical microtask/commit interleaving (mountedRef gate prevents user-observable impact)
 - **File (at first sighting):** `packages/client/src/hooks/useSnapshotState.ts:408-410, 473-478`
 - **Symbol:** `restoreSnapshot`
