@@ -570,6 +570,8 @@ Line count is not a hard limit — a 3,000-line migration can be fine, a 500-lin
 
 **Exceptions to the one-feature rule require an explicit decision recorded in the phase's decision log; the rule defaults to enforcement.** Recorded precedents live in `docs/roadmap-decisions/` (the earliest, Phase 4b.3, is in `docs/plans/2026-04-25-4b3a-review-followups-design.md`) — consult them for precedent rather than re-deriving the policy.
 
+**Architecture-report fix sessions are a standing recorded exception.** A `/paad:fix-architecture` branch closes several independent findings from one `paad/architecture-reviews/` report and has no roadmap phase, so it fits neither rule and has no phase decision log to record an exception in. The bounded carve-out — one report per branch, one finding per commit, a `Status:` block per finding, and no finding whose fix is itself a feature — is recorded in `docs/roadmap-decisions/2026-08-19-architecture-fix-session-pr-scope.md`.
+
 ## Merging Branches
 
 **Land a feature branch on `main` with `git done` (`~/bin/git-done`), never a
