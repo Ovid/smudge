@@ -1,8 +1,21 @@
-import { describe, it, expect, vi } from "vitest";
-import { renderHook, waitFor, fireEvent, act } from "@testing-library/react";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { renderHook, waitFor, fireEvent, act, cleanup } from "@testing-library/react";
 import type { Chapter, ProjectWithChapters } from "@smudge/shared";
 import { useKeyboardShortcuts } from "../useKeyboardShortcuts";
 import { STRINGS } from "../../strings";
+
+// S4 (agentic review 2026-08-19): unmount every rendered hook between tests.
+// RTL's own auto-cleanup does NOT run in this project — it registers an
+// afterEach only when afterEach is a *global* (@testing-library/react
+// dist/index.js), and packages/client/vitest.config.ts does not set
+// globals: true, so the module-imported afterEach above does not satisfy that
+// check. Without this, none of the four renderHook calls below ever unmounts:
+// each leaves a live document keydown listener behind and the hook's effect
+// cleanup never runs, so a single fireEvent.keyDown reaches every instance
+// rendered so far. Nothing asserted wrongly while each test wired its own
+// spies, which is exactly why it would have surfaced later as a race rather
+// than as the leak it is.
+afterEach(cleanup);
 
 // F-13. Ctrl+Shift+Arrow navigation used to fire its screen-reader
 // announcement synchronously on a voided promise, so a blocked navigation
@@ -237,7 +250,7 @@ describe("nav announcement dwell time (F-32 safety net)", () => {
     const setNavAnnouncement = vi.fn();
     const handleSelectChapterWithFlush = vi.fn().mockResolvedValue(true);
 
-    renderHook(() =>
+    const { unmount } = renderHook(() =>
       useKeyboardShortcuts({
         shortcutHelpOpen: false,
         deleteTarget: null,
@@ -267,13 +280,13 @@ describe("nav announcement dwell time (F-32 safety net)", () => {
     });
     expect(setNavAnnouncement).toHaveBeenCalledWith(ARRIVED);
     setNavAnnouncement.mockClear();
-    return setNavAnnouncement;
+    return { setNavAnnouncement, unmount };
   }
 
   it("still shows the announcement one tick before the dwell time expires", async () => {
     vi.useFakeTimers();
     try {
-      const setNavAnnouncement = await setupAndSettle();
+      const { setNavAnnouncement } = await setupAndSettle();
       act(() => {
         vi.advanceTimersByTime(DWELL_MS - 1);
       });
@@ -286,11 +299,30 @@ describe("nav announcement dwell time (F-32 safety net)", () => {
   it("clears the announcement exactly on the dwell time", async () => {
     vi.useFakeTimers();
     try {
-      const setNavAnnouncement = await setupAndSettle();
+      const { setNavAnnouncement } = await setupAndSettle();
       act(() => {
         vi.advanceTimersByTime(DWELL_MS);
       });
       expect(setNavAnnouncement).toHaveBeenCalledWith("");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // S4 (agentic review 2026-08-19). The two tests above pin the dwell timer
+  // while the hook is MOUNTED. Neither covers teardown, and teardown is the one
+  // lifecycle hazard a dwell timer actually has: the effect cleanup
+  // (useKeyboardShortcuts.ts:251-255) is the only code that clears a pending
+  // navAnnouncementTimer, so nothing here would go red if it were deleted.
+  it("clears the pending announcement timer on unmount", async () => {
+    vi.useFakeTimers();
+    try {
+      const { setNavAnnouncement, unmount } = await setupAndSettle();
+      unmount();
+      act(() => {
+        vi.advanceTimersByTime(DWELL_MS);
+      });
+      expect(setNavAnnouncement).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }

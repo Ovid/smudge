@@ -130,12 +130,22 @@ describe("EditorPage image announcement dwell time (F-32 safety net)", () => {
   });
 
   afterEach(() => {
-    vi.useRealTimers();
+    // S4 (agentic review 2026-08-19): cleanup() BEFORE useRealTimers(), so the
+    // unmount runs against the clock the timer was armed on. Reversed, the fake
+    // clock is already gone when EditorPage's unmount effect calls clearTimeout,
+    // and the handle it clears means nothing.
+    //
+    // Ordering alone does not DETECT a missing unmount cleanup — measured, not
+    // assumed: with the two dwell tests only, deleting EditorPage's cleanup
+    // (EditorPage.tsx:576-582) left this file green in either order, because
+    // nothing observed anything after the unmount. The third test below is what
+    // supplies the observation; this ordering is what lets it see a live clock.
     cleanup();
+    vi.useRealTimers();
   });
 
   async function renderAndAnnounce() {
-    render(
+    const { unmount } = render(
       <MemoryRouter initialEntries={["/projects/test-project"]}>
         <Routes>
           <Route path="/projects/:slug" element={<EditorPage />} />
@@ -152,6 +162,7 @@ describe("EditorPage image announcement dwell time (F-32 safety net)", () => {
       mockControls.announce?.(MESSAGE);
     });
     expect(screen.getByText(MESSAGE)).toBeInTheDocument();
+    return { unmount };
   }
 
   it("still shows the announcement one tick before the dwell time expires", async () => {
@@ -168,5 +179,25 @@ describe("EditorPage image announcement dwell time (F-32 safety net)", () => {
       vi.advanceTimersByTime(DWELL_MS);
     });
     expect(screen.queryByText(MESSAGE)).toBeNull();
+  });
+
+  // S4 (agentic review 2026-08-19). The two tests above pin the dwell time
+  // while the page is MOUNTED; neither could fail if EditorPage's unmount
+  // cleanup were deleted, because a stale pending timer harms nothing they
+  // look at. This one observes the timer itself: armed by the announcement,
+  // and gone once the page unmounts.
+  //
+  // vi.getTimerCount() rather than a spy on clearTimeout, so the assertion is
+  // about the outcome (no timer is still pending) instead of the mechanism.
+  // The count is exactly 1 because this path arms no other setTimeout — the
+  // auto-save debounce lives in the mocked Editor, and the page's load timers
+  // have settled before the fake clock is installed.
+  it("clears the pending announcement timer when the page unmounts", async () => {
+    const { unmount } = await renderAndAnnounce();
+    expect(vi.getTimerCount()).toBe(1);
+
+    unmount();
+
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
