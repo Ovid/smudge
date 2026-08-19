@@ -449,7 +449,7 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
 - **Status note (a safety-net test was edited — diff shown to the developer):** `sqlite-project-store.test.ts`'s `METHODS_BY_DOMAIN` map mirrors slice membership, so the two method names moved from its `images` array to its `chapters` array. This is a follow-the-code edit rather than a weakened assertion: the map's **union is unchanged**, so every method is still asserted to exist on the concrete store, and the test's strength is identical before and after. Only the domain label each name is grouped under changed — which is precisely what this fix changes.
 - **Status caveat (the drift can recur):** slice membership is **not** mechanically enforced. `METHODS_BY_DOMAIN` groups names for readable `it()` labels, but its assertion is only "the store implements this name" — a future method declared in the wrong slice passes just as happily as before. Enforcing membership would need type-level reflection TypeScript cannot do at runtime, and building an AST-parsing guard for a Low-impact organisational finding was judged disproportionate. The mitigation stays what it was: the slice header states the rule, and this entry records that the rule was once broken quietly enough to need a review to spot it.
 - **Status date:** 2026-08-19 10:07 UTC
-- **Status commit:** PENDING
+- **Status commit:** 708f827f
 
 ### [F-17] "One create, two producers, sync by nonce" is an established idiom rather than a boundary
 - **Category:** 13 (Inconsistent boundaries)
