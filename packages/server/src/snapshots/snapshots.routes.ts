@@ -29,10 +29,48 @@ export function snapshotChapterRouter(): Router {
         // The steering file's rule for the sibling success contracts is "the
         // client owns the toast, the server ships no success copy"; this
         // endpoint used to ship an English `message` the client already
-        // ignored in favour of STRINGS.snapshots.duplicateSkipped. The two
-        // status codes stay: 201 says a row was created, 200 says nothing was,
-        // and collapsing them would either claim a creation that did not
-        // happen or turn a benign no-op into an error.
+        // ignored in favour of STRINGS.snapshots.duplicateSkipped.
+        //
+        // THE TWO SHAPES ARE DELIBERATE. This is the only endpoint in Smudge
+        // whose success response is a union the client must branch on, so it
+        // looks like the classic "caller forgets to check and reads undefined"
+        // hazard. It is not, and the reason is worth stating because it is not
+        // a property of the design — it is a property of who consumes it:
+        //
+        //   type CreateResult =
+        //     | { status: "created"; snapshot: SnapshotRow }
+        //     | { status: "duplicate" };
+        //
+        // `result.snapshot` without narrowing is a COMPILE error (TS2339 —
+        // verified, not assumed). To touch `snapshot` at all you must first
+        // write `if (result.status === "created")`, which forces the author to
+        // say what the other case is. The superficially safer uniform shape
+        // (`{ status: string; snapshot?: SnapshotRow }`) is weaker here: its
+        // check can be silenced with `snapshot!` by someone who never decided
+        // what "duplicate" means.
+        //
+        // WHERE THAT ENDS: the guarantee is the type, so it covers TypeScript
+        // callers that see it. A non-TS consumer — raw-JSON e2e assertions,
+        // curl, a future non-TS client — gets none of it, and for them the
+        // discriminator is only a convention someone has to know. Today there
+        // is exactly one caller (api/client.ts) and it is typed. If that stops
+        // being true, this decision is worth revisiting; nothing else about it
+        // changes.
+        //
+        // Three alternatives, all worse:
+        //   - Always 201: claims a resource was created when none was. Every
+        //     intermediary that reads status codes without bodies (proxy, log,
+        //     monitor) would be told a snapshot exists that does not.
+        //   - 409: makes a benign no-op an error the client must route through
+        //     its failure path. Nothing went wrong — the content was already
+        //     saved. Error handling for a non-error.
+        //   - Always 200 + always a snapshot, returning the EXISTING row on the
+        //     duplicate path. The genuinely arguable one, and it still loses:
+        //     `createSnapshot` fetches only the latest snapshot's content HASH
+        //     (snapshots.service.ts), not the row, so it costs an extra query —
+        //     and the `status` branch survives anyway, because the client still
+        //     has to choose between "created" and "unchanged" copy. It buys
+        //     erasing a shape difference the compiler already enforces.
         res.status(200).json({ status: "duplicate" });
         return;
       }
