@@ -29,8 +29,24 @@ Architecture-report fix sessions are a **recorded, standing exception** to the
 one-feature rule, bounded as follows:
 
 1. **One report, one branch.** A fix session's branch closes findings from a
-   single `paad/architecture-reviews/` report. It carries no feature work and
-   no fix unrelated to that report.
+   single `paad/architecture-reviews/` report. It carries no feature work.
+
+   **Backlog fixes in files the session already has open are permitted**
+   (review round 4, S4). `26da4b5d` and `525bb93f` close
+   `paad/code-reviews/backlog.md` entries `4d5b9e81` and `1f9d4b27`, both in
+   `useProjectEditor.ts` — a file this session was already reading. Rule 1 as
+   first written forbade them, and the developer's standing preference is to
+   fix a known bug where it is found rather than defer it to a clean branch.
+   The bound is the file, not the intent: a backlog fix qualifies only if the
+   session is already changing or closely reading that file, it is tagged
+   `[backlog <id>]` so the log stays legible, and it removes the backlog entry
+   it closes. A backlog fix elsewhere in the tree is still out of scope.
+
+   The precedent comes with its evidence for the cost as well as the benefit:
+   `525bb93f`'s fix introduced a reachable data-loss path that its symptom did
+   not have (round 4, I1, closed by `0bc2c0c1`). A backlog fix landing late on
+   a fix-session branch gets one review round at most, and this one needed it.
+
 2. **One finding per commit.** Each finding gets its own
    `fix(architecture): [F-NN] …` commit plus its own
    `docs(report): [F-NN] record the fix commit SHA` commit. The finding ID is
@@ -80,6 +96,21 @@ one-feature rule, bounded as follows:
    guard was rewritten twice by review follow-ups after its first Status entry
    was recorded.
 
+   **Mechanical follow-ups are tagged by kind, not by finding** (review round 4,
+   S5). Three commits on this branch — `dafa3dfc` (drop useless escapes),
+   `34d7edb2` (satisfy `noUncheckedIndexedAccess` at new call sites) and
+   `6e894cd8` (file a review report and record a disposition) — fitted no class
+   the rules allowed, and rule 6 declines to require a `Status:` block _on the
+   grounds that_ `git log --oneline main..HEAD` is the traceability surface,
+   which unattributable commits undercut. Such a commit answers to no finding:
+   it is lint fallout, typecheck fallout, or a report/doc filing that the
+   session produced rather than consumed. Tag it `[chore]`, `[lint]`,
+   `[typecheck]` or `[report]` — anything that tells a later reader the commit
+   is not a finding they should go looking for. Retagging the three above by
+   rebase was rejected for the reason rule 6 already gives for `6eae2ee8`: it
+   would invalidate every commit SHA recorded in the report `Status:` blocks,
+   a worse traceability outcome than the one the rule protects.
+
 ## Why this rather than splitting
 
 Splitting per finding would produce three PRs whose only shared context is the
@@ -98,6 +129,20 @@ S2): only 6 of that branch's 12 commits fitted rule 2 as first written, and
 since `CLAUDE.md` §Pull Request Scope now points a future session at this file
 _instead of_ the one-feature rule, a session reading it literally would have
 found its own mandatory Safety Net commit unauthorised.
+
+**Four of these six rules were written or rewritten under pressure from the
+branch they govern** (review round 4, S7). Rules 5 and 6 were added mid-branch;
+rule 5's placement was corrected and rule 6 gained both a tag-format
+requirement and a batching allowance; rule 1 gained a backlog carve-out. The
+sharp one is rule 6's batching allowance: round-3 S7 found that the
+one-round-old rule made `6eae2ee8` a violation, and the resolution amended the
+rule so the commit became legal. Each amendment is argued on its merits below
+and none is retracted here — but a reader should know the provenance.
+**Rule 1 is the hard bound**, and it is the one to be most suspicious of
+amending: it is what keeps a fix session from becoming the tangled multi-feature
+branch the one-feature rule exists to prevent. Its round-4 amendment widens the
+class of allowed commits for the first time, and does so on the strength of a
+developer preference rather than a structural argument.
 
 Rules 5 and 6 were corrected on 2026-08-19 (code review round 3 of this branch,
 findings S6, S7 and S8): rule 5 placed the Safety Net commit at the head of the
@@ -140,3 +185,6 @@ capacity is.
 
 `CLAUDE.md` §Pull Request Scope now points at this file so a future review
 finds the precedent instead of re-deriving the violation.
+
+Rule 1 was amended and rule 6 gained a mechanical-follow-up clause on
+2026-08-19 (code review round 4 of this branch, findings S4, S5 and S7).
