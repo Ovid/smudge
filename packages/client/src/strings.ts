@@ -6,8 +6,15 @@ import {
 } from "@smudge/shared";
 
 // The outtakes drawer has exactly one way in — the toolbar action — so its
-// label appears both on the button and in the empty state that tells a writer
-// where to find it. Named once so the two cannot drift apart.
+// label is reused by the empty state that tells a writer where to find it.
+// Named once so the two cannot drift apart.
+//
+// S7 (agentic-review 2026-08-19): the two uses are NOT the same kind of string.
+// The toolbar control is an icon-only <button>, so there the label is an
+// ACCESSIBLE NAME (aria-label + title) and never visible text; in the empty
+// state it is visible body copy. Screen-reader users therefore get an exact
+// name match with the copy, and sighted users get it on hover via the native
+// title tooltip. Rewording this constant changes both registers at once.
 const SEND_SELECTION_TO_OUTTAKES = "Send selection to outtakes";
 
 export const STRINGS = {
@@ -144,8 +151,13 @@ export const STRINGS = {
     createOuttakeTooLarge: "Outtake is too large to save. Capture a smaller selection.",
     // S3 (agentic-review 2026-08-05): the create endpoint's only 404 producer is
     // "Project not found." — the project was soft-deleted while the editor was
-    // open. Shared by the panel's blank-note form and the toolbar capture, so
-    // the copy cannot promise the writer their text is still in a textarea.
+    // open.
+    // S3 (agentic-review 2026-08-19): the copy was worded generically because it
+    // was shared by the panel's blank-note form and the toolbar capture. That
+    // form is gone, so capture is the only caller — but the wording still stands
+    // on its own terms: capture keeps no draft anywhere, so promising the writer
+    // their text is recoverable would be false. Pinned by the 404 case in
+    // apiErrorMapper.test.ts's "SCOPES — outtake.create".
     createOuttakeProjectGone: "This project is no longer available, so the outtake wasn't saved.",
     updateOuttakeFailed: "Failed to update outtake",
     // S5: the only 400 the rename endpoint emits is the label cap. The generic
