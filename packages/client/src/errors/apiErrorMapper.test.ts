@@ -373,6 +373,17 @@ describe("SCOPES — outtake.create", () => {
     const err = new ApiRequestError("too large", 413, "PAYLOAD_TOO_LARGE");
     expect(resolveError(err, scope).message).toBe(STRINGS.error.createOuttakeTooLarge);
   });
+  // S2 (agentic-review 2026-08-19): this arm's only assertion lived in the
+  // OuttakesPanel test block deleted with the blank-note compose form, leaving a
+  // LIVE error path with no test — `POST /api/projects/:id/outtakes` still throws
+  // NotFoundError("Project not found.") for a soft-deleted project, and
+  // useOuttakeCapture still calls exactly that route. Coverage thresholds cannot
+  // catch the regression: scopes.ts is an object literal, counted as covered on
+  // import.
+  it("404 → createOuttakeProjectGone (S3)", () => {
+    const err = new ApiRequestError("Project not found.", 404, "NOT_FOUND");
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.createOuttakeProjectGone);
+  });
 });
 
 describe("SCOPES — chapter.save", () => {
