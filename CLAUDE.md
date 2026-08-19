@@ -407,7 +407,7 @@ Re-flagging one is warranted only if its stated premise changes.
   `ProjectStore` interface has exactly one implementation (no fake implements
   it; tests construct the concrete class over a real DB). The three-edit-per-
   operation tax (repo fn + slice interface + delegation) is compiler-guided, and
-  the `transaction(txStore)` seam is genuinely load-bearing. The 7-slice
+  the `transaction(txStore)` seam is genuinely load-bearing. The per-domain slice
   interface's documented data-surface value justifies the type surface; "fixing"
   it (typing `txStore` as the concrete class, dropping the interface) trades a
   documented contract for marginally less boilerplate. Net a mild smell, left
