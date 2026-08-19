@@ -48,13 +48,66 @@ import { collectTsSources, stripCommentsFromTsSource } from "./tsSourceScan";
 // handler. If a future refactor centralises the handling so the counts stop
 // matching, this fails LOUDLY (a false RED demanding a decision) rather than
 // passing silently — the safe failure direction.
+//
+// Discovery is keyed on the useEditorMutation HANDLE BINDING, not on a receiver
+// spelled `mutation` — see HANDLE_RE below for why (review I1, 2026-08-19). The
+// one remaining shape it cannot see, `const { run } = mutation`, drops the
+// file's run count below its committed count and so fails red too.
 
 const clientSrc = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-// `mutation.run<T>(...)` or `mutation.run(...)`. Case-sensitive, so the
-// `useEditorMutation.run()` spelling used in prose does not match.
-const RUN_RE = /\bmutation\.run\s*[<(]/;
 const COMMITTED_RE = /stage === "committed_but_unreloaded"/;
+
+// A file can obtain a useEditorMutation handle exactly two ways, and
+// TypeScript forces the hook's own name to be spelled out in both:
+//
+//   const NAME = useEditorMutation({...})           // the owner constructs it
+//   NAME: ReturnType<typeof useEditorMutation>      // a consumer declares it
+//   NAME: UseEditorMutationReturn                   // ...or names the return type
+//
+// I1 (review 2026-08-19): discovery used to be `/\bmutation\.run\s*[<(]/` —
+// keyed on the literal receiver name. A third caller spelling its handle
+// `editorMutation`, `snapshotMutation`, `mutationRef.current`, or reaching it
+// through `mutation?.run(` added NO key to discoverCallers(), so the surface
+// assertion stayed green: the single failure mode this file exists to prevent
+// was the one that slipped through. Non-`mutation` handle names are established
+// local habit (every useAbortableAsyncOperation handle is `<x>Op`, including
+// ImageGallery.tsx's `mutationOp`). Extracting the binding name first — the
+// same fix migrationStructuralCheck.test.ts applied to its own receiver-blind
+// `.run(` check — removes the naming dependency.
+const HANDLE_RE =
+  /(?:(?:const|let|var)\s+(\w+)\s*=\s*useEditorMutation\s*[<(]|(\w+)\s*\??\s*:\s*(?:ReturnType\s*<\s*typeof\s+useEditorMutation\s*>|UseEditorMutationReturn))/g;
+
+/** Every useEditorMutation handle name bound in `source` (comments stripped). */
+export function extractMutationHandles(source: string): string[] {
+  const code = stripCommentsFromTsSource(source);
+  const names = new Set<string>();
+  for (const match of code.matchAll(HANDLE_RE)) {
+    const name = match[1] ?? match[2];
+    if (name !== undefined) names.add(name);
+  }
+  return [...names];
+}
+
+/**
+ * Counts `<handle>.run(...)` calls in `source` for every handle it binds.
+ *
+ * Tolerates an optional generic argument list, optional chaining, and a
+ * Prettier line wrap between receiver and `.run`. A `const { run } = mutation`
+ * destructure is deliberately NOT matched: the file then reports fewer runs
+ * than the committed surface records, which is a false RED demanding a
+ * decision — the safe direction. Same trade-off the sibling detector documents
+ * for its own non-nested-generic matcher.
+ */
+export function countMutationRuns(source: string): number {
+  const code = stripCommentsFromTsSource(source);
+  let total = 0;
+  for (const name of extractMutationHandles(source)) {
+    const callPattern = new RegExp(`\\b${name}\\s*\\??\\.\\s*run\\s*(?:<[^>]*>)?\\s*\\(`, "g");
+    total += code.match(callPattern)?.length ?? 0;
+  }
+  return total;
+}
 
 /**
  * Counts occurrences of `re` in executable code only.
@@ -77,13 +130,20 @@ export function countCodeMatches(source: string, re: RegExp): number {
 const COMMITTED_CALLERS: Record<string, number> = {
   "hooks/useFindReplaceController.ts": 2,
   "hooks/useSnapshotController.ts": 1,
+  // Owner: constructs the shared instance, calls run() nowhere.
+  "pages/EditorPage.tsx": 0,
 };
 
 function discoverCallers(): Record<string, number> {
   const found: Record<string, number> = {};
   for (const file of collectTsSources(clientSrc)) {
-    const count = countCodeMatches(readFileSync(file, "utf8"), RUN_RE);
-    if (count > 0) found[file.slice(clientSrc.length + 1)] = count;
+    const source = readFileSync(file, "utf8");
+    // Every file HOLDING a handle is listed, including the owner that makes no
+    // run() call (EditorPage.tsx, count 0). Listing it means the day it starts
+    // calling run() the surface assertion goes red rather than silently
+    // acquiring an unguarded caller.
+    if (extractMutationHandles(source).length === 0) continue;
+    found[file.slice(clientSrc.length + 1)] = countMutationRuns(source);
   }
   return found;
 }
@@ -103,8 +163,11 @@ describe("useEditorMutation caller surface (F-07 forcing pause)", () => {
 });
 
 describe("countCodeMatches (drift-detector self-tests)", () => {
+  const HANDLE = "const mutation = useEditorMutation({});";
+
   it("counts real calls and ignores the same text in comments", () => {
     const fixture = [
+      HANDLE,
       "  // await mutation.run(...) is the seam every caller routes through",
       "  /* mutation.run( in a block comment */",
       "  /**",
@@ -113,18 +176,18 @@ describe("countCodeMatches (drift-detector self-tests)", () => {
       "  const a = await mutation.run<Data>(async () => {});",
       "  const b = await mutation.run(async () => {});",
     ].join("\n");
-    expect(countCodeMatches(fixture, RUN_RE)).toBe(2);
+    expect(countMutationRuns(fixture)).toBe(2);
   });
 
   it("does not match the useEditorMutation.run() spelling used in prose", () => {
-    expect(countCodeMatches("  x = useEditorMutation.run();", RUN_RE)).toBe(0);
+    expect(countMutationRuns(`${HANDLE}\n  x = useEditorMutation.run();`)).toBe(0);
   });
 
   it("detects a newly added caller (the drift it exists to catch)", () => {
-    const before = "  const r = await mutation.run<D>(async () => {});";
+    const before = `${HANDLE}\n  const r = await mutation.run<D>(async () => {});`;
     const after = `${before}\n  const s = await mutation.run<D>(async () => {});`;
-    expect(countCodeMatches(before, RUN_RE)).toBe(1);
-    expect(countCodeMatches(after, RUN_RE)).toBe(2);
+    expect(countMutationRuns(before)).toBe(1);
+    expect(countMutationRuns(after)).toBe(2);
   });
 
   it("ignores a trailing comment on an otherwise-code line", () => {
@@ -140,7 +203,9 @@ describe("countCodeMatches (drift-detector self-tests)", () => {
   });
 
   it("does not mint a phantom caller from a trailing comment", () => {
-    expect(countCodeMatches("  const x = 1; // see mutation.run( upstream", RUN_RE)).toBe(0);
+    const fixture =
+      "const mutation = useEditorMutation({});\nconst x = 1; // see mutation.run( upstream";
+    expect(countMutationRuns(fixture)).toBe(0);
   });
 
   it("counts committed_but_unreloaded branches the same way", () => {
@@ -149,5 +214,57 @@ describe("countCodeMatches (drift-detector self-tests)", () => {
       '  if (result.stage === "committed_but_unreloaded") {',
     ].join("\n");
     expect(countCodeMatches(fixture, COMMITTED_RE)).toBe(1);
+  });
+});
+
+describe("mutation-handle discovery (I1 alias spellings)", () => {
+  // I1 (review 2026-08-19): discovery used to key on the literal receiver
+  // name `mutation`, so a third caller spelling its handle anything else
+  // added no key and the surface assertion stayed GREEN — the one direction
+  // this file exists to block. Each case below returned 0 under that regex.
+  const CASES: [string, string, number][] = [
+    ["canonical receiver", "const mutation = useEditorMutation({});\nmutation.run(f);", 1],
+    [
+      "deps property access",
+      "type D = { mutation: ReturnType<typeof useEditorMutation> };\ndeps.mutation.run(f);",
+      1,
+    ],
+    ["aliased handle", "const editorMutation = useEditorMutation({});\neditorMutation.run(f);", 1],
+    [
+      "deps-typed alias",
+      "type D = { snapshotMutation: ReturnType<typeof useEditorMutation> };\nsnapshotMutation.run<T>(f);",
+      1,
+    ],
+    ["named return type", "type D = { mut: UseEditorMutationReturn };\nmut.run(f);", 1],
+    ["optional chaining", "const mutation = useEditorMutation({});\nmutation?.run(f);", 1],
+    [
+      "prettier line wrap",
+      "const mutation = useEditorMutation({});\nawait mutation\n  .run(f);",
+      1,
+    ],
+  ];
+  it.each(CASES)("counts a run() through a %s handle", (_label, fixture, expected) => {
+    expect(countMutationRuns(fixture)).toBe(expected);
+  });
+
+  it("finds the handle even when run() is destructured off it (fails toward red)", () => {
+    // A destructured `run` is not counted as a call, so the file reports
+    // fewer runs than COMMITTED_CALLERS records — a false RED demanding a
+    // decision, never a silent green.
+    const fixture = "const mutation = useEditorMutation({});\nconst { run } = mutation;\nrun(f);";
+    expect(extractMutationHandles(fixture)).toEqual(["mutation"]);
+    expect(countMutationRuns(fixture)).toBe(0);
+  });
+
+  it("ignores handles and calls that live in comments", () => {
+    const fixture = "// const mutation = useEditorMutation({});\n/* mutation.run(f); */";
+    expect(extractMutationHandles(fixture)).toEqual([]);
+    expect(countMutationRuns(fixture)).toBe(0);
+  });
+
+  it("does not treat a same-prefixed identifier as a handle", () => {
+    const fixture = "const mutationOp = useAbortableAsyncOperation();\nmutationOp.run(f);";
+    expect(extractMutationHandles(fixture)).toEqual([]);
+    expect(countMutationRuns(fixture)).toBe(0);
   });
 });
