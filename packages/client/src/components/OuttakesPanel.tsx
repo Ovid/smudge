@@ -154,22 +154,41 @@ export function OuttakesPanel({
   // server's copy can't leave a duplicate React key.
   // I1 (agentic-review 2026-08-04): read the LIVE project, not the one this
   // callback closed over, so a row cannot be matched against a stale projectId.
-  // Returns whether the row was accepted (S2).
   const projectIdRef = useRef(projectId);
   // Written during render on purpose, and the only place in components/ that
   // does it — the same live-prop mirror the hooks use (useFindReplaceController's
-  // slugRef, useEditorMutation's projectEditorRef). Both readers below run from
-  // an ASYNC settle that can land after a project switch, so the value has to be
-  // current the moment they look, not one effect-flush later. An effect-based
-  // mirror would make correctness depend on this effect being DECLARED before
-  // the capture effect, which is a sharper edge than the write it replaces.
-  // The rule only started reporting when the blank-note form's own ref write was
-  // removed, which had been bailing the compiler out of analysing this component.
-  // eslint-disable-next-line react-hooks/refs -- live-prop mirror read from async settles; see above
+  // slugRef, useEditorMutation's projectEditorRef). The two readers need the live
+  // value for DIFFERENT reasons, and both reasons are load-bearing:
+  //
+  //   * callbacksFor (below) — OuttakeCard's delete/rename carry no AbortSignal,
+  //     so they genuinely settle after a project switch or unmount. The value has
+  //     to be current the moment they look, not one effect-flush later.
+  //   * applyServerRow (below) — does NOT run from an async settle; its only call
+  //     site is the capture effect, which runs post-commit with that commit's
+  //     props and no await in between. It needs the ref because its useCallback
+  //     dep chain is LIFETIME-STABLE (reconcile ← seq/requestReload, all pinned),
+  //     so its identity never changes and a closure over the `projectId` prop
+  //     would freeze the FIRST render's project id forever. Adding `projectId` to
+  //     its deps would be safe (surfacedCaptureIdRef makes the extra re-run a
+  //     no-op) — but closing over the prop WITHOUT that dep would not be, and
+  //     that is the mistake this ref forecloses.
+  //
+  // An effect-based mirror would make correctness depend on this effect being
+  // DECLARED before the capture effect, which is a sharper edge than the write it
+  // replaces.
+  //
+  // I1/S1 (agentic-review 2026-08-19): the rule started reporting when
+  // `handleCreate`'s BODY was deleted, not when the blank-note form's `draftRef`
+  // write was. Verified by piping main's file through `npx eslint --stdin`:
+  // unmodified → 0 reports; `draftRef` write deleted only → still 0;
+  // `handleCreate` deleted only → the rule fires on both ref writes. That
+  // function was making eslint-plugin-react-hooks bail out of analysing the whole
+  // component, so any hook violation added while it existed went unreported too.
+  // eslint-disable-next-line react-hooks/refs -- live-prop mirror; see the two readers above
   projectIdRef.current = projectId;
 
   const applyServerRow = useCallback(
-    (row: OuttakeRow): boolean => {
+    (row: OuttakeRow) => {
       // I1 (review 2026-07-26): the row's OWN project is the authority on
       // whether it belongs here. The capture POST in `useOuttakeCapture` does
       // not re-check the project after its await, and this panel is not keyed
@@ -180,11 +199,10 @@ export function OuttakesPanel({
       // pastes A's private text into a B chapter, and its Delete HARD-deletes a
       // real project-A outtake (outtakes carry no deleted_at — CLAUDE.md
       // §Data Model).
-      if (row.project_id !== projectIdRef.current) return false;
+      if (row.project_id !== projectIdRef.current) return;
       reconcile();
       setOuttakes((prev) => [row, ...prev.filter((o) => o.id !== row.id)]);
       setError(null);
-      return true;
     },
     [reconcile],
   );
