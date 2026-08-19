@@ -50,9 +50,14 @@ import {
 // editorEntryPointSurface.test.ts does for entry points under F-1.
 //
 // The pairing is per-FILE, not per-call, because a file's callers may share one
-// handler. If a future refactor centralises the handling so the counts stop
-// matching, this fails LOUDLY (a false RED demanding a decision) rather than
-// passing silently — the safe failure direction.
+// handler — and because one run() may legitimately need two comparisons (the
+// two-sub-case shape above). Both quantities are therefore recorded SEPARATELY
+// in COMMITTED_CALLERS (S4, review round 3, 2026-08-19): a single integer
+// asserted against both the run-call count and the committed-branch count could
+// not encode either divergence, so the only route back to green would have been
+// to weaken a detector. Recording them apart keeps a real divergence a decision
+// the author writes down, and still fails LOUDLY when either number moves
+// without one — the safe failure direction.
 //
 // Discovery is keyed on the useEditorMutation HANDLE BINDING, not on a receiver
 // spelled `mutation` — see HANDLE_RE below for why (review I1, 2026-08-19).
@@ -221,11 +226,24 @@ export function countCodeMatches(source: string, re: RegExp): number {
 
 // --- Committed caller surface. Update ONLY after reading the header. --------
 
-const COMMITTED_CALLERS: Record<string, number> = {
-  "hooks/useFindReplaceController.ts": 2,
-  "hooks/useSnapshotController.ts": 1,
+type CommittedCaller = {
+  /** `<handle>.run(` calls the file makes. */
+  runs: number;
+  /** `stage === "committed_but_unreloaded"` comparisons the file makes. */
+  committedBranches: number;
+};
+
+// The two numbers are independent on purpose (S4, review round 3). They are
+// equal at every current call site, but nothing requires that: two run() calls
+// funnelled through one shared handler give runs > committedBranches, and one
+// run() whose handler splits the on-target and drifted sub-cases across two
+// comparisons gives committedBranches > runs. Either is a legitimate shape the
+// author must be able to write down.
+const COMMITTED_CALLERS: Record<string, CommittedCaller> = {
+  "hooks/useFindReplaceController.ts": { runs: 2, committedBranches: 2 },
+  "hooks/useSnapshotController.ts": { runs: 1, committedBranches: 1 },
   // Owner: constructs the shared instance, calls run() nowhere.
-  "pages/EditorPage.tsx": 0,
+  "pages/EditorPage.tsx": { runs: 0, committedBranches: 0 },
 };
 
 /**
@@ -276,7 +294,10 @@ function discoverCallers(): Record<string, number> {
 
 describe("useEditorMutation caller surface (F-07 forcing pause)", () => {
   it("has exactly the committed set of mutation.run() callers", () => {
-    expect(discoverCallers()).toEqual(COMMITTED_CALLERS);
+    const expected = Object.fromEntries(
+      Object.entries(COMMITTED_CALLERS).map(([file, { runs }]) => [file, runs]),
+    );
+    expect(discoverCallers()).toEqual(expected);
   });
 
   it("no file reaches run() through a shape the count cannot see", () => {
@@ -297,7 +318,9 @@ describe("useEditorMutation caller surface (F-07 forcing pause)", () => {
     "%s handles committed_but_unreloaded for every run() it makes",
     (relPath) => {
       const source = readFileSync(resolve(clientSrc, relPath), "utf8");
-      expect(countCodeMatches(source, COMMITTED_RE)).toBe(COMMITTED_CALLERS[relPath]);
+      expect(countCodeMatches(source, COMMITTED_RE)).toBe(
+        COMMITTED_CALLERS[relPath].committedBranches,
+      );
     },
   );
 });
