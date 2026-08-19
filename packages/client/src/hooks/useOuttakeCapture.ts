@@ -92,11 +92,14 @@ export function useOuttakeCapture(deps: OuttakeCaptureDeps) {
   // Dedicated abortable op for the capture POST — never reuse a content-
   // mutation op (this flow touches no editor content).
   const captureOp = useAbortableAsyncOperation();
-  // I4: re-entrancy latch, mirroring the panel's own `creating` flag. Letting a
-  // second click run captureOp.run() again would abort the first POST's
-  // controller — but that POST may already have reached the server, leaving a
-  // committed row that never reaches setCapturedOuttake and (since the prepend
-  // is now the only thing that surfaces a capture) never appears at all.
+  // I4: re-entrancy latch. It was introduced mirroring the panel's own
+  // `creating` flag; that flag went with the blank-note compose form
+  // (2026-08-18), so this is now the ONLY re-entrancy latch on the ONLY producer
+  // of outtakes. Letting a second click run captureOp.run() again would abort
+  // the first POST's controller — but that POST may already have reached the
+  // server, leaving a committed row that never reaches setCapturedOuttake and
+  // (since the prepend is now the only thing that surfaces a capture) never
+  // appears at all.
   // Aborting a POST that may have committed is the wrong cancellation
   // semantic; abort-on-unmount still comes free from the hook. Note this is NOT
   // covered by the F-8 duplicate-upload trade-off, whose premise is that the
