@@ -1454,7 +1454,7 @@ describe("announcement dwell time (F-32 safety net)", () => {
     vi.mocked(api.images.list).mockResolvedValue([image]);
     vi.mocked(api.images.update).mockResolvedValue(image);
     vi.mocked(api.images.references).mockResolvedValue({ chapters: [] });
-    render(<ImageGallery {...defaultProps} />);
+    const { unmount } = render(<ImageGallery {...defaultProps} />);
     await flush();
 
     fireEvent.click(screen.getByRole("button", { name: imageButtonName(image) }));
@@ -1464,6 +1464,7 @@ describe("announcement dwell time (F-32 safety net)", () => {
     await flush();
 
     expect(screen.getByText(S.insertSuccess("hero.png"))).toBeInTheDocument();
+    return { unmount };
   }
 
   it("still shows the announcement one tick before the dwell time expires", async () => {
@@ -1487,6 +1488,27 @@ describe("announcement dwell time (F-32 safety net)", () => {
         vi.advanceTimersByTime(DWELL_MS);
       });
       expect(screen.queryByText(S.insertSuccess("hero.png"))).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // S4 follow-up (2026-08-19). The two tests above pin the dwell time while
+  // the gallery is MOUNTED. This is the third F-32 site and the last one whose
+  // teardown was uncovered: ImageGallery.tsx:150-156 clears a pending
+  // announcement timer on unmount, and nothing here would have gone red if it
+  // were deleted. Same shape as the EditorPage sibling in
+  // EditorPageImageAnnouncement.test.tsx, and verified the same way — by
+  // deleting that cleanup and confirming this test, and only this test, fails.
+  it("clears the pending announcement timer when the gallery unmounts", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const { unmount } = await announceInsert();
+      expect(vi.getTimerCount()).toBe(1);
+
+      unmount();
+
+      expect(vi.getTimerCount()).toBe(0);
     } finally {
       vi.useRealTimers();
     }
