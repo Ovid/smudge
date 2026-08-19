@@ -2,7 +2,12 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { collectTsSources, runCallPattern, stripCommentsFromTsSource } from "./tsSourceScan";
+import {
+  collectTsSources,
+  importPatternFor,
+  runCallPattern,
+  stripCommentsFromTsSource,
+} from "./tsSourceScan";
 
 // ===========================================================================
 // F-07 forcing-pause: every useEditorMutation.run() caller owns the
@@ -50,9 +55,16 @@ import { collectTsSources, runCallPattern, stripCommentsFromTsSource } from "./t
 // passing silently — the safe failure direction.
 //
 // Discovery is keyed on the useEditorMutation HANDLE BINDING, not on a receiver
-// spelled `mutation` — see HANDLE_RE below for why (review I1, 2026-08-19). The
-// one remaining shape it cannot see, `const { run } = mutation`, drops the
-// file's run count below its committed count and so fails red too.
+// spelled `mutation` — see HANDLE_RE below for why (review I1, 2026-08-19).
+//
+// The counting pass sees `<handle>.run(` and nothing else. Review I2
+// (2026-08-19) corrected an earlier claim here that any other spelling "fails
+// toward red": that holds only when an unseen shape REPLACES a counted call.
+// Add one and both numbers are unchanged, so the unguarded caller ships GREEN.
+// The one shape a caller could plausibly reach for — `const { run } = mutation`
+// — is therefore refused outright by findUncountableRunShapes below rather than
+// relied on to fail. If you need a spelling neither the counter nor the refusal
+// covers, extend one of them; do not assume the numbers will notice.
 
 const clientSrc = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -78,7 +90,13 @@ const COMMITTED_RE = /stage === "committed_but_unreloaded"/;
 const HANDLE_RE =
   /(?:(?:const|let|var)\s+(\w+)\s*=\s*useEditorMutation\s*[<(]|(\w+)\s*\??\s*:\s*(?:ReturnType\s*<\s*typeof\s+useEditorMutation\s*>|UseEditorMutationReturn))/g;
 
-/** Every useEditorMutation handle name bound in `source` (comments stripped). */
+/**
+ * Every useEditorMutation handle name bound in `source` (comments stripped),
+ * plus any local name bound directly from one — `const mutationRef =
+ * useRef(mutation)`. The alias hop exists because a call through a ref reads
+ * `mutationRef.current.run(...)`, whose receiver is not the handle name, and
+ * this codebase reaches for latest-refs constantly (I2, review 2026-08-19).
+ */
 export function extractMutationHandles(source: string): string[] {
   const code = stripCommentsFromTsSource(source);
   const names = new Set<string>();
@@ -86,7 +104,40 @@ export function extractMutationHandles(source: string): string[] {
     const name = match[1] ?? match[2];
     if (name !== undefined) names.add(name);
   }
+  for (const base of [...names]) {
+    const aliasRe = new RegExp(
+      `(?:const|let|var)\\s+(\\w+)\\s*=\\s*(?:useRef\\s*(?:<[^()]*>)?\\s*\\(\\s*)?(?:\\w+\\.)*\\b${base}\\b\\s*[),;\\n]`,
+      "g",
+    );
+    for (const match of code.matchAll(aliasRe)) {
+      if (match[1] !== undefined) names.add(match[1]);
+    }
+  }
   return [...names];
+}
+
+/**
+ * Run-call shapes in `source` that `countMutationRuns` cannot attribute.
+ *
+ * I2 (review 2026-08-19): the header used to claim an unseen call shape "drops
+ * the file's run count below its committed count and so fails red too". That
+ * holds only when an unseen shape REPLACES a counted call. Add one — the
+ * "third caller lands" case this file exists to block — and the count is
+ * simply unchanged, so both assertions compare unchanged numbers and the
+ * unguarded caller ships green. Counting receiver-blind was considered and
+ * rejected: all three handle-holding files also hold `useAbortableAsyncOperation`
+ * bindings and TipTap command chains that end in `.run()`, so a blind count
+ * false-reds on every one of them. Naming the one unattributable shape and
+ * refusing it is the narrower fix.
+ */
+export function findUncountableRunShapes(source: string): string[] {
+  const code = stripCommentsFromTsSource(source);
+  const reasons: string[] = [];
+  for (const name of extractMutationHandles(source)) {
+    const destructure = new RegExp(`\\{[^{}]*\\brun\\b[^{}]*\\}\\s*=\\s*[^;\\n]*\\b${name}\\b`);
+    if (destructure.test(code)) reasons.push(`destructures run() off the \`${name}\` handle`);
+  }
+  return reasons;
 }
 
 /**
@@ -150,6 +201,20 @@ function discoverCallers(): Record<string, number> {
 describe("useEditorMutation caller surface (F-07 forcing pause)", () => {
   it("has exactly the committed set of mutation.run() callers", () => {
     expect(discoverCallers()).toEqual(COMMITTED_CALLERS);
+  });
+
+  it("no file reaches run() through a shape the count cannot see", () => {
+    // The counting assertion above only compares numbers. A call added in a
+    // shape countMutationRuns cannot attribute leaves both numbers unchanged
+    // and ships green (I2, review 2026-08-19), so the shape itself is banned.
+    const offenders: string[] = [];
+    for (const file of collectTsSources(clientSrc)) {
+      const source = readFileSync(file, "utf8");
+      for (const reason of findUncountableRunShapes(source)) {
+        offenders.push(`${file.slice(clientSrc.length + 1)}: ${reason}`);
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 
   it.each(Object.keys(COMMITTED_CALLERS))(
@@ -216,6 +281,71 @@ describe("countCodeMatches (drift-detector self-tests)", () => {
   });
 });
 
+describe("uncountable run() shapes (I2 additive hole)", () => {
+  // I2 (review 2026-08-19): countMutationRuns only sees `<handle>.run(`. The
+  // file header used to claim that an unseen shape "drops the file's run count
+  // below its committed count and so fails red too". That is true when an
+  // unseen shape REPLACES a counted call. It is false when one is ADDED — the
+  // count is simply unchanged, both assertions compare unchanged numbers, and
+  // the new unguarded caller ships green. That additive case is exactly the
+  // "third caller lands" scenario this file exists to block.
+
+  it("flags a run() destructured off a handle (the additive shape)", () => {
+    const fixture = [
+      "const mutation = useEditorMutation({});",
+      "await mutation.run(f);",
+      "const { run } = mutation;",
+      "await run(g);",
+    ].join("\n");
+    // The added call contributes nothing to the count...
+    expect(countMutationRuns(fixture)).toBe(1);
+    // ...so the shape itself must be the offender.
+    expect(findUncountableRunShapes(fixture)).toEqual([
+      "destructures run() off the `mutation` handle",
+    ]);
+  });
+
+  it("flags a destructure off a deps-property handle", () => {
+    const fixture = [
+      "type D = { mutation: ReturnType<typeof useEditorMutation> };",
+      "const { run } = deps.mutation;",
+    ].join("\n");
+    expect(findUncountableRunShapes(fixture)).toEqual([
+      "destructures run() off the `mutation` handle",
+    ]);
+  });
+
+  it("says nothing about a file that spells every call canonically", () => {
+    const fixture = "const mutation = useEditorMutation({});\nawait mutation.run(f);";
+    expect(findUncountableRunShapes(fixture)).toEqual([]);
+  });
+
+  it("does not flag an unrelated destructure that merely mentions the handle", () => {
+    const fixture = [
+      "const mutation = useEditorMutation({});",
+      "const { isBusy } = mutation;",
+      "const { run } = replaceOp;",
+    ].join("\n");
+    expect(findUncountableRunShapes(fixture)).toEqual([]);
+  });
+
+  it("counts an ADDED nested-generic call rather than ignoring it (S4 pattern fix)", () => {
+    const before = "const mutation = useEditorMutation({});\nawait mutation.run<D>(f);";
+    const after = `${before}\nawait mutation.run<Array<string>>(g);`;
+    expect(countMutationRuns(before)).toBe(1);
+    expect(countMutationRuns(after)).toBe(2);
+  });
+
+  it("counts a call through a ref-held handle", () => {
+    const fixture = [
+      "const mutation = useEditorMutation({});",
+      "const mutationRef = useRef(mutation);",
+      "await mutationRef.current.run(f);",
+    ].join("\n");
+    expect(countMutationRuns(fixture)).toBe(1);
+  });
+});
+
 describe("mutation-handle discovery (I1 alias spellings)", () => {
   // I1 (review 2026-08-19): discovery used to key on the literal receiver
   // name `mutation`, so a third caller spelling its handle anything else
@@ -246,13 +376,16 @@ describe("mutation-handle discovery (I1 alias spellings)", () => {
     expect(countMutationRuns(fixture)).toBe(expected);
   });
 
-  it("finds the handle even when run() is destructured off it (fails toward red)", () => {
-    // A destructured `run` is not counted as a call, so the file reports
-    // fewer runs than COMMITTED_CALLERS records — a false RED demanding a
-    // decision, never a silent green.
+  it("finds the handle even when run() is destructured off it", () => {
+    // A destructured `run` is not counted as a call. This used to be
+    // described as "fails toward red" — true only when the destructure
+    // REPLACES a counted call. When it ADDS one the count is unchanged and
+    // the caller ships green, so the shape is refused outright by
+    // findUncountableRunShapes rather than relied on to fail.
     const fixture = "const mutation = useEditorMutation({});\nconst { run } = mutation;\nrun(f);";
     expect(extractMutationHandles(fixture)).toEqual(["mutation"]);
     expect(countMutationRuns(fixture)).toBe(0);
+    expect(findUncountableRunShapes(fixture)).toHaveLength(1);
   });
 
   it("ignores handles and calls that live in comments", () => {

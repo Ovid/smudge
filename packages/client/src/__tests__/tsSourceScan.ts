@@ -34,11 +34,15 @@ export function stripCommentsFromTsSource(source: string): string {
 // Tolerated: an optional generic argument list (including a NESTED one — the
 // lazy `<.*?>` is what the earlier `<[^>]*>` got wrong, stopping at the inner
 // `>`), optional chaining (`op?.run(`), and a Prettier line wrap between the
-// receiver and `.run`. Not tolerated, deliberately: a destructured
+// receiver and `.run`, and one `.current` hop for a ref-held binding. Not
+// tolerated, deliberately: a destructured
 // `const { run } = op`, which each caller must detect and reject on its own
 // terms — see mutationCommittedSurface.test.ts, where it is an offender.
 export function runCallPattern(name: string, flags = ""): RegExp {
-  return new RegExp(`\\b${name}\\s*\\??\\.\\s*run\\s*(?:<.*?>)?\\s*\\(`, flags);
+  return new RegExp(
+    `\\b${name}(?:\\s*\\??\\.\\s*current)?\\s*\\??\\.\\s*run\\s*(?:<.*?>)?\\s*\\(`,
+    flags,
+  );
 }
 
 // Builds an import-statement regex for a named symbol. Matches a real ES
