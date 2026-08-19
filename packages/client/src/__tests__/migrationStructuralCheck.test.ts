@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve, join } from "node:path";
 import {
   collectTsSources,
+  delegationPattern,
   importPatternFor,
   runCallPattern,
   stripCommentsFromTsSource,
@@ -67,19 +68,13 @@ export function extractAbortableAsyncOperationBindings(source: string): string[]
 // real factory). Add new entries here when new delegation helpers
 // are introduced.
 //
-// Limitation (review S1, 2026-05-28): the delegation-matching pattern
-// below uses `[^)]*` to span the argument list. `[^)]*` cannot
-// match a delegation call with nested parens — a future call like
-// `refreshTrashList(getProject(), projectRef, trashOp)` would silently
-// fail to recognize `trashOp` as consumed and surface a false-positive
-// "dead binding" offender. Today the only delegation site is
-// `refreshTrashList(project, projectRef, slugRef, trashOp)` (no nested parens),
-// so the check works. When a delegation call site needs nested parens,
-// extend the matcher with a paren-counting walker rather than tweaking
-// the regex — the symmetry with the inner `[^>]*` non-nested-generic
-// note on the `<binding>.run(` call pattern is deliberate (each
-// false-pass/false-fail surfaces as a forcing function rather than
-// silent drift).
+// Limitation (review S1, 2026-05-28): the delegation matcher cannot span a
+// nested-paren argument list. It now lives beside its own statement of that
+// ceiling in `delegationPattern` (tsSourceScan.ts) — S2, review round 3
+// (2026-08-19), which found the shape written out twice here, so the fixture
+// test could stay green while the production copy drifted. Both ceilings
+// (this one and `runCallPattern`'s) fail toward a false RED rather than a
+// silent pass, which is why each is a forcing function rather than drift.
 const KNOWN_DELEGATION_HELPERS = ["refreshTrashList"];
 
 describe("client source-tree migration structural check", () => {
@@ -176,23 +171,21 @@ describe("client source-tree migration structural check", () => {
         continue;
       }
       for (const name of bindings) {
-        // Word-boundary on the LEFT so `xOp.run(` doesn't satisfy a
-        // search for `p.run(` etc. Right-side allows an optional
-        // generic argument list (`<T>`) between `.run` and `(` so
-        // `saveOp.run<SaveLoopOutcome>(...)` in useProjectEditor.ts
-        // matches. Inner `[^>]*` is non-nested by design — the codebase
-        // uses single-level generics today; a future nested-generic
-        // call would surface as an offender, forcing the regex to be
-        // extended deliberately rather than silently false-passing.
+        // The `<binding>.run(` shape is owned by `runCallPattern`
+        // (tsSourceScan.ts), shared with mutationCommittedSurface.test.ts so
+        // the two detectors cannot answer differently for the same text. It
+        // keeps the word boundary on the LEFT (so `xOp.run(` does not satisfy a
+        // search for `p.run(`) and tolerates a generic argument list — NESTED
+        // included, as of S4/round 2; the earlier `[^>]*` stopped at the inner
+        // `>` and reported a real call as a dead binding.
         if (runCallPattern(name).test(source)) continue;
         // 4b.3d S13: accept delegation — the binding passed as an
         // argument to a known helper that calls .run() internally.
         // The helper's own tests confirm it calls .run() on the param,
         // so this is not a drift-detection hole.
-        const delegated = KNOWN_DELEGATION_HELPERS.some((helper) => {
-          const delegationPattern = new RegExp(`\\b${helper}\\s*\\([^)]*\\b${name}\\b[^)]*\\)`);
-          return delegationPattern.test(source);
-        });
+        const delegated = KNOWN_DELEGATION_HELPERS.some((helper) =>
+          delegationPattern(helper, name).test(source),
+        );
         if (!delegated) {
           offenders.push({
             file: relative,
@@ -273,14 +266,12 @@ describe("client source-tree migration structural check", () => {
     const bindings = extractAbortableAsyncOperationBindings(fixture);
     expect(bindings).toEqual(["trashOp"]);
     // The direct .run( pattern does NOT match (no `trashOp.run(` in source).
-    const directPattern = new RegExp(`\\b${bindings[0]}\\.run\\s*(?:<[^>]*>)?\\s*\\(`);
-    expect(directPattern.test(fixture)).toBe(false);
+    expect(runCallPattern(bindings[0]).test(fixture)).toBe(false);
     // The delegation pattern DOES match (trashOp appears as an argument
-    // to refreshTrashList).
-    const delegationPattern = new RegExp(
-      `\\brefreshTrashList\\s*\\([^)]*\\b${bindings[0]}\\b[^)]*\\)`,
-    );
-    expect(delegationPattern.test(fixture)).toBe(true);
+    // to refreshTrashList). Both patterns are the same functions the
+    // production check calls, so this fixture cannot pin a shape the
+    // production copy has drifted away from (S2, review round 3).
+    expect(delegationPattern("refreshTrashList", bindings[0]).test(fixture)).toBe(true);
   });
 
   it("extractAbortableAsyncOperationBindings extracts hook bindings and rejects mutation.run drift (S1 re-review 2026-05-25)", () => {
@@ -346,8 +337,7 @@ describe("client source-tree migration structural check", () => {
     expect(bindings).toEqual(["someOp"]);
     // someOp.run( does NOT appear; mutation.run<T>( does. The per-binding
     // pattern (with optional generic args) correctly rejects this.
-    const callPattern = new RegExp(`\\b${bindings[0]}\\.run\\s*(?:<[^>]*>)?\\s*\\(`);
-    expect(callPattern.test(driftFixture)).toBe(false);
+    expect(runCallPattern(bindings[0]).test(driftFixture)).toBe(false);
 
     // Positive companion: the same pattern matches a real generic-arg
     // call when the receiver IS a hook binding. saveOp.run<SaveLoopOutcome>(...)
@@ -358,8 +348,7 @@ describe("client source-tree migration structural check", () => {
     `;
     const liveBindings = extractAbortableAsyncOperationBindings(liveFixture);
     expect(liveBindings).toEqual(["saveOp"]);
-    const livePattern = new RegExp(`\\b${liveBindings[0]}\\.run\\s*(?:<[^>]*>)?\\s*\\(`);
-    expect(livePattern.test(liveFixture)).toBe(true);
+    expect(runCallPattern(liveBindings[0]).test(liveFixture)).toBe(true);
   });
 
   it("runCallPattern answers identically for both detectors (S4, review 2026-08-19)", () => {

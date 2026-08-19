@@ -58,6 +58,24 @@ export function runCallPattern(name: string, flags = ""): RegExp {
   );
 }
 
+// The "binding passed as an argument to a known delegating helper" matcher.
+//
+// S2 (review round 3, 2026-08-19): this shape was written out twice in
+// migrationStructuralCheck.test.ts — once in the production check and once in
+// the fixture test meant to pin it — so the test could keep passing while the
+// production copy drifted. Single owner, same treatment `runCallPattern` got.
+//
+// Ceiling, deliberately: `[^)]*` cannot span a nested-paren argument list, so
+// `refreshTrashList(getProject(), projectRef, trashOp)` would not be recognised
+// as consuming `trashOp` and would surface a false-positive "dead binding"
+// offender. That is a false RED demanding a decision, not a silent pass. Today
+// the only delegation site is `refreshTrashList(project, projectRef, slugRef,
+// trashOp)`. When one needs nested parens, extend this with a paren-counting
+// walker rather than tweaking the regex.
+export function delegationPattern(helper: string, name: string): RegExp {
+  return new RegExp(`\\b${helper}\\s*\\([^)]*\\b${name}\\b[^)]*\\)`);
+}
+
 // Builds an import-statement regex for a named symbol. Matches a real ES
 // import (start of line, possibly indented) — not a bare reference, comment,
 // or string literal. Review (2026-05-24, Copilot) flagged the prior
