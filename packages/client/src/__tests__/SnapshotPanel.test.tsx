@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { SnapshotPanel, type SnapshotPanelHandle } from "../components/SnapshotPanel";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
-import type { SnapshotListItem } from "@smudge/shared";
+import { LABEL_MAX_UNITS, type SnapshotListItem } from "@smudge/shared";
 import { pendingUntilAbort } from "./helpers/abortableMocks";
 
 vi.mock("../api/client", () => {
@@ -299,10 +299,7 @@ describe("SnapshotPanel", () => {
 
     it("shows duplicate message when content unchanged", async () => {
       const user = userEvent.setup();
-      vi.mocked(api.snapshots.create).mockResolvedValue({
-        status: "duplicate",
-        message: "Snapshot skipped",
-      });
+      vi.mocked(api.snapshots.create).mockResolvedValue({ status: "duplicate" });
       render(<SnapshotPanel {...defaultProps} />);
 
       await waitFor(() => {
@@ -315,6 +312,27 @@ describe("SnapshotPanel", () => {
       await waitFor(() => {
         expect(screen.getByText(S.duplicateSkipped)).toBeInTheDocument();
       });
+    });
+
+    // F-34: the schema's cap, enforced where the writer can see it — matching
+    // OuttakeCard's label input. Pins the NUMBER only. It is deliberately not a
+    // claim that the input and the server agree: the server measures
+    // LABEL_MAX_UNITS after sanitizing and trimming, this attribute measures
+    // the raw value, so the input is the stricter of the two. See the comment
+    // at the attribute itself.
+    it("caps the label input at the schema's limit (F-34)", async () => {
+      const user = userEvent.setup();
+      render(<SnapshotPanel {...defaultProps} />);
+
+      await waitFor(() => {
+        expect(screen.getByText(S.createButton)).toBeInTheDocument();
+      });
+      await user.click(screen.getByText(S.createButton));
+
+      expect(screen.getByPlaceholderText(S.labelPlaceholder)).toHaveAttribute(
+        "maxLength",
+        String(LABEL_MAX_UNITS),
+      );
     });
 
     it("hides inline form when Cancel is clicked", async () => {

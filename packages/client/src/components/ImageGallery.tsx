@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { mapApiError, applyMappedError, STOP } from "../errors";
 import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
 import { STRINGS } from "../strings";
+import { ANNOUNCEMENT_DURATION_MS } from "../constants";
 
 interface ImageGalleryProps {
   projectId: string;
@@ -16,7 +17,6 @@ interface ImageGalleryProps {
   externalRefreshKey?: number;
 }
 
-const ANNOUNCEMENT_DURATION = 3000;
 const ACCEPTED_TYPES = "image/jpeg,image/png,image/gif,image/webp";
 
 interface DetailFormState {
@@ -87,7 +87,7 @@ export function ImageGallery({
     announcementTimerRef.current = setTimeout(() => {
       setAnnouncement("");
       announcementTimerRef.current = null;
-    }, ANNOUNCEMENT_DURATION);
+    }, ANNOUNCEMENT_DURATION_MS);
   }, []);
 
   // Counter to trigger re-fetch from event handlers without calling setState in useEffect

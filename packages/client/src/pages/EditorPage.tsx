@@ -5,6 +5,7 @@ import { TipTapDocSchema } from "@smudge/shared";
 import type { EditorHandle } from "../components/Editor";
 import type { Editor as TipTapEditor } from "@tiptap/react";
 import { STRINGS } from "../strings";
+import { ANNOUNCEMENT_DURATION_MS } from "../constants";
 import { useProjectEditor } from "../hooks/useProjectEditor";
 import { useEditorMutation } from "../hooks/useEditorMutation";
 import { useEditorMutationMachine } from "../hooks/useEditorMutationMachine";
@@ -1189,7 +1190,10 @@ export function EditorPage() {
             clearTimeout(imageAnnouncementTimerRef.current);
           }
           setImageAnnouncement(msg);
-          imageAnnouncementTimerRef.current = setTimeout(() => setImageAnnouncement(""), 3000);
+          imageAnnouncementTimerRef.current = setTimeout(
+            () => setImageAnnouncement(""),
+            ANNOUNCEMENT_DURATION_MS,
+          );
         }}
         onImageUploadCommitted={() => setGalleryExternalRefreshKey((k) => k + 1)}
         chapterWordCount={chapterWordCount}

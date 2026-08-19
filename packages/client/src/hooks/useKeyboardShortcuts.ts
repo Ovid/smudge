@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { Chapter, ProjectWithChapters } from "@smudge/shared";
 import { STRINGS } from "../strings";
+import { NAV_ANNOUNCEMENT_DURATION_MS } from "../constants";
 export type ViewMode = "editor" | "preview" | "dashboard";
 
 interface KeyboardShortcutDeps {
@@ -230,7 +231,10 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
               : STRINGS.sidebar.navigationFailed(nextChapter.title),
           );
           if (navAnnouncementTimer !== null) clearTimeout(navAnnouncementTimer);
-          navAnnouncementTimer = setTimeout(() => deps.setNavAnnouncement(""), 1000);
+          navAnnouncementTimer = setTimeout(
+            () => deps.setNavAnnouncement(""),
+            NAV_ANNOUNCEMENT_DURATION_MS,
+          );
         };
         void handleSelectChapterWithFlushRef
           .current(nextChapter.id)

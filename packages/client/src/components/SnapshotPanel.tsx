@@ -4,7 +4,7 @@ import { useAbortableSequence } from "../hooks/useAbortableSequence";
 import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
 import { STRINGS } from "../strings";
 import { mapApiError, applyMappedError, isNotFound } from "../errors";
-import type { SnapshotListItem } from "@smudge/shared";
+import { LABEL_MAX_UNITS, type SnapshotListItem } from "@smudge/shared";
 
 const S = STRINGS.snapshots;
 
@@ -417,6 +417,21 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
               <input
                 type="text"
                 placeholder={S.labelPlaceholder}
+                // F-34: the schema's cap, enforced where the writer can see it,
+                // matching OuttakeCard's label input. Same NUMBER as the server
+                // cap but applied at a different point in the pipeline, so the
+                // two are not equivalent: sanitizedLabelBase measures
+                // LABEL_MAX_UNITS *after* sanitizeSnapshotLabel strips (bidi,
+                // zero-width, controls) and *after* trim, while maxLength
+                // measures the raw value. The server therefore accepts a
+                // superset, and this input is the stricter of the two — a
+                // pasted label over the cap only because of strippable
+                // characters is silently truncated here though the API would
+                // have stored it whole. Accepted: the miss is narrow and costs
+                // a label, never manuscript text. What it does NOT mean is that
+                // the SNAPSHOT_LABEL_TOO_LONG path below is dead — non-panel
+                // callers bypass this attribute entirely.
+                maxLength={LABEL_MAX_UNITS}
                 value={createLabel}
                 onChange={(e) => setCreateLabel(e.target.value)}
                 className="text-sm border border-border/40 rounded px-2 py-1 bg-white text-text-primary placeholder:text-text-secondary/60 font-sans focus:outline-none focus:ring-1 focus:ring-accent"

@@ -175,8 +175,25 @@ describe("EditorPage Ctrl+S flush", () => {
     await renderLoadedEditor();
     await pressCtrlS();
 
-    expect(await screen.findByText(STRINGS.editor.saveFailed)).toBeInTheDocument();
+    // F-37 (architecture report 2026-08-11): assert the WARNING first, before
+    // the banner. Both assertions fail when this test flakes, but they fail
+    // with different information. "Banner not found" is produced identically by
+    // a guard returning early, by editorRef.current being null (the optional
+    // chaining in EditorPage's handler swallows that silently — `await
+    // undefined` resolves, nothing throws, no banner), and by the handler never
+    // running at all. The warning distinguishes them: if it fired, the handler
+    // ran and caught the throw and only the render is in question; if it did
+    // not, the handler never reached its catch and the banner was never the
+    // problem. Ordered this way so the next occurrence reports a cause instead
+    // of another measurement.
+    //
+    // Safe to assert first because the path is synchronous end to end: the mock
+    // throws while `editorRef.current?.flushSave()` is being evaluated, before
+    // the `await` suspends, so the catch and this warn both run inside
+    // pressCtrlS's act(). (Its async sibling below has a real microtask hop, so
+    // that one keeps the original order.)
     warn.calledWith("Ctrl+S: flushSave threw", expect.any(Error));
+    expect(await screen.findByText(STRINGS.editor.saveFailed)).toBeInTheDocument();
   });
 
   it("surfaces the same banner when the flush promise rejects", async () => {

@@ -503,6 +503,21 @@ export const SCOPES = {
     fallback: STRINGS.snapshots.createFailedGeneric,
     network: STRINGS.snapshots.createFailedNetwork,
     committed: STRINGS.error.possiblyCommitted,
+    // F-34: by CODE, not by status — .strict(), validateUuidParam and a
+    // non-string label all produce 400 here, so a byStatus[400] arm would put
+    // cap copy on three failures that are not the cap. That is the exact
+    // mistake S8 had to undo for outtake.update.
+    //
+    // Unlike outtake.update, this consumer does NOT revert the label field on a
+    // definite failure (SnapshotPanel keeps createLabel and only clears it on
+    // success or on the committed path), so the harm here is the doomed retry,
+    // not vanishing text. Same treatment, different reason — worth stating,
+    // because the report's F-34 entry borrows the outtake rationale verbatim
+    // and that half of it does not transfer.
+    byCode: {
+      [SNAPSHOT_ERROR_CODES.LABEL_TOO_LONG]:
+        STRINGS.snapshots.createFailedLabelRejected(LABEL_MAX_UNITS),
+    },
   },
   "snapshot.delete": {
     fallback: STRINGS.snapshots.deleteFailed,

@@ -257,9 +257,19 @@ export function OuttakeCard({
         type="text"
         aria-label={S.labelAriaLabel}
         placeholder={S.untitled}
-        // S5: the schema's cap, enforced where the writer can see it. Never
-        // stricter than the server, which trims before measuring, so this
-        // cannot reject a label the API would have accepted.
+        // S5: the schema's cap, enforced where the writer can see it. Same
+        // NUMBER as the server cap but applied at a different point in the
+        // pipeline, so the two are not equivalent: sanitizedLabelBase measures
+        // LABEL_MAX_UNITS *after* sanitizeSnapshotLabel strips (bidi,
+        // zero-width, controls) and *after* trim, while maxLength measures the
+        // raw value. The server therefore accepts a superset, and this input is
+        // the stricter of the two — a pasted label over the cap only because of
+        // strippable characters is silently truncated here though the API would
+        // have stored it whole. Accepted: the miss is narrow and costs a label,
+        // never manuscript text. What it does NOT mean is that
+        // OUTTAKE_LABEL_TOO_LONG is dead — non-card callers bypass this
+        // attribute entirely, and S8 exists because this consumer reverts the
+        // visible field on a definite failure.
         maxLength={LABEL_MAX_UNITS}
         value={labelDraft}
         onChange={(e) => setLabelDraft(e.target.value)}

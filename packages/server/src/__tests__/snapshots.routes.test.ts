@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import request from "supertest";
 import { setupTestDb } from "./test-helpers";
 import { logger } from "../logger";
+import { LABEL_MAX_UNITS, SNAPSHOT_ERROR_CODES } from "@smudge/shared";
 
 const t = setupTestDb();
 
@@ -80,7 +81,102 @@ describe("snapshot routes", () => {
       const second = await request(t.app).post(`/api/chapters/${chapterId}/snapshots`).send({});
       expect(second.status).toBe(200);
       expect(second.body.status).toBe("duplicate");
-      expect(second.body.message).toBeDefined();
+      // F-26 (architecture report 2026-08-11): this asserted `message` was
+      // DEFINED — it pinned the server shipping user-facing English on a
+      // success response, which the steering file forbids for the sibling
+      // success contracts ("the client owns the toast, the server ships no
+      // success copy"). The client already renders its own
+      // STRINGS.snapshots.duplicateSkipped and ignored this field, so it was
+      // dead weight that invited a future caller to display it. Inverted.
+      expect(second.body.message).toBeUndefined();
+    });
+
+    // Safety net for F-34 and F-26 (architecture report 2026-08-11).
+    //
+    // F-34 adds the label cap's three missing treatments (input maxLength, a
+    // discriminating server code, scope copy) to match the outtake sibling.
+    // These pin what must NOT change while it does: the cap still rejects, and
+    // it still rejects with 400 rather than moving onto a new status.
+    //
+    // F-26 drops the server-authored `message` from the duplicate 200. These
+    // pin the parts of that response the client actually branches on, so the
+    // removal cannot quietly take the status discriminator with it.
+    it("rejects an over-cap label with 400 (F-34 safety net)", async () => {
+      const { chapterId } = await createTestProject();
+
+      const res = await request(t.app)
+        .post(`/api/chapters/${chapterId}/snapshots`)
+        .send({ label: "x".repeat(LABEL_MAX_UNITS + 1) });
+
+      expect(res.status).toBe(400);
+    });
+
+    it("accepts a label exactly at the cap (F-34 safety net)", async () => {
+      const { chapterId } = await createTestProject();
+
+      const res = await request(t.app)
+        .post(`/api/chapters/${chapterId}/snapshots`)
+        .send({ label: "x".repeat(LABEL_MAX_UNITS) });
+
+      expect(res.status).toBe(201);
+      expect(res.body.snapshot.label).toHaveLength(LABEL_MAX_UNITS);
+    });
+
+    it("keeps the duplicate response's status discriminator at 200 (F-26 safety net)", async () => {
+      const { chapterId } = await createTestProject();
+
+      await request(t.app).post(`/api/chapters/${chapterId}/snapshots`).send({});
+      const second = await request(t.app).post(`/api/chapters/${chapterId}/snapshots`).send({});
+
+      expect(second.status).toBe(200);
+      expect(second.body.status).toBe("duplicate");
+      // The discriminator is the whole contract the client branches on; a
+      // created response must stay distinguishable from a skipped one.
+      expect(second.body.snapshot).toBeUndefined();
+    });
+
+    // F-34: the cap failure must be distinguishable from every other 400 this
+    // endpoint emits. Mirrors the outtake precedent (S8) exactly, including the
+    // negative cases — the client keys copy on the code, so a non-cap 400 that
+    // carried it would name a cause that was not the cause.
+    describe("400 codes discriminate the label cap from every other failure (F-34)", () => {
+      it("labels an over-cap label with SNAPSHOT_LABEL_TOO_LONG", async () => {
+        const { chapterId } = await createTestProject();
+
+        const res = await request(t.app)
+          .post(`/api/chapters/${chapterId}/snapshots`)
+          .send({ label: "x".repeat(LABEL_MAX_UNITS + 1) });
+
+        expect(res.status).toBe(400);
+        expect(res.body.error.code).toBe(SNAPSHOT_ERROR_CODES.LABEL_TOO_LONG);
+      });
+
+      it.each([
+        [
+          "a bad uuid param",
+          () => request(t.app).post(`/api/chapters/not-a-uuid/snapshots`).send({ label: "x" }),
+        ],
+        [
+          "an unknown key rejected by .strict()",
+          async () => {
+            const { chapterId } = await createTestProject();
+            return request(t.app)
+              .post(`/api/chapters/${chapterId}/snapshots`)
+              .send({ label: "x", nope: 1 });
+          },
+        ],
+        [
+          "a non-string label",
+          async () => {
+            const { chapterId } = await createTestProject();
+            return request(t.app).post(`/api/chapters/${chapterId}/snapshots`).send({ label: 42 });
+          },
+        ],
+      ])("does NOT label %s as a cap failure", async (_name, send) => {
+        const res = await send();
+        expect(res.status).toBe(400);
+        expect(res.body.error.code).not.toBe(SNAPSHOT_ERROR_CODES.LABEL_TOO_LONG);
+      });
     });
 
     it("returns 400 when the body fails schema validation", async () => {
