@@ -54,7 +54,7 @@ test.describe("Chapter create recovery (4b.3c.1)", () => {
     // Click "Add Chapter" (STRINGS.sidebar.addChapter).
     await page.getByRole("button", { name: /add chapter/i }).click();
 
-    // (a) Committed banner surfaces via ActionErrorBanner (role="alert").
+    // (a) Committed banner surfaces via EditorBanner tone="error" (role="alert").
     //     Copy: STRINGS.error.createChapterResponseUnreadable —
     //     "The chapter may have been created, but the server response was
     //      unreadable. Refresh to see the current chapter list."
