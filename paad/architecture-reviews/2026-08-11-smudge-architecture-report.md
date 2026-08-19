@@ -621,7 +621,7 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
 - **Status note (parts 2 and 3 are unreachable from the shipped UI, deliberately):** with `maxLength` on the input the browser blocks over-cap text including on paste, so the server code and its copy defend a path this panel can no longer produce. Kept anyway, matching the precedent of `outtake.create`'s 413 arm which is documented as near-unreachable and retained: the client cap is an HTML attribute, and it is the only thing standing between a non-panel caller and copy that invites an impossible retry.
 - **Status caveat (a near-duplicate was introduced, knowingly):** `badRequestFromSchema` now exists in both `snapshots.routes.ts` and `outtakes.routes.ts`, differing only in the constant they emit. A shared helper taking that constant would collapse them, but doing so means editing `outtakes.routes.ts` — a module F-34 does not touch — turning a fix into a cross-module refactor. The duplication is recorded at the code rather than defended, with the instruction that a third copy should be extracted instead. **This is a candidate for the out-of-scope backlog.**
 - **Status date:** 2026-08-19 08:35 UTC
-- **Status commit:** 4d9e2db1
+- **Status commit:** 1ace7b74
 
 ### [F-35] Render-failure catches discard the error object entirely
 - **Category:** 21 (No observability plan)
