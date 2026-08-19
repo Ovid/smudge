@@ -477,3 +477,21 @@ were dropped.
 The `migration-004.test.ts` schema-shape assertions are a different case and
 fine: migrations are cumulative and re-run on every new migration, so a live
 mechanism can genuinely re-add a column.
+
+**Scope exception (one-feature rule), granted 2026-08-19.** Commit `71bba74a`
+is a server-side, chapters-domain test change on a branch whose feature is the
+outtakes compose-form removal. It shares no code path with outtakes and
+references no roadmap phase, so CLAUDE.md § Pull Request Scope would otherwise
+require it to be its own PR. Recorded here as the explicit exception that
+section calls for. **Why granted:** the rule exists to stop bundles that make
+review intractable — the precedent is the 17,000-insertion
+`ovid/snapshots-find-and-replace` branch that took 16 review rounds. This is 44
+lines of test-only change with no production surface, and reverting it would
+restore a tombstone that tests nothing. **What the exception costs:** "it's only
+44 lines" is the argument that precedes every bundle, so this is a precedent for
+*size and blast radius*, not for topical drift generally — a second unrelated
+change on the same branch would not qualify, because the thing being bounded is
+the total review surface, not the per-item one. **Where a future reader will
+look:** this is a chapters decision recorded in an outtakes phase log, which is
+the wrong shelf. It is here because the branch is here; `git log 71bba74a`
+points back.
