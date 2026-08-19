@@ -31,14 +31,29 @@ const TONES = {
   },
 } as const;
 
-interface EditorBannerProps {
+// S5 (review 2026-08-19): exactly one of `onDismiss` / `children` is required.
+// The deleted ActionErrorBanner declared its `onDismiss` REQUIRED, so an action
+// error the user could not clear did not compile. Consolidation made the prop
+// optional and put the lock banner — which legitimately omits it, supplying a
+// Refresh control as children instead — two lines above the action-error call
+// site in an identical shape, so dropping it there became a plausible
+// mechanical edit that would leave a role="alert" with no control at all.
+// The union restores the compile-time floor without outlawing the lock banner.
+type EditorBannerProps = {
   tone: BannerTone;
   message: string;
-  /** Renders the ✕ dismiss control. Omit for a banner the user cannot dismiss. */
-  onDismiss?: () => void;
-  /** A trailing control instead of a dismiss (the lock banner's Refresh). */
-  children?: ReactNode;
-}
+} & (
+  | {
+      /** Renders the ✕ dismiss control. */
+      onDismiss: () => void;
+      children?: never;
+    }
+  | {
+      onDismiss?: never;
+      /** A trailing control instead of a dismiss (the lock banner's Refresh). */
+      children: ReactNode;
+    }
+);
 
 export function EditorBanner({ tone, message, onDismiss, children }: EditorBannerProps) {
   const t = TONES[tone];
