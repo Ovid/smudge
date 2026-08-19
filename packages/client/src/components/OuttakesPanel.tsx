@@ -18,8 +18,9 @@ interface OuttakesPanelProps {
    * prepended optimistically (I1) so surfacing the capture never depends on a
    * reload that a concurrent card delete/rename could stale. Null before the
    * first capture. This is now the ONLY producer of new outtakes: the drawer
-   * holds text moved out of the manuscript, and composing fresh prose into it
-   * is not a thing it does (design §3 decision 3).
+   * holds text taken from the manuscript, and composing fresh prose into it
+   * is not a thing it does (design §3 decision 3). Capture COPIES the
+   * selection — the chapter is untouched; the destructive cut is Phase 4c.2a.
    */
   capturedOuttake: OuttakeRow | null;
   /**

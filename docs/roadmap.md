@@ -2027,9 +2027,9 @@ convenience to a feature that already works. Swap them freely.
 
 A per-project space for text that's been cut from the manuscript but might be useful later. Writers call these "killed darlings."
 
-- Outtakes are free-form text entries with an optional label (e.g., "Cut from Chapter 7 — the marketplace scene"). *(2026-08-18: they are created only by moving text in from a chapter — the drawer has no compose form. See `docs/roadmap-decisions/2026-07-19-phase-4c-2-scratchpad-outtakes.md`.)*
+- Outtakes are free-form text entries with an optional label (e.g., "Cut from Chapter 7 — the marketplace scene"). *(2026-08-18: they are created only by capturing text from a chapter — the drawer has no compose form. See `docs/roadmap-decisions/2026-07-19-phase-4c-2-scratchpad-outtakes.md`.)*
 - Outtakes are searchable.
-- A writer can move text from the editor to outtakes (cut selection -> paste to outtakes) and vice versa.
+- A writer can move text from the editor to outtakes (cut selection -> paste to outtakes) and vice versa. *(Shipped in 4c.2 as a **non-destructive copy** — the chapter is untouched. The "cut" half of this bullet, which removes the selection, is Phase 4c.2a and has not shipped.)*
 - Outtakes are not included in the manuscript word count, preview, or export.
 
 #### 4c.3 Tags and Cross-References

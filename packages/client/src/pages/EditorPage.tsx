@@ -469,8 +469,9 @@ export function EditorPage() {
   // F-04: the capture cluster (its state, abortable op, re-entrancy latch and
   // handler) lives in useOuttakeCapture below. It is now the only producer of
   // outtakes — the panel's blank-note compose form was removed, so the drawer
-  // holds text moved out of the manuscript and nothing composed directly into
-  // it (design §3 decision 3, "a drawer, not a second editor").
+  // holds text taken from the manuscript and nothing composed directly into
+  // it (design §3 decision 3, "a drawer, not a second editor"). Capture COPIES
+  // the selection; the chapter is untouched. The destructive cut is Phase 4c.2a.
 
   // S3 + S4 (review 2026-07-26): ONE guard for the two insert-at-cursor entry
   // points. I2 established that inserting an image and inserting an outtake are
