@@ -580,6 +580,8 @@ describe("SqliteProjectStore", () => {
         "softDeleteChapter",
         "softDeleteChaptersByProject",
         "restoreChapter",
+        "listChapterContentByProject",
+        "listAllChapterContentByProject",
       ],
       chapterStatuses: [
         "listStatuses",
@@ -599,8 +601,6 @@ describe("SqliteProjectStore", () => {
         "removeImagesByProject",
         "incrementImageReferenceCount",
         "setImageReferenceCount",
-        "listChapterContentByProject",
-        "listAllChapterContentByProject",
       ],
       snapshots: [
         "insertSnapshot",
