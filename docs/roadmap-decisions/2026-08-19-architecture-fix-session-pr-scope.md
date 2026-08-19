@@ -106,6 +106,27 @@ reviews of the same branch; and rule 6's "one finding per commit" shape, importe
 from rule 2, converted a pre-existing same-artifact batch into an explicit
 violation rather than resolving it.
 
+## Recorded disposition: the shared scanner module (OOSA1)
+
+`packages/client/src/__tests__/tsSourceScan.ts` was raised as an out-of-scope
+addition in two consecutive code reviews of this branch — no architecture
+finding asked for a shared scanning module, and it changed the behaviour of a
+pre-existing drift detector as a side effect. **Kept**, decided 2026-08-19.
+
+It exists because earlier rounds demanded it: round-2 I2 asked
+`mutationCommittedSurface.test.ts` to reuse the first detector's comment
+stripper rather than re-derive a weaker one, and round-2 S4 asked for a single
+owner of the `<binding>.run(` shape after the two copies gave different answers
+for the same text. Round-3 S2 and S3 extended it for the same reason. Reverting
+would restore the duplication those findings were raised about; splitting it out
+would hold F-07's deliverable, which imports it, behind a refactor PR.
+
+The two behaviour changes to the pre-existing `migrationStructuralCheck.test.ts`
+were weighed and accepted with it: the `.run(` matcher is looser (each newly
+tolerated shape is a real call it used to report as a dead binding — fewer false
+positives), and `importPatternFor` now matches `import type`, which for a future
+type-only import would produce a loud offender rather than a silent pass.
+
 ## Honest argument against
 
 This is a carve-out written from inside the practice it legitimises, which is
