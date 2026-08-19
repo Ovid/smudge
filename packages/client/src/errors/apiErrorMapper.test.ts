@@ -1032,6 +1032,31 @@ describe("outtake.update discriminates the label cap from other 400s", () => {
   );
 });
 
+// F-34 (architecture report 2026-08-11). The snapshot create path had no
+// discriminating code, so an over-cap label got createFailedGeneric — "Unable
+// to create snapshot. Try again." — which invites a retry that reproduces the
+// failure forever. Keyed by CODE and not by status for the same reason the
+// outtake path is: .strict(), validateUuidParam and a non-string label are
+// three other producers of 400 on this endpoint.
+describe("snapshot.create discriminates the label cap from other 400s", () => {
+  it("uses the cap copy for SNAPSHOT_LABEL_TOO_LONG", () => {
+    const err = new ApiRequestError("Label is too long", 400, SNAPSHOT_ERROR_CODES.LABEL_TOO_LONG);
+    expect(mapApiError(err, "snapshot.create").message).toBe(
+      STRINGS.snapshots.createFailedLabelRejected(LABEL_MAX_UNITS),
+    );
+  });
+
+  it.each([["VALIDATION_ERROR"], ["INVALID_UUID"], [undefined]])(
+    "falls back to the generic message for a 400 with code %s",
+    (code) => {
+      const err = new ApiRequestError("nope", 400, code);
+      expect(mapApiError(err, "snapshot.create").message).toBe(
+        STRINGS.snapshots.createFailedGeneric,
+      );
+    },
+  );
+});
+
 describe("SCOPES — snapshot.restore", () => {
   const scope = SCOPES["snapshot.restore"];
   it("CORRUPT_SNAPSHOT → restoreFailedCorrupt", () => {

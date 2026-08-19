@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { SnapshotPanel, type SnapshotPanelHandle } from "../components/SnapshotPanel";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
-import type { SnapshotListItem } from "@smudge/shared";
+import { LABEL_MAX_UNITS, type SnapshotListItem } from "@smudge/shared";
 import { pendingUntilAbort } from "./helpers/abortableMocks";
 
 vi.mock("../api/client", () => {
@@ -315,6 +315,25 @@ describe("SnapshotPanel", () => {
       await waitFor(() => {
         expect(screen.getByText(S.duplicateSkipped)).toBeInTheDocument();
       });
+    });
+
+    // F-34: the schema's cap, enforced where the writer can see it — matching
+    // OuttakeCard's label input. Never stricter than the server, which trims
+    // and sanitizes before measuring, so it cannot block a label the API would
+    // have taken.
+    it("caps the label input at the schema's limit (F-34)", async () => {
+      const user = userEvent.setup();
+      render(<SnapshotPanel {...defaultProps} />);
+
+      await waitFor(() => {
+        expect(screen.getByText(S.createButton)).toBeInTheDocument();
+      });
+      await user.click(screen.getByText(S.createButton));
+
+      expect(screen.getByPlaceholderText(S.labelPlaceholder)).toHaveAttribute(
+        "maxLength",
+        String(LABEL_MAX_UNITS),
+      );
     });
 
     it("hides inline form when Cancel is clicked", async () => {

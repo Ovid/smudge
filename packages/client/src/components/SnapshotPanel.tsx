@@ -4,7 +4,7 @@ import { useAbortableSequence } from "../hooks/useAbortableSequence";
 import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
 import { STRINGS } from "../strings";
 import { mapApiError, applyMappedError, isNotFound } from "../errors";
-import type { SnapshotListItem } from "@smudge/shared";
+import { LABEL_MAX_UNITS, type SnapshotListItem } from "@smudge/shared";
 
 const S = STRINGS.snapshots;
 
@@ -417,6 +417,11 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
               <input
                 type="text"
                 placeholder={S.labelPlaceholder}
+                // F-34: the schema's cap, enforced where the writer can see it,
+                // matching OuttakeCard's label input. Never stricter than the
+                // server, which trims and sanitizes before measuring, so this
+                // cannot reject a label the API would have accepted.
+                maxLength={LABEL_MAX_UNITS}
                 value={createLabel}
                 onChange={(e) => setCreateLabel(e.target.value)}
                 className="text-sm border border-border/40 rounded px-2 py-1 bg-white text-text-primary placeholder:text-text-secondary/60 font-sans focus:outline-none focus:ring-1 focus:ring-accent"

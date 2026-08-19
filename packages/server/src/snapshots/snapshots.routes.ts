@@ -5,6 +5,36 @@ import { BadRequestError, ConflictError, NotFoundError } from "../errors/appErro
 import { validateUuidParam } from "../validateUuidParam";
 import * as SnapshotService from "./snapshots.service";
 
+/**
+ * Turn a schema failure into a 400 that names WHICH failure it was.
+ *
+ * F-34 (architecture report 2026-08-11): mirrors `badRequestFromSchema` in
+ * `outtakes.routes.ts`, deliberately including its keying discipline — on Zod's
+ * issue shape (`too_big` on the `label` path) rather than on message text, so
+ * rewording the schema message cannot silently unmap the code, and a non-string
+ * label (an `invalid_type` on the same path) does NOT get "too long" copy.
+ *
+ * This IS a near-duplicate of the outtake version — the two differ only in the
+ * constant they emit, and a shared helper taking that constant as a parameter
+ * would collapse them. It is left duplicated because unifying them means
+ * editing `outtakes.routes.ts`, a module F-34 does not touch: this change is a
+ * fix, and that would make it a cross-module refactor as well. Recorded here
+ * rather than defended, so the next person to add a third one extracts instead
+ * of copying a second time.
+ */
+function badRequestFromSchema(
+  // Structural, not `ZodError<T>`: the generic is invariant, so a shared helper
+  // cannot take errors from two different schemas through one annotation.
+  issues: ReadonlyArray<{ code: string; path: PropertyKey[]; message: string }>,
+): BadRequestError {
+  const issue = issues[0];
+  const labelTooLong = issue?.code === "too_big" && issue.path[0] === "label";
+  return new BadRequestError(
+    issue?.message ?? "Invalid request body.",
+    labelTooLong ? SNAPSHOT_ERROR_CODES.LABEL_TOO_LONG : undefined,
+  );
+}
+
 export function snapshotChapterRouter(): Router {
   const router = Router();
 
@@ -15,7 +45,7 @@ export function snapshotChapterRouter(): Router {
       const id = validateUuidParam(req, "chapter");
       const parsed = CreateSnapshotSchema.safeParse(req.body ?? {});
       if (!parsed.success) {
-        throw new BadRequestError(parsed.error.issues[0]?.message ?? "Invalid request body.");
+        throw badRequestFromSchema(parsed.error.issues);
       }
       const label = parsed.data.label;
 

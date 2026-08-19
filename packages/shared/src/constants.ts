@@ -100,5 +100,13 @@ export type OuttakeErrorCode = (typeof OUTTAKE_ERROR_CODES)[keyof typeof OUTTAKE
 export const SNAPSHOT_ERROR_CODES = {
   CORRUPT_SNAPSHOT: "CORRUPT_SNAPSHOT",
   CROSS_PROJECT_IMAGE_REF: "CROSS_PROJECT_IMAGE_REF",
+  // F-34 (architecture report 2026-08-11): the create endpoint shares
+  // LABEL_MAX_UNITS with the outtake path but emitted no code for breaching it,
+  // so an over-cap label got "Unable to create snapshot. Try again." — copy
+  // that invites a retry which reproduces the failure forever. Keyed by code
+  // rather than status because .strict(), validateUuidParam and a non-string
+  // label are three other producers of 400 on this endpoint; the outtake path
+  // learned that the hard way (S8) and this is the same lesson, not a new one.
+  LABEL_TOO_LONG: "SNAPSHOT_LABEL_TOO_LONG",
 } as const;
 export type SnapshotErrorCode = (typeof SNAPSHOT_ERROR_CODES)[keyof typeof SNAPSHOT_ERROR_CODES];

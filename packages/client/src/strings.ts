@@ -538,6 +538,14 @@ export const STRINGS = {
     duplicateSkipped: "Content unchanged since last snapshot.",
     createFailed: "Unable to create snapshot. Save your unsaved changes and try again.",
     createFailedGeneric: "Unable to create snapshot. Try again.",
+    // F-34: without this, an over-cap label got createFailedGeneric — copy that
+    // names no cause and invites a retry that reproduces the failure forever.
+    // Phrasing follows updateOuttakeLabelRejected deliberately: an INCLUSIVE
+    // bound ("or fewer"), because Zod enforces .max() inclusively, and
+    // "characters" left as-is to match its sibling rather than introduce a
+    // second vocabulary for the same cap.
+    createFailedLabelRejected: (max: number) =>
+      `That snapshot label is too long — keep it to ${max.toLocaleString()} characters or fewer.`,
     createFailedNetwork: "Unable to create snapshot — check your connection and try again.",
     deleteFailed: "Unable to delete snapshot. Try again.",
     deleteFailedNetwork: "Unable to delete snapshot — check your connection and try again.",

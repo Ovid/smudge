@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import request from "supertest";
 import { setupTestDb } from "./test-helpers";
 import { logger } from "../logger";
-import { LABEL_MAX_UNITS } from "@smudge/shared";
+import { LABEL_MAX_UNITS, SNAPSHOT_ERROR_CODES } from "@smudge/shared";
 
 const t = setupTestDb();
 
@@ -126,6 +126,50 @@ describe("snapshot routes", () => {
       // The discriminator is the whole contract the client branches on; a
       // created response must stay distinguishable from a skipped one.
       expect(second.body.snapshot).toBeUndefined();
+    });
+
+    // F-34: the cap failure must be distinguishable from every other 400 this
+    // endpoint emits. Mirrors the outtake precedent (S8) exactly, including the
+    // negative cases — the client keys copy on the code, so a non-cap 400 that
+    // carried it would name a cause that was not the cause.
+    describe("400 codes discriminate the label cap from every other failure (F-34)", () => {
+      it("labels an over-cap label with SNAPSHOT_LABEL_TOO_LONG", async () => {
+        const { chapterId } = await createTestProject();
+
+        const res = await request(t.app)
+          .post(`/api/chapters/${chapterId}/snapshots`)
+          .send({ label: "x".repeat(LABEL_MAX_UNITS + 1) });
+
+        expect(res.status).toBe(400);
+        expect(res.body.error.code).toBe(SNAPSHOT_ERROR_CODES.LABEL_TOO_LONG);
+      });
+
+      it.each([
+        [
+          "a bad uuid param",
+          () => request(t.app).post(`/api/chapters/not-a-uuid/snapshots`).send({ label: "x" }),
+        ],
+        [
+          "an unknown key rejected by .strict()",
+          async () => {
+            const { chapterId } = await createTestProject();
+            return request(t.app)
+              .post(`/api/chapters/${chapterId}/snapshots`)
+              .send({ label: "x", nope: 1 });
+          },
+        ],
+        [
+          "a non-string label",
+          async () => {
+            const { chapterId } = await createTestProject();
+            return request(t.app).post(`/api/chapters/${chapterId}/snapshots`).send({ label: 42 });
+          },
+        ],
+      ])("does NOT label %s as a cap failure", async (_name, send) => {
+        const res = await send();
+        expect(res.status).toBe(400);
+        expect(res.body.error.code).not.toBe(SNAPSHOT_ERROR_CODES.LABEL_TOO_LONG);
+      });
     });
 
     it("returns 400 when the body fails schema validation", async () => {
