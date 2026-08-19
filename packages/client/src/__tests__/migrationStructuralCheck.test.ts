@@ -266,12 +266,12 @@ describe("client source-tree migration structural check", () => {
     const bindings = extractAbortableAsyncOperationBindings(fixture);
     expect(bindings).toEqual(["trashOp"]);
     // The direct .run( pattern does NOT match (no `trashOp.run(` in source).
-    expect(runCallPattern(bindings[0]).test(fixture)).toBe(false);
+    expect(runCallPattern(bindings[0]!).test(fixture)).toBe(false);
     // The delegation pattern DOES match (trashOp appears as an argument
     // to refreshTrashList). Both patterns are the same functions the
     // production check calls, so this fixture cannot pin a shape the
     // production copy has drifted away from (S2, review round 3).
-    expect(delegationPattern("refreshTrashList", bindings[0]).test(fixture)).toBe(true);
+    expect(delegationPattern("refreshTrashList", bindings[0]!).test(fixture)).toBe(true);
   });
 
   it("extractAbortableAsyncOperationBindings extracts hook bindings and rejects mutation.run drift (S1 re-review 2026-05-25)", () => {
@@ -337,7 +337,7 @@ describe("client source-tree migration structural check", () => {
     expect(bindings).toEqual(["someOp"]);
     // someOp.run( does NOT appear; mutation.run<T>( does. The per-binding
     // pattern (with optional generic args) correctly rejects this.
-    expect(runCallPattern(bindings[0]).test(driftFixture)).toBe(false);
+    expect(runCallPattern(bindings[0]!).test(driftFixture)).toBe(false);
 
     // Positive companion: the same pattern matches a real generic-arg
     // call when the receiver IS a hook binding. saveOp.run<SaveLoopOutcome>(...)
@@ -348,7 +348,7 @@ describe("client source-tree migration structural check", () => {
     `;
     const liveBindings = extractAbortableAsyncOperationBindings(liveFixture);
     expect(liveBindings).toEqual(["saveOp"]);
-    expect(runCallPattern(liveBindings[0]).test(liveFixture)).toBe(true);
+    expect(runCallPattern(liveBindings[0]!).test(liveFixture)).toBe(true);
   });
 
   it("runCallPattern answers identically for both detectors (S4, review 2026-08-19)", () => {

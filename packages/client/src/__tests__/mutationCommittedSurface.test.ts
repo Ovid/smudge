@@ -327,7 +327,7 @@ describe("useEditorMutation caller surface (F-07 forcing pause)", () => {
     (relPath) => {
       const source = readFileSync(resolve(clientSrc, relPath), "utf8");
       expect(countCodeMatches(source, COMMITTED_RE)).toBe(
-        COMMITTED_CALLERS[relPath].committedBranches,
+        COMMITTED_CALLERS[relPath]!.committedBranches,
       );
     },
   );
