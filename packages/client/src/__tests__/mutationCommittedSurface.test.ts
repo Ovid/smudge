@@ -107,8 +107,19 @@ const COMMITTED_RE = /stage === "committed_but_unreloaded"/;
 // ImageGallery.tsx's `mutationOp`). Extracting the binding name first — the
 // same fix migrationStructuralCheck.test.ts applied to its own receiver-blind
 // `.run(` check — removes the naming dependency.
+//
+// I3 (review round 4, 2026-08-19): the deps-property alternative required the
+// type name IMMEDIATELY after the colon, so `Pick<UseEditorMutationReturn,
+// "run">` bound nothing — and neither did `Readonly<…>` or a union. The
+// alternative now matches a CONTAINING reference: any type expression between
+// the colon and the name, lazily, stopping at `;`, `,`, a newline, a brace or a
+// paren. Those stops are load-bearing — without them a neighbouring binding on
+// the same line captures first and MIS-NAMES the handle, which loses the run
+// count silently rather than over-listing. The paren stop specifically keeps
+// the hook's own signature — `(args: UseEditorMutationArgs):
+// UseEditorMutationReturn` — from binding a handle called `args`.
 const HANDLE_RE =
-  /(?:(?:const|let|var)\s+(\w+)\s*=\s*useEditorMutation\s*[<(]|(\w+)\s*\??\s*:\s*(?:ReturnType\s*<\s*typeof\s+useEditorMutation\s*>|UseEditorMutationReturn))/g;
+  /(?:(?:const|let|var)\s+(\w+)\s*=\s*useEditorMutation\s*[<(]|(\w+)\s*\??\s*:\s*[^;,\n{}()]*?(?:ReturnType\s*<\s*typeof\s+useEditorMutation\s*>|UseEditorMutationReturn))/g;
 
 /**
  * Every useEditorMutation handle name bound in `source` (comments stripped),
@@ -130,6 +141,13 @@ export function extractMutationHandles(source: string): string[] {
       "g",
     );
     for (const match of code.matchAll(aliasRe)) {
+      if (match[1] !== undefined) names.add(match[1]);
+    }
+    // I3 (review round 4): the renaming destructure — `const { mutation: mut }
+    // = deps` — binds the handle under a name no `\bmutation` boundary can
+    // find. Same class of miss as the Pick<> narrowing above, same file.
+    const renameRe = new RegExp(`\\{[^{}]*\\b${base}\\s*:\\s*(\\w+)[^{}]*\\}\\s*=`, "g");
+    for (const match of code.matchAll(renameRe)) {
       if (match[1] !== undefined) names.add(match[1]);
     }
   }
@@ -279,6 +297,7 @@ function loadClientTree(): { files: (readonly [string, string])[]; allHandles: s
 function discoverCallers(): Record<string, number> {
   const { files, allHandles } = loadClientTree();
   const importsHook = importPatternFor("useEditorMutation");
+  const importsReturnType = importPatternFor("UseEditorMutationReturn");
   const found: Record<string, number> = {};
   for (const [file, source] of files) {
     // Three independent signals, because no one of them covers the others:
@@ -291,8 +310,26 @@ function discoverCallers(): Record<string, number> {
     //     trace. The sibling detector already treats "imports the hook but
     //     yields no binding" as an offender rather than a skip
     //     (migrationStructuralCheck.test.ts) — this is the same gate.
+    // S2 (review round 4, 2026-08-19): the import signal used to be tested
+    // against RAW source while both siblings stripped comments first, so a
+    // block-commented-out import minted a phantom caller key. Safe direction
+    // (a false RED), but it is the exact raw-vs-stripped inconsistency this
+    // file's own round-3 note describes as the bug it fixed, left on one of
+    // three signals.
+    //
+    // I3: the type name counts as an import signal too. A file reaching the
+    // hook only through `Pick<UseEditorMutationReturn, …>` imports the TYPE,
+    // never the lowercase hook — belt-and-braces behind the HANDLE_RE fix,
+    // since the whole point of three signals is that no one of them is trusted
+    // alone.
+    const code = stripCommentsFromTsSource(source);
     const runs = countMutationRuns(source, allHandles);
-    if (extractMutationHandles(source).length === 0 && runs === 0 && !importsHook.test(source)) {
+    if (
+      extractMutationHandles(source).length === 0 &&
+      runs === 0 &&
+      !importsHook.test(code) &&
+      !importsReturnType.test(code)
+    ) {
       continue;
     }
     found[file.slice(clientSrc.length + 1)] = runs;
@@ -419,6 +456,62 @@ describe("caller discovery reaches past the declaring file (I1)", () => {
     expect(countMutationRuns(oneStepDestructure, ["mutation"])).toBe(0);
     // The import is the only remaining signal — and it must fire.
     expect(importPatternFor("useEditorMutation").test(oneStepDestructure)).toBe(true);
+  });
+
+  it("I3: binds a handle whose type is narrowed with Pick<>", () => {
+    // I3 (review round 4, 2026-08-19). HANDLE_RE's deps-property alternative
+    // required the type name IMMEDIATELY after the colon, so a handle declared
+    // as `Pick<UseEditorMutationReturn, "run">` bound nothing: handles [],
+    // runs 0, and `importsHook` false (the import spells the TYPE name, not
+    // the hook). All three signals false, so discoverCallers skipped the file
+    // entirely and both numeric assertions compared unchanged numbers — a
+    // third unguarded mutation.run() caller shipping green, which is the one
+    // failure mode this file exists to prevent.
+    //
+    // Not contrived: narrowing a hook's return with Pick<> is established
+    // local habit (useEditorMutation.ts, useProjectEditor.ts) and non-
+    // `mutation` handle names are too. The two habits only have to meet once.
+    const picked = [
+      'import type { UseEditorMutationReturn } from "./useEditorMutation";',
+      'type Deps = { editorMutation: Pick<UseEditorMutationReturn, "run"> };',
+      "export function useThird(deps: Deps) {",
+      "  return deps.editorMutation.run(async () => ({ ok: true }));",
+      "}",
+    ].join("\n");
+    expect(extractMutationHandles(picked)).toContain("editorMutation");
+    expect(countMutationRuns(picked)).toBe(1);
+
+    // Same shape through ReturnType<typeof …>, and through Readonly<>.
+    const readonly = [
+      "type Deps = { mutationOp: Readonly<ReturnType<typeof useEditorMutation>> };",
+      "export function useFourth(deps: Deps) { return deps.mutationOp.run(f); }",
+    ].join("\n");
+    expect(extractMutationHandles(readonly)).toContain("mutationOp");
+    expect(countMutationRuns(readonly)).toBe(1);
+
+    // A neighbouring property on the same line must not steal the capture —
+    // that would mis-name the handle and silently lose the run count.
+    const neighbour = "type D = { a: string } & { m: UseEditorMutationReturn };";
+    expect(extractMutationHandles(neighbour)).toEqual(["m"]);
+
+    // Nor may a parameter steal it from the hook's own return annotation.
+    const declaration = "export function useEditorMutation(args: Args): UseEditorMutationReturn {";
+    expect(extractMutationHandles(declaration)).toEqual([]);
+  });
+
+  it("I3: follows a renaming destructure of a deps handle", () => {
+    // The structurally identical miss: `const { mutation: mut } = deps` binds
+    // the handle under a new name that `\bmutation` cannot find.
+    const renamed = [
+      "export function useFifth(deps: FindReplaceControllerDeps) {",
+      "  const { mutation: mut } = deps;",
+      "  return mut.run(f);",
+      "}",
+    ].join("\n");
+    expect(countMutationRuns(renamed, extractMutationHandles(renamed).concat("mutation"))).toBe(0);
+    // Against the tree-wide handle set, the rename hop is followed.
+    const handles = extractMutationHandles(`const mutation = useEditorMutation({});\n${renamed}`);
+    expect(handles).toContain("mut");
   });
 
   it("matches a type-only import of the hook", () => {
