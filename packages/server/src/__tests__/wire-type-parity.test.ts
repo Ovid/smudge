@@ -42,7 +42,7 @@ describe("server row types still satisfy the shared wire types (S11)", () => {
   });
 
   it("ChapterRow — the shape carried inside the project payload", () => {
-    expectTypeOf<NarrowStatus<Omit<ChapterRow, "content_corrupt">>>().toExtend<Chapter>();
+    expectTypeOf<NarrowStatus<Omit<ChapterRow, "content_parse_failed">>>().toExtend<Chapter>();
   });
 
   it("DeletedChapterRow — the shape served by the trash list", () => {

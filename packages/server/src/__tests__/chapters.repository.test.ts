@@ -100,7 +100,7 @@ describe("chapters repository", () => {
         const row = { id: "abc", content: "not valid json {{{" };
         const result = ChapterRepo.parseChapterContent(row);
         expect(result.content).toBeNull();
-        expect(result.content_corrupt).toBe(true);
+        expect(result.content_parse_failed).toBe(true);
       } finally {
         spy.mockRestore();
       }

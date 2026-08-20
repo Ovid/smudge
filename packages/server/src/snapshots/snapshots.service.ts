@@ -14,7 +14,7 @@ import { logger } from "../logger";
 import { applyImageRefDiff, extractImageIds, imageIdFromNode } from "../images/images.references";
 import {
   enrichChapterWithLabel,
-  stripCorruptFlag,
+  stripParseFailedFlag,
   type ChapterWithLabel,
 } from "../chapters/chapters.types";
 import { canonicalContentHash } from "./content-hash";
@@ -343,8 +343,8 @@ export async function restoreSnapshot(
     );
     // Route through the shared helper rather than destructuring inline so
     // any future additions to the corrupt-flag surface (e.g.
-    // content_corrupt_reason) stay in sync with the success path.
-    const clean = stripCorruptFlag(result.chapter);
+    // content_parse_failed_reason) stay in sync with the success path.
+    const clean = stripParseFailedFlag(result.chapter);
     return {
       chapter: { ...clean, status_label: result.chapter.status },
       dropped_image_count: result.dropped_image_count,

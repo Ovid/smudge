@@ -11,12 +11,12 @@ describe("parseChapterContent", () => {
     };
     const result = parseChapterContent(chapter) as unknown as Record<string, unknown>;
     expect(result.content).toEqual({ type: "doc", content: [] });
-    expect(result.content_corrupt).toBeUndefined();
+    expect(result.content_parse_failed).toBeUndefined();
     expect(result.id).toBe("abc");
     expect(result.title).toBe("Test");
   });
 
-  it("returns null content with content_corrupt flag and logs error when JSON is corrupt", () => {
+  it("returns null content with content_parse_failed flag and logs error when JSON is corrupt", () => {
     const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
     const chapter = {
       id: "abc",
@@ -25,7 +25,7 @@ describe("parseChapterContent", () => {
     };
     const result = parseChapterContent(chapter) as unknown as Record<string, unknown>;
     expect(result.content).toBeNull();
-    expect(result.content_corrupt).toBe(true);
+    expect(result.content_parse_failed).toBe(true);
     expect(result.id).toBe("abc");
     expect(errorSpy).toHaveBeenCalledOnce();
     expect(errorSpy).toHaveBeenCalledWith(
@@ -81,7 +81,7 @@ describe("parseChapterContent integration — corrupt DB content", () => {
     };
     const result = parseChapterContent(chapter) as unknown as Record<string, unknown>;
     expect(result.content).toBeNull();
-    expect(result.content_corrupt).toBe(true);
+    expect(result.content_parse_failed).toBe(true);
     expect(result.title).toBe("Corrupt Chapter");
     // Must log the chapter id so the corrupt row can be found
     expect(errorSpy).toHaveBeenCalledWith(
@@ -119,7 +119,7 @@ describe('parseChapterContent — "valid JSON, wrong shape" (I6)', () => {
   //
   // Guarding only the JSON.parse THROW let "42" / "[]" / "null" / '"text"'
   // through: they parse fine and returned e.g. `{ ...row, content: 42 }` with
-  // NO content_corrupt flag. isCorruptChapter was then false, the row was
+  // NO content_parse_failed flag. isCorruptChapter was then false, the row was
   // served as healthy, and the designed CORRUPT_CONTENT route could not fire.
   //
   // Reachability is a hand-edited DB, a restored backup, or a legacy row —
@@ -142,7 +142,7 @@ describe('parseChapterContent — "valid JSON, wrong shape" (I6)', () => {
     }) as unknown as Record<string, unknown>;
 
     expect(result.content).toBeNull();
-    expect(result.content_corrupt).toBe(true);
+    expect(result.content_parse_failed).toBe(true);
     expect(result.id).toBe("abc");
     expect(errorSpy).toHaveBeenCalledWith(
       expect.objectContaining({ chapter_id: "abc" }),
@@ -158,7 +158,7 @@ describe('parseChapterContent — "valid JSON, wrong shape" (I6)', () => {
       content: '{"type":"doc","content":[]}',
     }) as unknown as Record<string, unknown>;
     expect(result.content).toEqual({ type: "doc", content: [] });
-    expect(result.content_corrupt).toBeUndefined();
+    expect(result.content_parse_failed).toBeUndefined();
   });
 });
 
@@ -170,7 +170,7 @@ describe("parseChapterContent — object-but-not-a-document is corrupt (F-10)", 
   // CORRUPT_CONTENT route, on the weakest check of the three.
   //
   // A stored `{"foo":1}` passed, was served as a healthy chapter with
-  // `content_corrupt` unset, rendered as nothing, and the CORRUPT_CONTENT
+  // `content_parse_failed` unset, rendered as nothing, and the CORRUPT_CONTENT
   // route could never fire for it.
   it.each([
     ["a bare object with no type", '{"foo":1}'],
@@ -187,7 +187,7 @@ describe("parseChapterContent — object-but-not-a-document is corrupt (F-10)", 
     }) as unknown as Record<string, unknown>;
 
     expect(result.content).toBeNull();
-    expect(result.content_corrupt).toBe(true);
+    expect(result.content_parse_failed).toBe(true);
     expect(errorSpy).toHaveBeenCalledWith(
       expect.objectContaining({ chapter_id: "abc" }),
       "Corrupt JSON in chapter content",
@@ -288,6 +288,6 @@ describe("parseChapterContent — real manuscript shapes stay readable (F-10 saf
     }) as unknown as Record<string, unknown>;
 
     expect(result.content).toEqual(doc);
-    expect(result.content_corrupt).toBeUndefined();
+    expect(result.content_parse_failed).toBeUndefined();
   });
 });

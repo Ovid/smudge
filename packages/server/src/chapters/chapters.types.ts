@@ -3,7 +3,7 @@ export interface ChapterRow {
   project_id: string;
   title: string;
   content: Record<string, unknown> | null;
-  content_corrupt?: boolean;
+  content_parse_failed?: boolean;
   sort_order: number;
   word_count: number;
   status: string;
@@ -47,7 +47,7 @@ export interface DeletedChapterRow {
   content: null;
 }
 
-export interface ChapterWithLabel extends Omit<ChapterRow, "content_corrupt"> {
+export interface ChapterWithLabel extends Omit<ChapterRow, "content_parse_failed"> {
   status_label: string;
 }
 
@@ -65,26 +65,26 @@ export interface UpdateChapterData {
 
 // --- Helpers ---
 
-export function isCorruptChapter(chapter: { content_corrupt?: boolean }): boolean {
-  return chapter.content_corrupt === true;
+export function isCorruptChapter(chapter: { content_parse_failed?: boolean }): boolean {
+  return chapter.content_parse_failed === true;
 }
 
 /**
- * Drop the internal `content_corrupt` flag before a row crosses into a wire
+ * Drop the internal `content_parse_failed` flag before a row crosses into a wire
  * type. The single owner of the corrupt-flag surface: adding a field to that
  * surface must mean editing exactly this function.
  *
  * I5 (dedup review 2026-07-26): generic over any row carrying the optional
  * flag, rather than `ChapterRow` only. The narrow signature is why
  * enrichChaptersWithLabels' generic overload — which sees
- * `{ status: string; content_corrupt?: unknown }` — inlined its own strip
+ * `{ status: string; content_parse_failed?: unknown }` — inlined its own strip
  * instead of calling this. Rest-destructuring an ABSENT key omits nothing, so
  * one unconditional call covers rows with and without the flag alike.
  */
-export function stripCorruptFlag<T extends { content_corrupt?: unknown }>(
+export function stripParseFailedFlag<T extends { content_parse_failed?: unknown }>(
   chapter: T,
-): Omit<T, "content_corrupt"> {
-  const { content_corrupt: _, ...rest } = chapter;
+): Omit<T, "content_parse_failed"> {
+  const { content_parse_failed: _, ...rest } = chapter;
   return rest;
 }
 
@@ -99,7 +99,7 @@ export async function enrichChapterWithLabel(
   provider: StatusLabelProvider,
   chapter: ChapterRow,
 ): Promise<ChapterWithLabel> {
-  const clean = stripCorruptFlag(chapter);
+  const clean = stripParseFailedFlag(chapter);
   const status_label = await provider.getStatusLabel(chapter.status);
   return { ...clean, status_label };
 }
@@ -116,7 +116,7 @@ export function enrichChaptersWithLabels<T extends { status: string }>(
 ): Promise<(T & { status_label: string })[]>;
 export async function enrichChaptersWithLabels(
   provider: StatusLabelProvider,
-  chapters: { status: string; content_corrupt?: unknown }[],
+  chapters: { status: string; content_parse_failed?: unknown }[],
   labelMap?: Record<string, string>,
 ): Promise<unknown[]> {
   const map = labelMap ?? (await provider.getStatusLabelMap());
@@ -124,7 +124,7 @@ export async function enrichChaptersWithLabels(
   // guard was behaviorally redundant — rest-destructuring an absent key omits
   // nothing — so both arms collapse into the shared helper.
   return chapters.map((ch) => ({
-    ...stripCorruptFlag(ch),
+    ...stripParseFailedFlag(ch),
     status_label: map[ch.status] ?? ch.status,
   }));
 }

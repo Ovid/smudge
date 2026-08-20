@@ -5,7 +5,7 @@ import { logger } from "../logger";
 import { applyImageRefDiff } from "../images/images.references";
 import {
   isCorruptChapter,
-  stripCorruptFlag,
+  stripParseFailedFlag,
   enrichChapterWithLabel,
   type ChapterWithLabel,
   type RestoredChapterResponse,
@@ -158,7 +158,7 @@ export async function updateChapter(
       { err, project_id: projectId, chapter_id: id },
       "enrichChapterWithLabel failed after save; returning status as label",
     );
-    enriched = { ...stripCorruptFlag(updated), status_label: updated.status };
+    enriched = { ...stripParseFailedFlag(updated), status_label: updated.status };
   }
   return { chapter: enriched };
 }
