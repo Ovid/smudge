@@ -622,6 +622,26 @@ describe("DELETE /api/projects/:slug", () => {
 // live edit riding alongside it. Only chapters had that pinned; over-applying
 // `.strict()` here would have broken the same property with nothing red.
 describe("PATCH /api/projects/:slug — unknown fields are stripped, not honoured", () => {
+  // Review 67c00204 S6: the pair below pinned only the strip side. The F-25
+  // note argues the strip is safe *because* it is "not a silent no-op" — an
+  // unknown-only body still 400s — and that half was pinned for chapters
+  // only. Without this case, switching the schema to .passthrough() (the
+  // change that would reintroduce 200-for-a-write-that-changed-nothing)
+  // stays green here.
+  it("400s a body of only unknown fields rather than reporting a no-op success", async () => {
+    const create = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Strip Test Unknown Only", mode: "fiction" });
+
+    const res = await request(t.app)
+      .patch(`/api/projects/${create.body.slug}`)
+      .send({ taget_word_count: 50000 });
+
+    // Stripping leaves {}, which trips the "at least one field" refine.
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+  });
+
   it("still applies the known fields when an unknown one rides along", async () => {
     const create = await request(t.app)
       .post("/api/projects")
