@@ -615,7 +615,7 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
 - **Status note (one site beyond the four, found while fixing):** `UpdateSettingsSchema`'s outer `.strict()` does **not** reach inside its `settings` array, so `{key, value, valeu}` remained the identical silent no-op one level down — the same flaw, at the same endpoint. The entry object therefore carries its own `.strict()`. Both levels are pinned by their own test.
 - **Status note (tests):** six cases added to `packages/shared/src/__tests__/schemas.test.ts`, following the existing `"rejects unknown keys (strict)"` idiom the snapshot and outtake schemas already use. Confirmed RED before the change (5 failures — one per new strict assertion), GREEN after. `ReorderChaptersSchema` had no describe block at all and gained one.
 - **Status date:** 2026-08-20 10:52 UTC
-- **Status commit:** PENDING
+- **Status commit:** d9b0d9a9
 
 ### [F-26] `POST /api/chapters/{id}/snapshots` returns two status codes with two body shapes, and the 200 ships server-authored user copy
 
