@@ -285,3 +285,15 @@
 - **First seen:** 2026-08-20 on branch `ovid/architecture` at `67c00204`
 - **Last seen:** 2026-08-20 on branch `ovid/architecture` at `67c00204`
 - **Severity:** Suggestion
+
+## `767fdc1e` — `restoreChapter`'s post-commit `enrichChapterWithLabel` is unguarded; a DB throw turns a committed restore into an unmapped 500
+- **File (at first sighting):** `packages/server/src/chapters/chapters.service.ts:373`
+- **Symbol:** `restoreChapter`
+- **Bug class:** Logic
+- **Description:** `restoreChapter`'s post-commit `enrichChapterWithLabel(store, restored)` at `chapters.service.ts:373` is unguarded. Both siblings wrap the identical call in try/catch and degrade to status-as-label: `updateChapter` (`:147-166`), `snapshots.service.restoreSnapshot` (`:331-352`). A DB throw after commit (SQLITE_BUSY, `{max:1}` pool acquire timeout, I/O error) yields a generic 500 `INTERNAL_ERROR`, which the client `trash.restoreChapter` scope does not list in `committedCodes`, so the user is told a committed restore failed and the retry then 404s. A missing status row does NOT trigger it (`getStatusLabel` returns `row?.label ?? status`); only a thrown DB error does. Same unguarded shape at `projects.service.createChapter:240`.
+- **Suggested fix:** Wrap it in the same try/catch the two siblings use: log the error and fall back to `{ ...stripParseFailedFlag(restored), status_label: restored.status }`. Note `projects.service.createChapter:240` has the identical shape; the comment at `projects.service.ts:236-239` argues only that the VALUE is safe (seeded, immutable `chapter_statuses` table), which is true but says nothing about the call THROWING. Guarding inside `enrichChapterWithLabel` itself would close both sites in one edit.
+- **Confidence:** Medium
+- **Found by:** Logic & Correctness, Error Handling & Edge Cases, Concurrency & State (`claude-opus-5[1m]`)
+- **First seen:** 2026-08-20 on branch `ovid/architecture` at `09aaba1e`
+- **Last seen:** 2026-08-20 on branch `ovid/architecture` at `09aaba1e`
+- **Severity:** Important
