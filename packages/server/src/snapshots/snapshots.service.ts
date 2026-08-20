@@ -83,21 +83,36 @@ export async function createSnapshot(
 
 export async function listSnapshots(chapterId: string): Promise<SnapshotListItem[] | null> {
   const store = getProjectStore();
-  const chapter = await store.findChapterById(chapterId);
-  if (!chapter) return null;
-  return store.listSnapshotsByChapter(chapterId);
+  // F-29: the liveness check and the read are ONE transaction, matching
+  // listOuttakes (outtakes.service.ts) and deleteSnapshot below. Split across
+  // two round trips, a chapter soft-delete landing between them answered
+  // 200-with-data for a chapter the writer had just trashed.
+  //
+  // Every call below must go through txStore, never the outer store: Knex's
+  // better-sqlite3 pool is max:1, so a non-scoped call from inside a
+  // transaction starves on the sole connection until timeout rather than
+  // failing fast.
+  return store.transaction(async (txStore) => {
+    const chapter = await txStore.findChapterById(chapterId);
+    if (!chapter) return null;
+    return txStore.listSnapshotsByChapter(chapterId);
+  });
 }
 
 export async function getSnapshot(id: string): Promise<SnapshotRow | null> {
   const store = getProjectStore();
-  const snap = await store.findSnapshotById(id);
-  if (!snap) return null;
-  // Treat snapshots whose parent chapter is soft-deleted as 404. CLAUDE.md
-  // requires every query to filter deleted_at IS NULL; the raw snapshot
-  // read bypasses the join, so enforce it here.
-  const chapter = await store.findChapterByIdRaw(snap.chapter_id);
-  if (!chapter) return null;
-  return snap;
+  // F-29: both reads in ONE transaction — see listSnapshots above for the
+  // rationale and the txStore-only rule.
+  return store.transaction(async (txStore) => {
+    const snap = await txStore.findSnapshotById(id);
+    if (!snap) return null;
+    // Treat snapshots whose parent chapter is soft-deleted as 404. CLAUDE.md
+    // requires every query to filter deleted_at IS NULL; the raw snapshot
+    // read bypasses the join, so enforce it here.
+    const chapter = await txStore.findChapterByIdRaw(snap.chapter_id);
+    if (!chapter) return null;
+    return snap;
+  });
 }
 
 export async function deleteSnapshot(id: string): Promise<boolean> {

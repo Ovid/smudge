@@ -133,14 +133,14 @@ describe("POST /api/projects", () => {
     expect(res.body.slug).toBe("my-novel");
   });
 
-  it("returns 400 when title duplicates an existing project", async () => {
+  it("returns 409 when title duplicates an existing project", async () => {
     await request(t.app).post("/api/projects").send({ title: "My Novel", mode: "fiction" });
 
     const res = await request(t.app)
       .post("/api/projects")
       .send({ title: "My Novel", mode: "fiction" });
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(409);
     expect(res.body.error.code).toBe("PROJECT_TITLE_EXISTS");
   });
 
@@ -263,7 +263,7 @@ describe("PATCH /api/projects/:slug", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns 400 when renaming to a duplicate title", async () => {
+  it("returns 409 when renaming to a duplicate title", async () => {
     await request(t.app).post("/api/projects").send({ title: "First", mode: "fiction" });
     const second = await request(t.app)
       .post("/api/projects")
@@ -273,7 +273,7 @@ describe("PATCH /api/projects/:slug", () => {
       .patch(`/api/projects/${second.body.slug}`)
       .send({ title: "First" });
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(409);
     expect(res.body.error.code).toBe("PROJECT_TITLE_EXISTS");
   });
 
@@ -610,5 +610,56 @@ describe("DELETE /api/projects/:slug", () => {
 
     const chapters = await t.db("chapters").where({ project_id: projectId });
     expect(chapters.every((c: { deleted_at: string | null }) => c.deleted_at !== null)).toBe(true);
+  });
+});
+
+// Safety net for F-25. `UpdateProjectSchema` is `.partial()` + "at least one
+// field", so Zod STRIPS unknown keys rather than rejecting them — and that
+// leniency has to survive the F-25 change, which adds `.strict()` to the four
+// NON-partial request schemas only. The three `.partial()` PATCH schemas stay
+// lenient for the reason chapters.test.ts already records at its own
+// equivalent pair: a stale client sending one dead field must not lose the
+// live edit riding alongside it. Only chapters had that pinned; over-applying
+// `.strict()` here would have broken the same property with nothing red.
+describe("PATCH /api/projects/:slug — unknown fields are stripped, not honoured", () => {
+  // Review 67c00204 S6: the pair below pinned only the strip side. The F-25
+  // note argues the strip is safe *because* it is "not a silent no-op" — an
+  // unknown-only body still 400s — and that half was pinned for chapters
+  // only. Without this case, switching the schema to .passthrough() (the
+  // change that would reintroduce 200-for-a-write-that-changed-nothing)
+  // stays green here.
+  it("400s a body of only unknown fields rather than reporting a no-op success", async () => {
+    const create = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Strip Test Unknown Only", mode: "fiction" });
+
+    const res = await request(t.app)
+      .patch(`/api/projects/${create.body.slug}`)
+      .send({ taget_word_count: 50000 });
+
+    // Stripping leaves {}, which trips the "at least one field" refine.
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("still applies the known fields when an unknown one rides along", async () => {
+    const create = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Strip Test", mode: "fiction" });
+
+    const res = await request(t.app)
+      .patch(`/api/projects/${create.body.slug}`)
+      // F-25's own evidence uses this exact typo as its motivating example.
+      .send({ title: "Renamed", taget_word_count: 50000 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.title).toBe("Renamed");
+    expect(res.body.taget_word_count).toBeUndefined();
+
+    // Renaming regenerates the slug (projects.service.ts:151), so re-read
+    // through the slug the response just handed back, not the original.
+    const reread = await request(t.app).get(`/api/projects/${res.body.slug}`);
+    expect(reread.status).toBe(200);
+    expect(reread.body.title).toBe("Renamed");
   });
 });

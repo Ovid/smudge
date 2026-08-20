@@ -228,6 +228,38 @@ describe("PATCH /api/images/:id", () => {
     expect(res.body.error.code).toBe("VALIDATION_ERROR");
   });
 
+  // Safety net for F-25 — the `UpdateImageSchema` half of the same rule the
+  // projects.test.ts pair records. F-25 adds `.strict()` to the four
+  // non-partial request schemas only; the `.partial()` PATCH group, this one
+  // included, stays lenient so a stale client's dead field cannot take a live
+  // edit down with it.
+  // Review 67c00204 S6: the mixed-body case below pins only the strip side.
+  // The nearest 400 coverage was an EMPTY body, which trips the same refine
+  // without ever sending an unknown key — so a switch to .passthrough() would
+  // have stayed green. This is the "not a silent no-op" half of F-25's note.
+  it("400s a body of only unknown fields rather than reporting a no-op success", async () => {
+    const projectId = await createTestProject();
+    const imageId = await uploadTestImage(projectId);
+
+    const res = await request(t.app).patch(`/api/images/${imageId}`).send({ captoin: "typo" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("still applies the known fields when an unknown one rides along", async () => {
+    const projectId = await createTestProject();
+    const imageId = await uploadTestImage(projectId);
+
+    const res = await request(t.app)
+      .patch(`/api/images/${imageId}`)
+      .send({ alt_text: "A test image", captoin: "typo'd field" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.alt_text).toBe("A test image");
+    expect(res.body.captoin).toBeUndefined();
+  });
+
   it("returns 404 for non-existent image", async () => {
     const res = await request(t.app)
       .patch("/api/images/00000000-0000-0000-0000-000000000000")

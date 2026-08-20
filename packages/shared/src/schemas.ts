@@ -10,10 +10,22 @@ export const ProjectMode = z.enum(["fiction", "nonfiction"]);
 export const ChapterStatus = z.enum(["outline", "rough_draft", "revised", "edited", "final"]);
 export type ChapterStatusValue = z.infer<typeof ChapterStatus>;
 
-export const CreateProjectSchema = z.object({
-  title: z.string().trim().min(1, "Title is required").max(500, "Title is too long"),
-  mode: ProjectMode,
-});
+// F-25: .strict() here and on the three schemas below. A typo'd field on a
+// non-strict request schema answers 200 having changed nothing, while the
+// same stray key on an outtake answers 400 — the divergence this closes.
+// The three .partial() PATCH schemas (UpdateProjectSchema,
+// UpdateChapterSchema, UpdateImageSchema) deliberately stay lenient: a
+// tested, documented decision pins unknown keys as STRIPPED, not rejected
+// (see chapters.test.ts, "unknown fields are stripped, not honoured"), so a
+// stale client's dead field cannot take a live edit down with it. They also
+// cannot take .strict() mechanically — each ends in .refine(), which returns
+// a ZodEffects with no such method.
+export const CreateProjectSchema = z
+  .object({
+    title: z.string().trim().min(1, "Title is required").max(500, "Title is too long"),
+    mode: ProjectMode,
+  })
+  .strict();
 
 export const UpdateProjectSchema = z
   .object({
@@ -60,9 +72,11 @@ export const TipTapDocSchema = z
     message: `TipTap document is malformed or exceeds maximum nesting depth (${MAX_TIPTAP_DEPTH}).`,
   });
 
-export const ReorderChaptersSchema = z.object({
-  chapter_ids: z.array(z.string().uuid()),
-});
+export const ReorderChaptersSchema = z
+  .object({
+    chapter_ids: z.array(z.string().uuid()),
+  })
+  .strict();
 
 export const UpdateChapterSchema = z
   .object({
@@ -94,12 +108,14 @@ export const EXPORT_CONTENT_TYPES: Record<ExportFormatType, string> = {
   epub: "application/epub+zip",
 };
 
-export const ExportSchema = z.object({
-  format: ExportFormat,
-  include_toc: z.boolean().default(true),
-  chapter_ids: z.array(z.string().uuid()).min(1).max(1000).optional(),
-  epub_cover_image_id: z.string().uuid().optional(),
-});
+export const ExportSchema = z
+  .object({
+    format: ExportFormat,
+    include_toc: z.boolean().default(true),
+    chapter_ids: z.array(z.string().uuid()).min(1).max(1000).optional(),
+    epub_cover_image_id: z.string().uuid().optional(),
+  })
+  .strict();
 
 export const UpdateImageSchema = z
   .object({
@@ -113,16 +129,23 @@ export const UpdateImageSchema = z
     message: "At least one field must be provided",
   });
 
-export const UpdateSettingsSchema = z.object({
-  settings: z
-    .array(
-      z.object({
-        key: z.string().min(1),
-        value: z.string(),
-      }),
-    )
-    .min(1, "At least one setting must be provided"),
-});
+export const UpdateSettingsSchema = z
+  .object({
+    settings: z
+      .array(
+        // The outer .strict() does not reach inside the array, so the entry
+        // object carries its own — without it `{key, value, valeu}` is the
+        // same silent no-op one level down.
+        z
+          .object({
+            key: z.string().min(1),
+            value: z.string(),
+          })
+          .strict(),
+      )
+      .min(1, "At least one setting must be provided"),
+  })
+  .strict();
 
 /**
  * Strip characters that would let a label spoof display in the snapshot

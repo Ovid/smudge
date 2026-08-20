@@ -18,9 +18,20 @@ export async function getAll(): Promise<Record<string, string>> {
 export async function update(
   settings: Array<{ key: string; value: string }>,
 ): Promise<{ errors: Record<string, string> } | null> {
-  const errors: Record<string, string> = {};
+  // Null-prototype: `key` comes straight off the request body, and
+  // `errors["__proto__"] = msg` on a plain object literal is a SILENT no-op —
+  // the rejection would vanish and the request would fall through to the
+  // upsert below with 204 (OOSS1).
+  const errors: Record<string, string> = Object.create(null) as Record<string, string>;
   for (const { key, value } of settings) {
-    const validator = SETTING_VALIDATORS[key];
+    // Own-property check for the same reason apiErrorMapper.ts:120-132 uses
+    // one on `err.code`: `key` is client-supplied and constrained only to a
+    // non-empty string, so a bare index walks Object.prototype. "toString"
+    // and "constructor" resolved to inherited functions truthy enough to
+    // pass both checks and COMMIT a junk row at 204; "hasOwnProperty",
+    // "valueOf" and "isPrototypeOf" threw a TypeError the global handler
+    // clamped to 500 for a well-formed client body (OOSS1).
+    const validator = Object.hasOwn(SETTING_VALIDATORS, key) ? SETTING_VALIDATORS[key] : undefined;
     if (!validator) {
       errors[key] = `Unknown setting: ${key}`;
     } else if (!validator(value)) {

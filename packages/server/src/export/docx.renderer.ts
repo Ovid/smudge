@@ -276,7 +276,13 @@ async function blockToParagraphs(
 
       case "heading": {
         const level = attrs.level as number;
-        const heading = HEADING_MAP[level];
+        // Own-property check, same reason as settings.service.ts's
+        // SETTING_VALIDATORS lookup (OOSS1): `level` comes off client-supplied
+        // TipTap JSON and is only *typed* as a number, so a crafted
+        // `attrs.level` of "toString" indexed through Object.prototype and put
+        // `function toString() { [native code] }` into the exported document's
+        // w:pStyle — JS source in a file the writer hands a beta reader.
+        const heading = Object.hasOwn(HEADING_MAP, level) ? HEADING_MAP[level] : undefined;
         if (heading) {
           return [
             new Paragraph({

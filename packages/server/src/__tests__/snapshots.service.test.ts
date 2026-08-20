@@ -3,6 +3,7 @@ import { randomUUID as uuid } from "node:crypto";
 import { setupTestDb } from "./test-helpers";
 import { logger } from "../logger";
 import { setVelocityService, resetVelocityService } from "../velocity/velocity.injectable";
+import { getProjectStore } from "../stores/project-store.injectable";
 
 const t = setupTestDb();
 
@@ -182,6 +183,45 @@ describe("snapshots.service", () => {
       const result = await listSnapshots(uuid());
       expect(result).toBeNull();
     });
+
+    // Safety net for F-29 (wrapping the liveness check + the read in ONE
+    // transaction). The case above passes an id that never existed, so it
+    // misses the soft-delete semantics entirely: findChapterById filters
+    // `deleted_at IS NULL`, and a trashed chapter must answer null rather
+    // than hand back the snapshots of a chapter the writer just binned.
+    it("returns null when the chapter is soft-deleted", async () => {
+      stubVelocity();
+      const { chapterId } = await createProjectAndChapter();
+      const { createSnapshot, listSnapshots } = await import("../snapshots/snapshots.service");
+      await createSnapshot(chapterId, "Before trashing");
+
+      await t
+        .db("chapters")
+        .where({ id: chapterId })
+        .update({ deleted_at: new Date().toISOString() });
+
+      expect(await listSnapshots(chapterId)).toBeNull();
+    });
+
+    // F-29 membership — see the equivalent test under getSnapshot() for why
+    // the not-called assertions on the outer store are the load-bearing half.
+    it("runs the liveness check and the snapshot list in one transaction", async () => {
+      stubVelocity();
+      const { chapterId } = await createProjectAndChapter();
+      const { createSnapshot, listSnapshots } = await import("../snapshots/snapshots.service");
+      await createSnapshot(chapterId, "Membership");
+
+      const store = getProjectStore();
+      const txSpy = vi.spyOn(store, "transaction");
+      const outerChapterRead = vi.spyOn(store, "findChapterById");
+      const outerListRead = vi.spyOn(store, "listSnapshotsByChapter");
+
+      expect(await listSnapshots(chapterId)).toHaveLength(1);
+
+      expect(txSpy).toHaveBeenCalledTimes(1);
+      expect(outerChapterRead).not.toHaveBeenCalled();
+      expect(outerListRead).not.toHaveBeenCalled();
+    });
   });
 
   describe("getSnapshot()", () => {
@@ -206,6 +246,57 @@ describe("snapshots.service", () => {
       const { getSnapshot } = await import("../snapshots/snapshots.service");
       const result = await getSnapshot(uuid());
       expect(result).toBeNull();
+    });
+
+    // Safety net for F-29. The case above returns at the FIRST check
+    // (findSnapshotById misses), so the parent-liveness check below it was
+    // entirely unexercised — both statements and branch. That check is
+    // findChapterByIdRaw, which despite the name DOES filter
+    // `deleted_at IS NULL`, and it is exactly the read F-29 moves inside a
+    // transaction alongside the snapshot read.
+    it("returns null when the parent chapter is soft-deleted", async () => {
+      stubVelocity();
+      const { chapterId } = await createProjectAndChapter();
+      const { createSnapshot, getSnapshot } = await import("../snapshots/snapshots.service");
+      const created = (await createSnapshot(chapterId, "Before trashing")) as Exclude<
+        Awaited<ReturnType<typeof createSnapshot>>,
+        null | "duplicate"
+      >;
+
+      await t
+        .db("chapters")
+        .where({ id: chapterId })
+        .update({ deleted_at: new Date().toISOString() });
+
+      expect(await getSnapshot(created.id)).toBeNull();
+    });
+
+    // F-29 membership. The safety net above passes with or without the
+    // transaction — it only pins the ANSWER. This pins the fix: one
+    // transaction is opened, and both reads run on the transaction-scoped
+    // store, never the captured outer one. The outer-store assertions are the
+    // load-bearing half: Knex's better-sqlite3 pool is max:1, so a non-scoped
+    // call from inside a transaction starves on the sole connection until
+    // timeout rather than failing fast.
+    it("runs the snapshot read and the parent-liveness check in one transaction", async () => {
+      stubVelocity();
+      const { chapterId } = await createProjectAndChapter();
+      const { createSnapshot, getSnapshot } = await import("../snapshots/snapshots.service");
+      const created = (await createSnapshot(chapterId, "Membership")) as Exclude<
+        Awaited<ReturnType<typeof createSnapshot>>,
+        null | "duplicate"
+      >;
+
+      const store = getProjectStore();
+      const txSpy = vi.spyOn(store, "transaction");
+      const outerSnapshotRead = vi.spyOn(store, "findSnapshotById");
+      const outerChapterRead = vi.spyOn(store, "findChapterByIdRaw");
+
+      expect(await getSnapshot(created.id)).not.toBeNull();
+
+      expect(txSpy).toHaveBeenCalledTimes(1);
+      expect(outerSnapshotRead).not.toHaveBeenCalled();
+      expect(outerChapterRead).not.toHaveBeenCalled();
     });
   });
 

@@ -122,9 +122,20 @@ export async function uploadImage(projectId: string, file: FileInput): Promise<U
 
 export async function listImages(projectId: string): Promise<ImageRow[] | null> {
   const store = getProjectStore();
-  const project = await store.findProjectById(projectId);
-  if (!project) return null;
-  return store.listImagesByProject(projectId);
+  // F-29: the liveness check and the read are ONE transaction, matching
+  // listOuttakes (outtakes.service.ts) and the two snapshot read paths. Split
+  // across two round trips, a project soft-delete landing between them
+  // answered 200-with-data for a project the writer had just trashed.
+  //
+  // Every call below must go through txStore, never the outer store: Knex's
+  // better-sqlite3 pool is max:1, so a non-scoped call from inside a
+  // transaction starves on the sole connection until timeout rather than
+  // failing fast.
+  return store.transaction(async (txStore) => {
+    const project = await txStore.findProjectById(projectId);
+    if (!project) return null;
+    return txStore.listImagesByProject(projectId);
+  });
 }
 
 export async function serveImage(id: string): Promise<{ data: Buffer; mimeType: string } | null> {

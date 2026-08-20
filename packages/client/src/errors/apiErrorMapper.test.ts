@@ -522,7 +522,7 @@ describe("I4 — 2xx BAD_JSON on mutation scopes sets possiblyCommitted=true", (
 describe("SCOPES — project.create", () => {
   const scope = SCOPES["project.create"];
   it("PROJECT_TITLE_EXISTS → projectTitleExists copy (I12)", () => {
-    const err = new ApiRequestError("exists", 400, "PROJECT_TITLE_EXISTS");
+    const err = new ApiRequestError("exists", 409, "PROJECT_TITLE_EXISTS");
     expect(resolveError(err, scope).message).toBe(STRINGS.error.projectTitleExists);
   });
   it("500 → createFailed (fallback)", () => {
@@ -534,7 +534,7 @@ describe("SCOPES — project.create", () => {
 describe("SCOPES — project.updateTitle", () => {
   const scope = SCOPES["project.updateTitle"];
   it("PROJECT_TITLE_EXISTS → projectTitleExists copy (I12)", () => {
-    const err = new ApiRequestError("exists", 400, "PROJECT_TITLE_EXISTS");
+    const err = new ApiRequestError("exists", 409, "PROJECT_TITLE_EXISTS");
     expect(resolveError(err, scope).message).toBe(STRINGS.error.projectTitleExists);
   });
   it("500 → updateTitleFailed (fallback)", () => {

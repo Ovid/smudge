@@ -272,3 +272,16 @@
 - **Last seen:** 2026-06-04 on branch `operational-backup-stopgap` at `1aa1eec`
 - **Severity:** Suggestion
 
+
+## `6c588883` — F-29's liveness-check-plus-read atomicity applied at 3 sites; ~11 identical siblings left split
+- **File (at first sighting):** `packages/server/src/projects/projects.service.ts:112`
+- **Symbol:** `getProject`
+- **Bug class:** Logic
+- **Description:** F-29 wrapped the parent-liveness check and the child read in one `store.transaction` at `listImages`, `listSnapshots` and `getSnapshot`. Structurally identical check-then-act siblings stay split across two round trips: `projects.service.ts` `getProject:112`, `updateProject:133`, `createChapter:204`, `reorderChapters:248`, `getDashboard:281`; `images.service.ts` `uploadImage:73`, `getImageReferences:270`; `search.service.ts` `searchProject:128`, `replaceInProject:222`; `export.service.ts:36`; `velocity.service.ts:85`. Reads answer 200-with-data instead of 404 on a soft-delete race; the two write sites commit a row or rewrite chapters under a trashed project. The race is verified real: no `pool` key in `knexfile.ts`, Knex sqlite3 defaults to `{min:1,max:1}`, a real `BEGIN` is issued, and under WAL the read snapshot is pinned at the first read.
+- **Suggested fix:** Either wrap the remaining sites, prioritising `replaceInProject` (a write, and no I/O complication), or record in F-29's report entry which sites were knowingly left split and why. Two caveats: `uploadImage` does filesystem I/O the codebase deliberately keeps outside transactions on the max:1 pool (see `createChapter`'s comment at `:236-239`), and `getImageReferences` needs `scanImageReferences` to accept a store rather than calling `getProjectStore()` itself (the starvation trap the new F-29 comments warn about). At 11 sites a `withLiveProject(store, projectId, fn)` helper stops being speculative.
+- **Disposition (2026-08-20, `/paad:rethink`):** **Won't fix — the premise is false for 10 of the 11 sites.** Measured, not argued: a second request's handler cannot run between two awaited Knex/better-sqlite3 calls in this process (synchronous driver → microtask continuation → drains before Node polls network I/O; a `setImmediate` control in the same harness interleaved on hop 0). `getImageReferences` is a false positive (the `images` table has no soft delete). `uploadImage` is the one reachable site — its window contains a filesystem write, which does yield — but its outcome self-heals (restore yields the image correct; the 30-day trash purge deletes both row and directory), so it is left too. Full reasoning, the shape a future fix should take, and the conditions that would flip this are recorded in F-29's Status note in `paad/architecture-reviews/2026-08-11-smudge-architecture-report.md`. Entry kept rather than deleted so a later review that re-finds these sites lands on the measurement instead of re-deriving it.
+- **Confidence:** Medium
+- **Found by:** Logic & Correctness, Error Handling & Edge Cases, Contract & Integration (`claude-opus-5[1m]`)
+- **First seen:** 2026-08-20 on branch `ovid/architecture` at `67c00204`
+- **Last seen:** 2026-08-20 on branch `ovid/architecture` at `67c00204`
+- **Severity:** Suggestion
