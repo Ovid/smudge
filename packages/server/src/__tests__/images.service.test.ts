@@ -7,7 +7,7 @@ import { setupTestDb } from "./test-helpers";
 import * as imagesService from "../images/images.service";
 import { logger } from "../logger";
 import { getImagePath, mimeToExt } from "../images/images.paths";
-import { setProjectStore } from "../stores/project-store.injectable";
+import { setProjectStore, getProjectStore } from "../stores/project-store.injectable";
 import { SqliteProjectStore } from "../stores";
 import * as ImagesRepo from "../images/images.repository";
 
@@ -292,6 +292,31 @@ describe("images.service", () => {
         .update({ deleted_at: new Date().toISOString() });
 
       expect(await imagesService.listImages(projectId)).toBeNull();
+    });
+
+    // F-29 membership. The safety net above passes with or without the
+    // transaction — it only pins the ANSWER. This pins the fix: one
+    // transaction is opened, and both reads run on the transaction-scoped
+    // store, never the captured outer one. The outer-store assertions are the
+    // load-bearing half: Knex's better-sqlite3 pool is max:1, so a non-scoped
+    // call from inside a transaction starves on the sole connection until
+    // timeout rather than failing fast.
+    it("runs the liveness check and the image read in one transaction", async () => {
+      const projectId = await createTestProject();
+      const store = getProjectStore();
+      const spies = [
+        vi.spyOn(store, "transaction"),
+        vi.spyOn(store, "findProjectById"),
+        vi.spyOn(store, "listImagesByProject"),
+      ];
+      try {
+        expect(await imagesService.listImages(projectId)).toEqual([]);
+        expect(spies[0]).toHaveBeenCalledTimes(1);
+        expect(spies[1]).not.toHaveBeenCalled();
+        expect(spies[2]).not.toHaveBeenCalled();
+      } finally {
+        spies.forEach((s) => s.mockRestore());
+      }
     });
   });
 
