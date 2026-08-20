@@ -573,7 +573,7 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
 - **Status note (blast radius, checked rather than assumed):** every `initDb` call site was enumerated before the change. There are two contexts: `index.ts:31` (once, at startup) and `connection.test.ts`. The harness every other server test file uses, `setupTestDb`, goes through `setDb`/`setProjectStore` and never touches `initDb`.
 - **Status note (one assertion was replaced, with the developer's approval):** `connection.test.ts`'s _"initDb destroys the prior connection when called again"_ asserted precisely the behaviour this fix removes, so it is the same carve-out F-30 used — the flaw IS the behaviour being asserted. The replacement, _"initDb throws when already initialized, leaving the live connection intact"_, asserts strictly more than the original: it pins that the refusal leaves the existing handle both installed and queryable, which is the property that makes throwing safe rather than merely loud. Confirmed RED against the pre-fix code.
 - **Status date:** 2026-08-20 11:14 UTC
-- **Status commit:** PENDING
+- **Status commit:** bdf23316
 
 ### [F-22] `content_corrupt` names two incompatible contracts
 
@@ -668,7 +668,7 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
 - **Status reason (the 2026-08-17 deferral, superseded by this fix — kept as the record of why it waited):** Deferred, not rejected — the finding is real and still stands. It was selected for the 2026-08-17 fix session and dropped during planning once its **value** (not its cost) was verified. Three things moved it: (1) the fix would land **untested**, because the sibling it copies — `listOuttakes` — has no transaction-membership test either (`outtakes.service.test.ts` carries only its four behavioural cases), so there is no precedent test to extend and nothing observable to assert; (2) the race requires two concurrent writers, which a single-user app with a synchronous single-connection SQLite driver does not produce in normal use — it needs the same person trashing a project in one tab while listing snapshots in another; (3) the payoff is a wrong status code (200-with-data instead of 404), not data loss. That combination makes it pure conformance. The same reasoning was applied consistently in that session to F-28's `createChapter` half, which _was_ done on the narrower ground that its own file states the rule it breaks — a distinction worth re-examining rather than inheriting.
 - **Status note (feasibility already established — do not re-derive):** the fix is safe and cheap whenever it is picked up. `SqliteProjectStore.transaction` throws `"Nested transactions are not supported"` when already scoped, so nesting is the hazard to check — and all three functions are called **only** from routes (`snapshots.routes.ts:42`, `:61`, `images.routes.ts:83`), never from inside an existing transaction, so the wrap is safe at every site. The driver is better-sqlite3 11.10.0 via Knex 3.2.9 with a `max: 1` pool, so the only cost is one extra BEGIN/COMMIT holding the sole connection across two trivial reads. **The trap to avoid:** every call inside the callback must go through the transaction-scoped store, never the outer one — a non-scoped `store.*` call from inside a transaction starves on that single connection until timeout rather than failing fast.
 - **Status date:** 2026-08-20 10:08 UTC
-- **Status commit:** PENDING
+- **Status commit:** d121ad5a
 
 ### [F-30] Duplicate project title is a 400 where the codebase's other conflict cases are 409
 
@@ -684,7 +684,7 @@ The codebase remains unusually disciplined, and the findings skew accordingly: t
 - **Status note (five assertions were changed, with the developer's explicit approval):** the status code IS the behaviour this finding is about, so the tests pinning it had to move with it — `projects.test.ts` (duplicate create, duplicate rename), `error-taxonomy-contract.test.ts` (the envelope-contract case, name and assertion), and the two `apiErrorMapper.test.ts` fixtures. Only the status changed in each; every `error.code` and message assertion was left exactly as it was, which is what would still catch a fix that accidentally dropped the discriminating code. The two client fixtures would have stayed **green** at 400 (byCode wins), and were changed anyway to satisfy this file's own recorded convention twelve lines away — the `PROJECT_PURGED` case at `:602` says to pin the real-traffic status so a dropped `byCode` entry is caught by the precedence pin.
 - **Status note (two documents deliberately left stating 400):** `docs/plans/2026-03-29-project-slugs-design.md:54` and `docs/plans/2026-04-05-data-model-separation-plan.md:1948,1972` record the 400 contract. They are historical plan documents for shipped work; editing them would falsify the record of what was decided at the time. There is no living API-reference doc that names this code, and CLAUDE.md's §API Design does not either — it defines the 409 rule this fix now conforms to.
 - **Status date:** 2026-08-20 10:58 UTC
-- **Status commit:** PENDING
+- **Status commit:** 9c5439b5
 
 ### [F-31] Bare `catch {}` on the auto-save path, where its sibling logs
 
