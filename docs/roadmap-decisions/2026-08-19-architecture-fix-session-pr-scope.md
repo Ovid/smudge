@@ -52,6 +52,27 @@ one-feature rule, bounded as follows:
    `docs(report): [F-NN] record the fix commit SHA` commit. The finding ID is
    the traceability unit that the one-feature rule normally gets from the
    phase boundary.
+   **A placeholder-then-fill batch is allowed** (review of `67c00204`, finding
+   S4). A fix commit's SHA is not known until it exists, so the `Status commit`
+   field cannot be written in the same commit that creates it. Two ways of
+   closing that gap are legal: write the `Status:` block with a `PENDING`
+   placeholder and fill the SHAs in a later commit, or write the whole block
+   afterwards. Either way the filling commit is a **rule 2 commit, not a
+   mechanical one** — it answers to the findings whose SHAs it records, so it
+   is titled `docs(report): [F-NN][F-MM] record the fix commit SHAs` and names
+   every finding in its subject, exactly as rule 6's batching allowance
+   requires. It is **not** `[chore]`: rule 6 declines to require a `Status:`
+   block on follow-ups *because* `git log --oneline main..HEAD` is the
+   traceability surface, so a commit telling that surface there is no finding
+   behind it undercuts the trade the rule rests on.
+
+   The two commits that raised this — `63d567c8` and `67c00204` — are tagged
+   `[chore]` and the batched one names none of its four findings. They were
+   **not retagged**, for the reason rule 6 already gives twice: the rebase
+   would invalidate `d9b0d9a9`, which sits after `63d567c8` and is recorded as
+   F-25's `Status commit`, a worse traceability outcome than the one the rule
+   protects. The rule is corrected here so the next session does not repeat it.
+
 3. **Every finding carries a `Status:` block** in the report, recording what
    was done, what was deliberately _not_ done, and the fix commit SHA.
 4. **A finding whose fix is itself a feature is out of scope** for a fix
@@ -188,3 +209,12 @@ finds the precedent instead of re-deriving the violation.
 
 Rule 1 was amended and rule 6 gained a mechanical-follow-up clause on
 2026-08-19 (code review round 4 of this branch, findings S4, S5 and S7).
+
+Rule 2 gained the placeholder-then-fill clause on 2026-08-20
+(`paad/code-reviews/architecture-2026-08-20-13-47-08-67c00204.md`, finding S4).
+That is the **fifth** rule amendment made under pressure from a branch this
+file governs, and the honest reading is the one the provenance paragraph above
+already gives: each is argued on its merits, and each was written by the
+session it excuses. This one is the mildest of them — it does not widen the
+class of allowed commits, it narrows it, by moving a commit shape out of
+`[chore]` and back under rule 2's naming requirement.
