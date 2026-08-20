@@ -77,6 +77,27 @@ describe("db/connection", () => {
     await expect(first.raw("SELECT 1")).resolves.toBeDefined();
   });
 
+  // Review 67c00204 S1: initDb published `db` to the module global BEFORE the
+  // PRAGMAs and migrate.latest() that make it usable, with no try/catch. A
+  // rejecting migration therefore leaked a half-built handle that getDb()
+  // (truthiness only) happily returned — a connection whose migrations never
+  // ran. F-21 removed the destroy-and-replace path that used to heal it, so
+  // the retry now dies on "already initialized", a message that is false for
+  // exactly this state. Initialization must be all-or-nothing.
+  it("initDb leaves no handle installed when initialization fails, and a retry succeeds", async () => {
+    const broken = createTestKnexConfig();
+    broken.migrations = { directory: "/nonexistent/smudge-migrations", loadExtensions: [".js"] };
+
+    await expect(initDb(broken)).rejects.toThrow();
+
+    // The failed attempt must not have published anything.
+    expect(() => getDb()).toThrow("Database not initialized. Call initDb() first.");
+
+    // ...and the retry must not be refused as "already initialized".
+    const db = await initDb(createTestKnexConfig());
+    await expect(db("projects").select("*")).resolves.toEqual([]);
+  });
+
   it("setDb destroys the previously-set instance when replaced", async () => {
     const { setDb } = await import("../db/connection");
     const a = knex(createTestKnexConfig());
@@ -91,6 +112,29 @@ describe("db/connection", () => {
   it("closeDb destroys the connection without error", async () => {
     await initDb(createTestKnexConfig());
     await expect(closeDb()).resolves.toBeUndefined();
+  });
+
+  // Review 67c00204 S2: `db = undefined` sat after the await, not in a finally,
+  // so a rejecting teardown left the global populated. Since F-21, the next
+  // initDb() then throws "call closeDb() first" — the exact call that just
+  // failed — making the stuck state unrecoverable rather than self-correcting.
+  it("closeDb clears the handle even when destroy() rejects", async () => {
+    const { setDb } = await import("../db/connection");
+    const instance = knex(createTestKnexConfig());
+    const realDestroy = instance.destroy.bind(instance);
+    // knex's instance is a function object whose `destroy` is non-writable,
+    // so assignment throws — define over it instead.
+    Object.defineProperty(instance, "destroy", {
+      value: () => Promise.reject(new Error("teardown boom")),
+      configurable: true,
+    });
+    await setDb(instance);
+
+    await expect(closeDb()).rejects.toThrow("teardown boom");
+
+    // The failure is still reported, but the global must not be stuck.
+    expect(() => getDb()).toThrow("Database not initialized. Call initDb() first.");
+    await realDestroy();
   });
 
   it("closeDb is safe to call when no db exists", async () => {

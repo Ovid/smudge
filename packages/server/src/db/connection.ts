@@ -28,10 +28,13 @@ export function getDb(): Knex {
  * Production code should use initDb() instead.
  */
 export async function setDb(instance: Knex): Promise<void> {
-  if (db && db !== instance) {
-    await db.destroy();
-  }
+  const previous = db !== instance ? db : undefined;
+  // Install first, tear down after: a rejecting destroy() must not leave the
+  // global pointing at the handle it just tried to dispose of (review S1/S2).
   db = instance;
+  if (previous) {
+    await previous.destroy();
+  }
   // Raw SQL: PRAGMAs are SQLite-specific session settings with no Knex equivalent
   await db.raw("PRAGMA foreign_keys = ON");
 }
@@ -53,18 +56,34 @@ export async function initDb(config?: Knex.Config): Promise<Knex> {
   if (db) {
     throw new Error("Database already initialized — call closeDb() first");
   }
-  db = knex(config ?? createKnexConfig());
-  // Raw SQL: PRAGMAs are SQLite-specific session settings with no Knex equivalent
-  await db.raw("PRAGMA journal_mode = WAL");
-  await db.raw("PRAGMA foreign_keys = ON");
-  await db.raw(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
-  await db.migrate.latest();
+  // Build into a local and publish only on success. Publishing first would
+  // leave a half-built handle in the global if a PRAGMA or the migration
+  // rejects — getDb() checks truthiness only, so it would hand back a
+  // connection whose migrations never ran, and the retry would be refused
+  // with "already initialized", which is false for exactly that state.
+  const instance = knex(config ?? createKnexConfig());
+  try {
+    // Raw SQL: PRAGMAs are SQLite-specific session settings with no Knex equivalent
+    await instance.raw("PRAGMA journal_mode = WAL");
+    await instance.raw("PRAGMA foreign_keys = ON");
+    await instance.raw(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
+    await instance.migrate.latest();
+  } catch (err) {
+    await instance.destroy().catch(() => {});
+    throw err;
+  }
+  db = instance;
   return db;
 }
 
 export async function closeDb(): Promise<void> {
-  if (db) {
-    await db.destroy();
-    db = undefined;
+  const instance = db;
+  // Clear before the await: a rejecting destroy() still reports its failure,
+  // but must not strand the global. Since F-21 made initDb refuse a re-init,
+  // a stuck global is unrecoverable — the next initDb() would answer "call
+  // closeDb() first", the exact call that just failed.
+  db = undefined;
+  if (instance) {
+    await instance.destroy();
   }
 }
