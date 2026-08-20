@@ -31,9 +31,7 @@ export async function update(
     // pass both checks and COMMIT a junk row at 204; "hasOwnProperty",
     // "valueOf" and "isPrototypeOf" threw a TypeError the global handler
     // clamped to 500 for a well-formed client body (OOSS1).
-    const validator = Object.hasOwn(SETTING_VALIDATORS, key)
-      ? SETTING_VALIDATORS[key]
-      : undefined;
+    const validator = Object.hasOwn(SETTING_VALIDATORS, key) ? SETTING_VALIDATORS[key] : undefined;
     if (!validator) {
       errors[key] = `Unknown setting: ${key}`;
     } else if (!validator(value)) {
