@@ -26,7 +26,13 @@ import { expectConsole } from "./expectConsole";
 // commands — none of which this path touches.
 
 const { mockControls } = vi.hoisted(() => ({
-  mockControls: { flushSave: null as null | (() => Promise<boolean>) },
+  mockControls: {
+    flushSave: null as null | (() => Promise<boolean>),
+    // True once the mount effect below has published the editor handle into
+    // `editorRef`. Load-bearing, not diagnostic: `renderLoadedEditor` gates on
+    // it. See the comment there (F-37).
+    handlePublished: false,
+  },
 }));
 
 vi.mock("../components/Editor", async () => {
@@ -52,6 +58,10 @@ vi.mock("../components/Editor", async () => {
           flushSave: () => mockControls.flushSave?.() ?? Promise.resolve(true),
         };
       }
+      // Published from a useEffect, exactly as the real Editor does
+      // (Editor.tsx: `useEffect(... editorRef.current = {...}, [editor, editorRef])`).
+      // That timing is the whole reason renderLoadedEditor waits on this flag.
+      mockControls.handlePublished = true;
       onEditorReady?.(fake);
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -139,7 +149,26 @@ async function renderLoadedEditor() {
   );
   await waitFor(
     () => {
+      // The DOM node is NOT a sufficient gate, and waiting only on it is what
+      // made this file flake ~10% of runs (F-37, root-caused 2026-08-20).
+      //
+      // Both this mock and the real `Editor` publish the imperative handle
+      // from a passive `useEffect`, which React flushes in a LATER scheduler
+      // turn than the commit that puts the node in the DOM. `waitFor` runs
+      // with the act environment disabled (RTL's `asyncWrapper`) and notices
+      // the node via a MutationObserver, so under CPU contention — where
+      // React's scheduler yields on its 5ms deadline and takes several
+      // MessageChannel turns to drain — it can return inside that window.
+      //
+      // Ctrl+S then evaluated `await editorRef.current?.flushSave()` against a
+      // null ref: the optional chain yields `undefined`, `await undefined`
+      // resolves, the mock's throw never happens, nothing is caught, and there
+      // is no warning and no banner. Measured directly at a failure:
+      // `handlerRan=true publishedAtPress=false publishedAtAssert=true`.
+      //
+      // So gate on the handle — the fact these tests actually depend on.
       expect(screen.getByTestId("mock-editor")).toBeInTheDocument();
+      expect(mockControls.handlePublished).toBe(true);
     },
     { timeout: 3000 },
   );
@@ -159,6 +188,7 @@ describe("EditorPage Ctrl+S flush", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockControls.flushSave = null;
+    mockControls.handlePublished = false;
     vi.mocked(api.projects.get).mockResolvedValue(mockProject);
     vi.mocked(api.chapters.get).mockResolvedValue(mockChapter);
   });
