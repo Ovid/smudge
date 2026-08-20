@@ -211,19 +211,6 @@ export async function deleteChapter(id: string): Promise<boolean> {
 }
 
 /**
- * Restore a soft-deleted chapter.
- *
- * Side effects beyond clearing the chapter's `deleted_at` (F-8 — intentional,
- * but not evident from the signature):
- * - If the parent project was also soft-deleted, restores it too: clears its
- *   `deleted_at`, regenerates a unique slug, and bumps `updated_at`. Otherwise
- *   just bumps the parent's `updated_at` (all within the transaction).
- * - Increments image reference counts for the restored content (within the
- *   transaction, via {@link applyImageRefDiff}).
- * - Fires `velocityService.updateDailySnapshot` after commit — best-effort: a
- *   throw is logged and swallowed, never failing the restore.
- */
-/**
  * What {@link restoreChapter}'s transaction hands back: either the two rows the
  * response is built from, both read inside the transaction, or the sentinel.
  */
@@ -255,6 +242,19 @@ async function confirmRestore(
   return { chapter: restored, project };
 }
 
+/**
+ * Restore a soft-deleted chapter.
+ *
+ * Side effects beyond clearing the chapter's `deleted_at` (F-8 — intentional,
+ * but not evident from the signature):
+ * - If the parent project was also soft-deleted, restores it too: clears its
+ *   `deleted_at`, regenerates a unique slug, and bumps `updated_at`. Otherwise
+ *   just bumps the parent's `updated_at` (all within the transaction).
+ * - Increments image reference counts for the restored content (within the
+ *   transaction, via {@link applyImageRefDiff}).
+ * - Fires `velocityService.updateDailySnapshot` after commit — best-effort: a
+ *   throw is logged and swallowed, never failing the restore.
+ */
 export async function restoreChapter(
   id: string,
 ): Promise<
