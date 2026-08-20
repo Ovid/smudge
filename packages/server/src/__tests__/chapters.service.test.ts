@@ -545,10 +545,26 @@ describe("chapters.service", () => {
       await t.db("chapters").where({ id: chapterId }).update({ deleted_at: now });
 
       const store = getProjectStore();
-      // Only the outer store is stubbed. The in-transaction parent-liveness
-      // lookup runs on a transaction-scoped instance, so it still sees the
-      // real project and the restore itself proceeds normally.
+      const origTransaction = store.transaction.bind(store);
+      // The project is read TWICE: once at the top of the transaction as the
+      // parent-liveness check, once again to confirm the response. Only the
+      // second may miss — nulling the first throws ParentPurgedError and the
+      // test would assert the wrong branch. So the stub passes the first call
+      // through to the real store and misses every call after it.
+      //
+      // The outer store is stubbed too, so this stays a statement about the
+      // behaviour rather than about which object holds the confirming read.
       vi.spyOn(store, "findProjectByIdIncludingDeleted").mockResolvedValue(null);
+      vi.spyOn(store, "transaction").mockImplementation(async (fn) =>
+        origTransaction(async (txStore) => {
+          const orig = txStore.findProjectByIdIncludingDeleted.bind(txStore);
+          let call = 0;
+          vi.spyOn(txStore, "findProjectByIdIncludingDeleted").mockImplementation(async (pid) =>
+            call++ === 0 ? orig(pid) : null,
+          );
+          return fn(txStore);
+        }),
+      );
 
       try {
         expect(await restoreChapter(chapterId)).toBe("read_failure");

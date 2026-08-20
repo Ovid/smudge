@@ -7,10 +7,13 @@ import {
   isCorruptChapter,
   stripParseFailedFlag,
   enrichChapterWithLabel,
+  type ChapterRow,
   type ChapterWithLabel,
   type RestoredChapterResponse,
   type UpdateChapterData,
 } from "./chapters.types";
+import type { ProjectRow } from "../projects/projects.types";
+import type { ProjectStore } from "../stores/project-store.types";
 
 // --- Transaction control-flow errors ---
 
@@ -220,6 +223,38 @@ export async function deleteChapter(id: string): Promise<boolean> {
  * - Fires `velocityService.updateDailySnapshot` after commit — best-effort: a
  *   throw is logged and swallowed, never failing the restore.
  */
+/**
+ * What {@link restoreChapter}'s transaction hands back: either the two rows the
+ * response is built from, both read inside the transaction, or the sentinel.
+ */
+type RestoreTxOutcome = { chapter: ChapterRow; project: ProjectRow } | "read_failure";
+
+/**
+ * Re-read the restored chapter and its parent project through the
+ * transaction-scoped store, so the response reflects exactly what this
+ * transaction wrote.
+ *
+ * Returns a sentinel and MUST NOT throw. Throwing would roll the restore back,
+ * which would make `chapter.restore`'s `committedCodes:
+ * ["RESTORE_READ_FAILURE"]` (client `scopes.ts`) actively wrong — it would tell
+ * the writer "this may have saved, do not retry" for a chapter that provably
+ * was not. That is the same inversion F-12's status correction identified and
+ * rejected for outtakes.
+ */
+async function confirmRestore(
+  txStore: ProjectStore,
+  id: string,
+  projectId: string,
+): Promise<RestoreTxOutcome> {
+  const restored = await txStore.findChapterById(id);
+  if (!restored) return "read_failure";
+
+  const project = await txStore.findProjectByIdIncludingDeleted(projectId);
+  if (!project) return "read_failure";
+
+  return { chapter: restored, project };
+}
+
 export async function restoreChapter(
   id: string,
 ): Promise<
@@ -229,9 +264,23 @@ export async function restoreChapter(
   const chapter = await store.findDeletedChapterById(id);
   if (!chapter) return null;
 
+  // F-28: the confirming reads run INSIDE the transaction. Without that, a
+  // concurrent writer landing between commit and a post-tx read would let the
+  // other writer's state ride back in this response — the rule stated at
+  // updateChapter above and repeated at snapshots.service.restoreSnapshot.
+  // There is no observable delta in this process (better-sqlite3 is
+  // synchronous and Smudge is single-writer), but roadmap Phase 7g.2 deletes
+  // the guard that keeps it single-writer; see 7g.8.
+  //
+  // Two things deliberately stay OUTSIDE, and both are traps:
+  //  - the velocity snapshot, which is a post-commit best-effort side effect;
+  //  - enrichChapterWithLabel, which reaches the store for the status label.
+  //    Knex's better-sqlite3 pool is max:1, so a non-scoped `store.*` call from
+  //    inside a transaction STARVES until timeout rather than failing fast.
+  let txOutcome: RestoreTxOutcome;
   try {
     const now = new Date().toISOString();
-    await store.transaction(async (txStore) => {
+    txOutcome = await store.transaction<RestoreTxOutcome>(async (txStore) => {
       const parentProject = await txStore.findProjectByIdIncludingDeleted(chapter.project_id);
       if (!parentProject) {
         throw new ParentPurgedError();
@@ -246,7 +295,12 @@ export async function restoreChapter(
         // Distinguish by checking if the chapter exists as active.
         const alreadyActive = await txStore.findChapterById(id);
         if (alreadyActive) {
-          return; // Already restored by another request — no action needed
+          // Already restored by another request. The project-restore and the
+          // image-ref increment below belong to whichever request did the
+          // restore, so they are skipped here — but the response still has to
+          // be confirmed, and confirming inside the transaction is the whole
+          // point of F-28. Hence a returned outcome rather than a bare return.
+          return confirmRestore(txStore, id, chapter.project_id);
         }
         throw new ChapterPurgedError();
       }
@@ -274,6 +328,8 @@ export async function restoreChapter(
       if (restoredRow?.content) {
         await applyImageRefDiff(txStore, null, restoredRow.content, restoredRow.project_id);
       }
+
+      return confirmRestore(txStore, id, chapter.project_id);
     });
   } catch (err: unknown) {
     if (err instanceof ParentPurgedError) {
@@ -311,11 +367,8 @@ export async function restoreChapter(
     );
   }
 
-  const restored = await store.findChapterById(id);
-  if (!restored) return "read_failure";
-
-  const updatedProject = await store.findProjectByIdIncludingDeleted(chapter.project_id);
-  if (!updatedProject) return "read_failure";
+  if (txOutcome === "read_failure") return "read_failure";
+  const { chapter: restored, project: updatedProject } = txOutcome;
 
   const enriched = await enrichChapterWithLabel(store, restored);
   return {
