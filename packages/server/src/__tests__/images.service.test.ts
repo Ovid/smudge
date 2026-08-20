@@ -271,6 +271,28 @@ describe("images.service", () => {
       const images = await imagesService.listImages(projectId);
       expect(images).toHaveLength(2);
     });
+
+    // Safety net for F-29. Both cases above use a live project, so
+    // `if (!project) return null` had no service-level coverage. The route
+    // test covers a NONEXISTENT project; a soft-deleted one is the case
+    // findProjectById's `deleted_at IS NULL` filter exists for, and it is
+    // the check F-29 moves inside a transaction with the image read.
+    it("returns null when the project is soft-deleted", async () => {
+      const projectId = await createTestProject();
+      await imagesService.uploadImage(projectId, {
+        buffer: TEST_PNG,
+        originalname: "a.png",
+        mimetype: "image/png",
+        size: TEST_PNG.length,
+      });
+
+      await t
+        .db("projects")
+        .where({ id: projectId })
+        .update({ deleted_at: new Date().toISOString() });
+
+      expect(await imagesService.listImages(projectId)).toBeNull();
+    });
   });
 
   describe("serveImage()", () => {

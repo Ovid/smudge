@@ -612,3 +612,34 @@ describe("DELETE /api/projects/:slug", () => {
     expect(chapters.every((c: { deleted_at: string | null }) => c.deleted_at !== null)).toBe(true);
   });
 });
+
+// Safety net for F-25. `UpdateProjectSchema` is `.partial()` + "at least one
+// field", so Zod STRIPS unknown keys rather than rejecting them — and that
+// leniency has to survive the F-25 change, which adds `.strict()` to the four
+// NON-partial request schemas only. The three `.partial()` PATCH schemas stay
+// lenient for the reason chapters.test.ts already records at its own
+// equivalent pair: a stale client sending one dead field must not lose the
+// live edit riding alongside it. Only chapters had that pinned; over-applying
+// `.strict()` here would have broken the same property with nothing red.
+describe("PATCH /api/projects/:slug — unknown fields are stripped, not honoured", () => {
+  it("still applies the known fields when an unknown one rides along", async () => {
+    const create = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Strip Test", mode: "fiction" });
+
+    const res = await request(t.app)
+      .patch(`/api/projects/${create.body.slug}`)
+      // F-25's own evidence uses this exact typo as its motivating example.
+      .send({ title: "Renamed", taget_word_count: 50000 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.title).toBe("Renamed");
+    expect(res.body.taget_word_count).toBeUndefined();
+
+    // Renaming regenerates the slug (projects.service.ts:151), so re-read
+    // through the slug the response just handed back, not the original.
+    const reread = await request(t.app).get(`/api/projects/${res.body.slug}`);
+    expect(reread.status).toBe(200);
+    expect(reread.body.title).toBe("Renamed");
+  });
+});

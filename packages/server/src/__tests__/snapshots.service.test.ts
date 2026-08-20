@@ -182,6 +182,25 @@ describe("snapshots.service", () => {
       const result = await listSnapshots(uuid());
       expect(result).toBeNull();
     });
+
+    // Safety net for F-29 (wrapping the liveness check + the read in ONE
+    // transaction). The case above passes an id that never existed, so it
+    // misses the soft-delete semantics entirely: findChapterById filters
+    // `deleted_at IS NULL`, and a trashed chapter must answer null rather
+    // than hand back the snapshots of a chapter the writer just binned.
+    it("returns null when the chapter is soft-deleted", async () => {
+      stubVelocity();
+      const { chapterId } = await createProjectAndChapter();
+      const { createSnapshot, listSnapshots } = await import("../snapshots/snapshots.service");
+      await createSnapshot(chapterId, "Before trashing");
+
+      await t
+        .db("chapters")
+        .where({ id: chapterId })
+        .update({ deleted_at: new Date().toISOString() });
+
+      expect(await listSnapshots(chapterId)).toBeNull();
+    });
   });
 
   describe("getSnapshot()", () => {
@@ -206,6 +225,29 @@ describe("snapshots.service", () => {
       const { getSnapshot } = await import("../snapshots/snapshots.service");
       const result = await getSnapshot(uuid());
       expect(result).toBeNull();
+    });
+
+    // Safety net for F-29. The case above returns at the FIRST check
+    // (findSnapshotById misses), so the parent-liveness check below it was
+    // entirely unexercised — both statements and branch. That check is
+    // findChapterByIdRaw, which despite the name DOES filter
+    // `deleted_at IS NULL`, and it is exactly the read F-29 moves inside a
+    // transaction alongside the snapshot read.
+    it("returns null when the parent chapter is soft-deleted", async () => {
+      stubVelocity();
+      const { chapterId } = await createProjectAndChapter();
+      const { createSnapshot, getSnapshot } = await import("../snapshots/snapshots.service");
+      const created = (await createSnapshot(chapterId, "Before trashing")) as Exclude<
+        Awaited<ReturnType<typeof createSnapshot>>,
+        null | "duplicate"
+      >;
+
+      await t
+        .db("chapters")
+        .where({ id: chapterId })
+        .update({ deleted_at: new Date().toISOString() });
+
+      expect(await getSnapshot(created.id)).toBeNull();
     });
   });
 
