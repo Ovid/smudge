@@ -1,7 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve, join } from "node:path";
+import {
+  collectTsSources,
+  delegationPattern,
+  importPatternFor,
+  runCallPattern,
+  stripCommentsFromTsSource,
+} from "./tsSourceScan";
 import { tmpdir } from "node:os";
 
 // Consolidates the four near-identical "no raw seq-ref patterns" tests that
@@ -13,22 +20,6 @@ import { tmpdir } from "node:os";
 // convention (`*SeqRef`) that would signal someone hand-rolled a new
 // counter. One grep across the whole client source tree is enough.
 const clientSrcRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-
-// S1/S3 (review 2026-05-25): the prior `.run(` import-implies-call check
-// matched commented occurrences as if they were live code. A file
-// that imported the hook with a single `.run(` reference in a JSDoc
-// example silently passed the import-implies-call ban.
-//
-// Strips line (`// ...`) and block (`/* ... */`) comments from
-// TypeScript source so the structural checks see only executable code.
-// The regex pair is deliberately simple: it does not parse strings
-// (so `"// hello"` is shortened to `"`, which is fine for the
-// presence-checks we run downstream — we only care that real
-// references survive, not that the resulting source is parseable).
-// Block-comment regex is non-greedy so adjacent comments don't merge.
-export function stripCommentsFromTsSource(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
-}
 
 // Extracts every variable name bound from a `useAbortableAsyncOperation()`
 // call site. Re-review S1 (2026-05-25) fixed a regex false-pass: the prior
@@ -63,40 +54,6 @@ export function extractAbortableAsyncOperationBindings(source: string): string[]
   return names;
 }
 
-// Builds an import-statement regex for a named symbol. Matches a real ES
-// import (start of line, possibly indented) — not a bare reference,
-// comment, or string literal. Review (2026-05-24, Copilot) flagged the
-// prior bare-identifier match as too lax: a future comment or string
-// mention of the hook would have silently satisfied the assertion. The
-// `[^}]*` segments span newlines so multi-line `import { … }` blocks
-// still match.
-export function importPatternFor(name: string): RegExp {
-  return new RegExp(`^\\s*import\\s*\\{[^}]*\\b${name}\\b[^}]*\\}\\s*from\\s*["']`, "m");
-}
-
-export function collectTsSources(root: string): string[] {
-  const results: string[] = [];
-  for (const entry of readdirSync(root)) {
-    // Skip the __tests__ directory AND any co-located *.test.ts[x] file.
-    // Both forms are test code, not production: the __tests__ directory
-    // holds fixtures that intentionally reference `xSeqRef` in string
-    // literals to prove the ESLint rule catches them, and co-located test
-    // files (e.g. hooks/useAbortableSequence.test.ts) may grow similar
-    // fixtures in the future. Without the filename check, adding
-    // `xSeqRef` to any co-located test would false-positive this grep.
-    if (entry === "__tests__") continue;
-    if (/\.test\.(ts|tsx)$/.test(entry)) continue;
-    const full = join(root, entry);
-    const stat = statSync(full);
-    if (stat.isDirectory()) {
-      results.push(...collectTsSources(full));
-    } else if (/\.(ts|tsx)$/.test(entry)) {
-      results.push(full);
-    }
-  }
-  return results;
-}
-
 // 4b.3d S13: known delegation helpers — functions that accept an
 // AbortableAsyncOperation as an argument and call .run() on it
 // internally. A binding passed as an argument to one of these helpers
@@ -111,19 +68,13 @@ export function collectTsSources(root: string): string[] {
 // real factory). Add new entries here when new delegation helpers
 // are introduced.
 //
-// Limitation (review S1, 2026-05-28): the delegation-matching pattern
-// below uses `[^)]*` to span the argument list. `[^)]*` cannot
-// match a delegation call with nested parens — a future call like
-// `refreshTrashList(getProject(), projectRef, trashOp)` would silently
-// fail to recognize `trashOp` as consumed and surface a false-positive
-// "dead binding" offender. Today the only delegation site is
-// `refreshTrashList(project, projectRef, slugRef, trashOp)` (no nested parens),
-// so the check works. When a delegation call site needs nested parens,
-// extend the matcher with a paren-counting walker rather than tweaking
-// the regex — the symmetry with the inner `[^>]*` non-nested-generic
-// note on the `<binding>.run(` call pattern is deliberate (each
-// false-pass/false-fail surfaces as a forcing function rather than
-// silent drift).
+// Limitation (review S1, 2026-05-28): the delegation matcher cannot span a
+// nested-paren argument list. It now lives beside its own statement of that
+// ceiling in `delegationPattern` (tsSourceScan.ts) — S2, review round 3
+// (2026-08-19), which found the shape written out twice here, so the fixture
+// test could stay green while the production copy drifted. Both ceilings
+// (this one and `runCallPattern`'s) fail toward a false RED rather than a
+// silent pass, which is why each is a forcing function rather than drift.
 const KNOWN_DELEGATION_HELPERS = ["refreshTrashList"];
 
 describe("client source-tree migration structural check", () => {
@@ -220,24 +171,21 @@ describe("client source-tree migration structural check", () => {
         continue;
       }
       for (const name of bindings) {
-        // Word-boundary on the LEFT so `xOp.run(` doesn't satisfy a
-        // search for `p.run(` etc. Right-side allows an optional
-        // generic argument list (`<T>`) between `.run` and `(` so
-        // `saveOp.run<SaveLoopOutcome>(...)` in useProjectEditor.ts
-        // matches. Inner `[^>]*` is non-nested by design — the codebase
-        // uses single-level generics today; a future nested-generic
-        // call would surface as an offender, forcing the regex to be
-        // extended deliberately rather than silently false-passing.
-        const callPattern = new RegExp(`\\b${name}\\.run\\s*(?:<[^>]*>)?\\s*\\(`);
-        if (callPattern.test(source)) continue;
+        // The `<binding>.run(` shape is owned by `runCallPattern`
+        // (tsSourceScan.ts), shared with mutationCommittedSurface.test.ts so
+        // the two detectors cannot answer differently for the same text. It
+        // keeps the word boundary on the LEFT (so `xOp.run(` does not satisfy a
+        // search for `p.run(`) and tolerates a generic argument list — NESTED
+        // included, as of S4/round 2; the earlier `[^>]*` stopped at the inner
+        // `>` and reported a real call as a dead binding.
+        if (runCallPattern(name).test(source)) continue;
         // 4b.3d S13: accept delegation — the binding passed as an
         // argument to a known helper that calls .run() internally.
         // The helper's own tests confirm it calls .run() on the param,
         // so this is not a drift-detection hole.
-        const delegated = KNOWN_DELEGATION_HELPERS.some((helper) => {
-          const delegationPattern = new RegExp(`\\b${helper}\\s*\\([^)]*\\b${name}\\b[^)]*\\)`);
-          return delegationPattern.test(source);
-        });
+        const delegated = KNOWN_DELEGATION_HELPERS.some((helper) =>
+          delegationPattern(helper, name).test(source),
+        );
         if (!delegated) {
           offenders.push({
             file: relative,
@@ -318,14 +266,12 @@ describe("client source-tree migration structural check", () => {
     const bindings = extractAbortableAsyncOperationBindings(fixture);
     expect(bindings).toEqual(["trashOp"]);
     // The direct .run( pattern does NOT match (no `trashOp.run(` in source).
-    const directPattern = new RegExp(`\\b${bindings[0]}\\.run\\s*(?:<[^>]*>)?\\s*\\(`);
-    expect(directPattern.test(fixture)).toBe(false);
+    expect(runCallPattern(bindings[0]!).test(fixture)).toBe(false);
     // The delegation pattern DOES match (trashOp appears as an argument
-    // to refreshTrashList).
-    const delegationPattern = new RegExp(
-      `\\brefreshTrashList\\s*\\([^)]*\\b${bindings[0]}\\b[^)]*\\)`,
-    );
-    expect(delegationPattern.test(fixture)).toBe(true);
+    // to refreshTrashList). Both patterns are the same functions the
+    // production check calls, so this fixture cannot pin a shape the
+    // production copy has drifted away from (S2, review round 3).
+    expect(delegationPattern("refreshTrashList", bindings[0]!).test(fixture)).toBe(true);
   });
 
   it("extractAbortableAsyncOperationBindings extracts hook bindings and rejects mutation.run drift (S1 re-review 2026-05-25)", () => {
@@ -391,8 +337,7 @@ describe("client source-tree migration structural check", () => {
     expect(bindings).toEqual(["someOp"]);
     // someOp.run( does NOT appear; mutation.run<T>( does. The per-binding
     // pattern (with optional generic args) correctly rejects this.
-    const callPattern = new RegExp(`\\b${bindings[0]}\\.run\\s*(?:<[^>]*>)?\\s*\\(`);
-    expect(callPattern.test(driftFixture)).toBe(false);
+    expect(runCallPattern(bindings[0]!).test(driftFixture)).toBe(false);
 
     // Positive companion: the same pattern matches a real generic-arg
     // call when the receiver IS a hook binding. saveOp.run<SaveLoopOutcome>(...)
@@ -403,8 +348,124 @@ describe("client source-tree migration structural check", () => {
     `;
     const liveBindings = extractAbortableAsyncOperationBindings(liveFixture);
     expect(liveBindings).toEqual(["saveOp"]);
-    const livePattern = new RegExp(`\\b${liveBindings[0]}\\.run\\s*(?:<[^>]*>)?\\s*\\(`);
-    expect(livePattern.test(liveFixture)).toBe(true);
+    expect(runCallPattern(liveBindings[0]!).test(liveFixture)).toBe(true);
+  });
+
+  it("runCallPattern answers identically for both detectors (S4, review 2026-08-19)", () => {
+    // S4: the `<binding>.run(` matcher was duplicated here and in
+    // mutationCommittedSurface.test.ts, and the copies had diverged — the
+    // newer one tolerated a Prettier line-wrap and optional chaining, this
+    // one tolerated neither. The same source text got two different answers
+    // from two detectors scanning the same tree for the same construct, and
+    // here the wrapped shape produced a false RED (a cosmetic reflow of a
+    // real `.run(` call would report the binding as dead). One shared
+    // parameterised pattern in tsSourceScan.ts owns the shape now.
+    const pattern = runCallPattern("saveOp");
+    expect(pattern.test("saveOp.run(f);")).toBe(true);
+    expect(pattern.test("saveOp.run<SaveLoopOutcome>(f);")).toBe(true);
+    // The three shapes this copy used to miss.
+    expect(pattern.test("await saveOp\n  .run(f);")).toBe(true);
+    expect(pattern.test("saveOp?.run(f);")).toBe(true);
+    // Nested generic (review I2): `[^>]*` stopped at the inner `>`.
+    expect(pattern.test("saveOp.run<Array<string>>(f);")).toBe(true);
+    // Word boundary on the LEFT survives the rewrite.
+    expect(pattern.test("xsaveOp.run(f);")).toBe(false);
+  });
+
+  it("stripCommentsFromTsSource does not treat a comment token inside a string as a comment (S6)", () => {
+    // S6 (review 2026-08-19): the stripper moved out of this file verbatim,
+    // where every consumer was a PRESENCE check. mutationCommittedSurface.ts
+    // now derives equality-of-COUNTS decisions from its output, so
+    // over-stripping flips a numeric assertion instead of a boolean — and a
+    // dropped binding silently removes a file from caller discovery.
+    //
+    // The concrete latent failure: a glob string containing `/*` opened a
+    // block comment that ran to the next `*/` anywhere below, erasing every
+    // line in between. Confirmed no such literal exists in packages/client/src
+    // today; this pins the behaviour so one landing later is harmless.
+    const globAboveBinding = [
+      'const files = glob("**/*.ts");',
+      "const mutation = useEditorMutation({});",
+      "await mutation.run(f); /* trailing */",
+    ].join("\n");
+    expect(stripCommentsFromTsSource(globAboveBinding)).toContain(
+      "const mutation = useEditorMutation({});",
+    );
+    expect(stripCommentsFromTsSource(globAboveBinding)).toContain("mutation.run(f);");
+    // A comment token inside a string stays; a real comment beside it goes.
+    expect(stripCommentsFromTsSource(`const s = "a // b"; // gone`)).toBe(`const s = "a // b"; `);
+    expect(stripCommentsFromTsSource("const s = 'a /* b */ c';")).toBe("const s = 'a /* b */ c';");
+    // S3 (review round 3, 2026-08-19): a REGEX literal containing a quote used
+    // to be read as opening a string, which swallowed the real comment below
+    // it. Regex literals are now passed through verbatim, like strings.
+    const regexLiteral = ['const re = /"/;', '// a " mention', "const x = 1;"].join("\n");
+    const strippedRegexLiteral = stripCommentsFromTsSource(regexLiteral);
+    expect(strippedRegexLiteral).toContain('const re = /"/;');
+    expect(strippedRegexLiteral).not.toContain("//");
+    // Division is NOT mistaken for a regex. Under the parser this is decided
+    // correctly by construction rather than by a lookbehind heuristic (I2).
+    expect(stripCommentsFromTsSource("const r = a / b; // gone")).toBe("const r = a / b; ");
+  });
+
+  it("a regex literal containing a quote does not erase the code below it (S3)", () => {
+    // S3 (review round 3, 2026-08-19): the ceiling above was false in its
+    // load-bearing half. A regex literal read as an opening quote pairs with
+    // the NEXT quote, and the scanner then resumes mid-expression — where a
+    // `/*` inside a glob string can open a block comment that runs to the next
+    // real `*/` anywhere below, DELETING every line in between. Counts go DOWN,
+    // so a file silently drops out of mutationCommittedSurface's caller
+    // discovery: the silent green that ceiling promised was impossible.
+    const erasure = [
+      'const re = /"/;',
+      'const files = glob("**/*.ts");',
+      "const mutation = useEditorMutation({});",
+      "await mutation.run(f);",
+      "/* an ordinary block comment further down */",
+      "export {};",
+    ].join("\n");
+    const stripped = stripCommentsFromTsSource(erasure);
+    expect(stripped).toContain("const mutation = useEditorMutation({});");
+    expect(stripped).toContain("await mutation.run(f);");
+  });
+
+  it("I2: a regex or template in a position the old lookbehind missed does not erase code", () => {
+    // I2 (review round 4, 2026-08-19). The stripper was a hand-written regex
+    // whose regex-literal lookbehind class (`[=(,:[!&|?{};]`) held no `>` and
+    // admitted no keyword. So `=> /…/` and `return /…/` — two of the most
+    // common regex positions in TypeScript — never entered the regex branch.
+    // They fell through to the STRING alternative, which has no newline
+    // exclusion, so a fake literal ran to the next quote anywhere below and
+    // everything in between was deleted. Counts go DOWN: a file silently drops
+    // out of mutationCommittedSurface's caller discovery and the F-07 forcing
+    // pause ships green on an unguarded caller.
+    //
+    // Round 3's fixture (`const re = /"/;`) sits in a position the class DID
+    // admit, which is why the round-3 fix looked complete.
+    const afterArrow = "const isAbsolute = (s) => /^https?:\\/\\//.test(s) && mutation.run(f);";
+    expect(stripCommentsFromTsSource(afterArrow)).toBe(afterArrow);
+
+    const afterReturn = [
+      'function hasQuote(s) { return /"/.test(s); }',
+      'const files = glob("**/*.ts");',
+      "const mutation = useEditorMutation({});",
+      "await mutation.run(f);",
+      "/* an ordinary block comment further down */",
+    ].join("\n");
+    const strippedReturn = stripCommentsFromTsSource(afterReturn);
+    expect(strippedReturn).toContain("const mutation = useEditorMutation({});");
+    expect(strippedReturn).toContain("await mutation.run(f);");
+    expect(strippedReturn).not.toContain("an ordinary block comment");
+
+    // A `${…}` substitution holding a nested template: the old backtick
+    // alternative could not span it, so it closed early and deleted the rest.
+    const nestedTemplate =
+      'const css = `${rules.map((r) => `//${r}`).join("")}`; await mutation.run(f);';
+    expect(stripCommentsFromTsSource(nestedTemplate)).toBe(nestedTemplate);
+
+    // JSX text containing comment tokens is not code and not a comment. The
+    // regex had no notion of JSX at all; the parser does.
+    const jsxText = "const el = <div>see http://x and /* not a comment */</div>;";
+    expect(stripCommentsFromTsSource(jsxText)).toBe(jsxText);
   });
 
   it("stripCommentsFromTsSource removes line and block comments (S1/S3)", () => {

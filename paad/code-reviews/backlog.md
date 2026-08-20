@@ -32,18 +32,6 @@
 - **Last seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `20f2616`
 - **Severity:** Suggestion
 
-## `4d5b9e81` — Editor unmount-cleanup PATCH ignores `setEditable(false)` lock
-- **File (at first sighting):** `packages/client/src/components/Editor.tsx:218`
-- **Symbol:** `Editor` unmount cleanup (the `if (dirtyRef.current && editorInstanceRef.current) { onSaveRef.current(...).catch(...) }` block)
-- **Bug class:** Logic
-- **Description:** The unmount cleanup at lines 214-228 fires `onSaveRef.current(...)` if `dirtyRef.current && editorInstanceRef.current` regardless of `editor.isEditable`. The companion paths `debouncedSave` (line 182), `onBlur` (line 254), and `flushSave` (line 357 — added in commit `e9bea67`) all check `isEditable`. Pre-existing — the e9bea67 fix did not address the unmount path. Today's lock-banner gate blocks chapter switch / view switch from triggering an unmount of a locked editor, so this is theoretical, but the per-Editor invariant the e9bea67 commit message claims is incomplete.
-- **Suggested fix:** Add `if (editorInstanceRef.current.isEditable === false) return;` in the unmount cleanup before the `onSaveRef.current(...)` call, mirroring the other three paths. Note: this is contingent on resolving the C1 finding from review `f346047` first — if the C1 guard is reverted (which it should be, per the silent-data-loss regression), this issue's symmetry argument changes.
-- **Confidence:** Medium
-- **Found by:** Concurrency & State (`general-purpose (claude-opus-4-7)`)
-- **First seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `f346047`
-- **Last seen:** 2026-04-27 on branch `ovid/cluster-a-error-mapping` at `91476d8`
-- **Severity:** Important
-
 ## `3c4e8f72` — `chapter.create` scope lacks 5xx mapping; sibling-asymmetric to `chapter.save` 502/503/504
 - **File (at first sighting):** `packages/client/src/errors/scopes.ts:157`
 - **Symbol:** `chapter.create` scope
@@ -176,18 +164,6 @@
 - **Last seen:** 2026-04-27 on branch `ovid/devcontainer-and-e2e-isolation` at `5f46256`
 - **Severity:** Suggestion
 
-## `1f9d4b27` — `latestContentRef` clobbered by unmount-cleanup save targeting old chapter
-- **File (at first sighting):** `packages/client/src/hooks/useProjectEditor.ts:273`
-- **Symbol:** `handleSave` (the `latestContentRef.current = { id: savingChapterId, content }` assignment)
-- **Bug class:** Concurrency
-- **Description:** `handleSave` unconditionally writes `latestContentRef.current = { id: savingChapterId, content }`. When the OLD Editor's unmount cleanup (Editor.tsx:218) fires `onSave(getJSON, mountChapterId)` after a chapter switch, `savingChapterId` is the old chapter id but the user is already typing on the new one, whose draft just landed in `latestContentRef`. The cleanup-save overwrites the new chapter's `latestContentRef` entry with the old chapter's id+content. A subsequent backoff-retry for the new chapter reads `latestContentRef`, sees the id mismatch, and falls back to the closure `content` rather than picking up keystrokes typed during the backoff window. Pre-existing race; surfaced during the Cluster A review while reading the new lastErr capture path.
-- **Suggested fix:** Gate the `latestContentRef.current = ...` assignment on `activeChapterRef.current?.id === savingChapterId`, OR have the unmount-cleanup save bypass `handleSave` entirely (call `api.chapters.update` directly with no shared-state side effects).
-- **Confidence:** Medium
-- **Found by:** Concurrency & State (`general-purpose (claude-opus-4-7)`)
-- **First seen:** 2026-04-27 on branch `ovid/cluster-a-error-mapping` at `4b43b07`
-- **Last seen:** 2026-05-25 on branch `abortsignal-threading-completion` at `63c3049`
-- **Severity:** Important
-
 ## `20eccaf3` — `restoreFollowupAbortRef` allocation could leak controller past unmount in a theoretical microtask/commit interleaving (mountedRef gate prevents user-observable impact)
 - **File (at first sighting):** `packages/client/src/hooks/useSnapshotState.ts:408-410, 473-478`
 - **Symbol:** `restoreSnapshot`
@@ -295,3 +271,4 @@
 - **First seen:** 2026-06-04 on branch `operational-backup-stopgap` at `1aa1eec`
 - **Last seen:** 2026-06-04 on branch `operational-backup-stopgap` at `1aa1eec`
 - **Severity:** Suggestion
+

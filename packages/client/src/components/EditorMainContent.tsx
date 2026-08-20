@@ -4,7 +4,7 @@ import { Sidebar } from "./Sidebar";
 import { TrashView } from "./TrashView";
 import { PreviewMode } from "./PreviewMode";
 import { DashboardView } from "./DashboardView";
-import { ActionErrorBanner } from "./ActionErrorBanner";
+import { EditorBanner } from "./EditorBanner";
 import { EditorFooter } from "./EditorFooter";
 import { Editor } from "./Editor";
 import { ReferencePanel } from "./ReferencePanel";
@@ -229,11 +229,7 @@ export function EditorMainContent({
 
       <div className="flex-1 flex flex-col overflow-hidden">
         {editorLockedMessage && (
-          <div
-            role="alert"
-            className="px-6 py-2 bg-status-error/8 text-status-error text-sm flex items-center justify-between border-b border-status-error/15"
-          >
-            <span>{editorLockedMessage}</span>
+          <EditorBanner tone="error" message={editorLockedMessage}>
             <button
               type="button"
               onClick={() => window.location.reload()}
@@ -241,24 +237,13 @@ export function EditorMainContent({
             >
               {STRINGS.editor.refreshButton}
             </button>
-          </div>
+          </EditorBanner>
         )}
-        {actionError && <ActionErrorBanner error={actionError} onDismiss={onDismissActionError} />}
+        {actionError && (
+          <EditorBanner tone="error" message={actionError} onDismiss={onDismissActionError} />
+        )}
         {actionInfo && (
-          <div
-            role="status"
-            aria-live="polite"
-            className="px-6 py-2 bg-accent/10 text-accent text-sm flex items-center justify-between border-b border-accent/20"
-          >
-            <span>{actionInfo}</span>
-            <button
-              onClick={onDismissActionInfo}
-              className="text-accent hover:text-text-primary text-xs ml-4 focus:outline-none focus:ring-2 focus:ring-focus-ring rounded"
-              aria-label={STRINGS.a11y.dismissInfo}
-            >
-              ✕
-            </button>
-          </div>
+          <EditorBanner tone="info" message={actionInfo} onDismiss={onDismissActionInfo} />
         )}
 
         {trashOpen ? (

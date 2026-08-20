@@ -65,6 +65,19 @@ export interface ChaptersStore {
   softDeleteChapter(id: string, now: string): Promise<void>;
   softDeleteChaptersByProject(projectId: string, now: string): Promise<void>;
   restoreChapter(id: string, sortOrder: number, now: string): Promise<number>;
+  // F-16: these two read chapter content and delegate to chaptersRepo, so by
+  // this file's own rule ("each slice owns the data operations for one domain")
+  // they belong here. They sat in ImagesStore because their first callers were
+  // the image reference scan and reaper; they since grew callers in search and
+  // projects, which is what made the misplacement visible.
+  listChapterContentByProject(
+    projectId: string,
+  ): Promise<Array<{ id: string; title: string; content: string | null; word_count: number }>>;
+  listAllChapterContentByProject(
+    projectId: string,
+  ): Promise<
+    Array<{ id: string; title: string; content: string | null; deleted_at: string | null }>
+  >;
 }
 
 export interface ChapterStatusesStore {
@@ -107,14 +120,6 @@ export interface ImagesStore {
   removeImagesByProject(projectId: string): Promise<number>;
   incrementImageReferenceCount(id: string, delta: number): Promise<void>;
   setImageReferenceCount(id: string, count: number): Promise<void>;
-  listChapterContentByProject(
-    projectId: string,
-  ): Promise<Array<{ id: string; title: string; content: string | null; word_count: number }>>;
-  listAllChapterContentByProject(
-    projectId: string,
-  ): Promise<
-    Array<{ id: string; title: string; content: string | null; deleted_at: string | null }>
-  >;
 }
 
 export interface SnapshotsStore {

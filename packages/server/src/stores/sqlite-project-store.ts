@@ -154,6 +154,20 @@ export class SqliteProjectStore implements ProjectStore {
     return chaptersRepo.restore(this.db, id, sortOrder, now);
   }
 
+  listChapterContentByProject(
+    projectId: string,
+  ): Promise<Array<{ id: string; title: string; content: string | null; word_count: number }>> {
+    return chaptersRepo.listContentByProject(this.db, projectId);
+  }
+
+  listAllChapterContentByProject(
+    projectId: string,
+  ): Promise<
+    Array<{ id: string; title: string; content: string | null; deleted_at: string | null }>
+  > {
+    return chaptersRepo.listAllContentByProject(this.db, projectId);
+  }
+
   // --- Chapter statuses ---
 
   listStatuses(): Promise<ChapterStatusRow[]> {
@@ -242,20 +256,6 @@ export class SqliteProjectStore implements ProjectStore {
 
   setImageReferenceCount(id: string, count: number): Promise<void> {
     return imagesRepo.setReferenceCount(this.db, id, count);
-  }
-
-  listChapterContentByProject(
-    projectId: string,
-  ): Promise<Array<{ id: string; title: string; content: string | null; word_count: number }>> {
-    return chaptersRepo.listContentByProject(this.db, projectId);
-  }
-
-  listAllChapterContentByProject(
-    projectId: string,
-  ): Promise<
-    Array<{ id: string; title: string; content: string | null; deleted_at: string | null }>
-  > {
-    return chaptersRepo.listAllContentByProject(this.db, projectId);
   }
 
   // --- Snapshots ---

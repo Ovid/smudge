@@ -311,7 +311,39 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       if (!savingChapterId) return false;
       // Seed the latest-content ref so the first attempt posts the caller's content.
       // Subsequent keystrokes during backoff replace this via handleContentChange.
-      latestContentRef.current = { id: savingChapterId, content };
+      //
+      // Backlog 1f9d4b27: only for the ACTIVE chapter. `latestContentRef` means
+      // "the newest content for the chapter the user is editing right now" — the
+      // one writer besides this line, handleContentChange, writes exactly that.
+      // A save targeting a different chapter (the old Editor's unmount cleanup
+      // after a switch passes its mount-time id) used to overwrite the active
+      // chapter's entry with a foreign id, which the loop below then fails to
+      // match, falling back to the closure `content` and dropping keystrokes
+      // typed during backoff.
+      //
+      // That symptom is currently MASKED, and the mask is an accident of an
+      // unrelated mechanism: the same handleSave call that clobbers also runs
+      // `saveSeq.start()` and `saveOp.run()` two lines down, so the in-flight
+      // save's token goes stale and its loop returns `aborted` at the next
+      // iteration's first line — before it ever reads the ref. Nothing states
+      // that coupling near either site, so the gate is here to make the ref's
+      // meaning true rather than incidentally true.
+      //
+      // I1 (review round 4, 2026-08-19): the gate alone was a data-loss
+      // regression. It stopped the SEED for a non-active chapter but left the
+      // READ below preferring the ref whenever the ids match — and nothing on
+      // the project-switch path clears the ref, so it still held that
+      // chapter's OLDER content. The unmount flush (which hands us the
+      // editor's freshest getJSON()) then posted the stale ref instead and
+      // the success branch cleared the draft cache. `seeded` ties the two
+      // sites together: only a save that seeded the ref may read it, so a
+      // non-active save posts exactly what its caller handed it — which is
+      // also the property that makes clearCachedContent(savingChapterId)
+      // sound further down.
+      const seeded = savingChapterId === activeChapterRef.current?.id;
+      if (seeded) {
+        latestContentRef.current = { id: savingChapterId, content };
+      }
       const token = saveSeq.start();
       const MAX_RETRIES = SAVE_BACKOFF_MS.length;
 
@@ -375,7 +407,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
           if (s.aborted) return { kind: "aborted" }; // cancelInFlightSave
           // Re-read latest content each attempt so backoff retries post keystrokes
           // that arrived after the initial call.
-          const latest = latestContentRef.current;
+          const latest = seeded ? latestContentRef.current : null;
           const postedContent = latest && latest.id === savingChapterId ? latest.content : content;
           try {
             const updated = await api.chapters.update(
@@ -405,12 +437,34 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
             // Only clear the localStorage cache if no newer content has arrived
             // since we started this attempt. Otherwise the pending typing would
             // be dropped.
+            // "No newer content arrived for THIS chapter since the attempt
+            // started." Only a SEEDED save can answer that: handleContentChange
+            // is the sole other writer of the ref, and it only writes for the
+            // active chapter, so on a seeded save a mismatch means the user
+            // typed during the save.
+            //
+            // I1 (review round 4): an UNSEEDED save must answer "yes"
+            // unconditionally, not fall into the comparison. The ref may still
+            // carry this chapter's id with OLDER content (the user left the
+            // chapter; nothing clears the ref), and comparing against that
+            // reads "newer content arrived" when the truth is the opposite —
+            // leaving a stale draft that wins over the fresher server copy the
+            // next time the chapter is opened. Every onSave call site hands us
+            // `editor.getJSON()`, so an unseeded save posts content at least as
+            // new as anything handleContentChange wrote for that chapter, and
+            // clearing its draft is the correct, lossless answer.
             const stillLatest =
-              latestContentRef.current?.id === savingChapterId &&
-              latestContentRef.current.content === postedContent;
+              seeded && latestContentRef.current?.id === savingChapterId
+                ? latestContentRef.current.content === postedContent
+                : true;
             if (stillLatest) {
               clearCachedContent(savingChapterId);
-              setCacheWarning(false);
+              // S1 (review round 4): scoped to the active chapter, like its
+              // sibling below. The footer warning says "this draft could not
+              // be cached" about the chapter on screen; a save settling for a
+              // chapter the user just left must not clear it while the current
+              // chapter's draft is still uncached.
+              if (activeChapterRef.current?.id === savingChapterId) setCacheWarning(false);
             }
             if (activeChapterRef.current?.id === savingChapterId) {
               setSaveStatus(stillLatest ? "saved" : "unsaved");

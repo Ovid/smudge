@@ -190,7 +190,7 @@ Wait for `make e2e` to finish (or kill it) before running cleanup.
 
 **TipTap JSON as source of truth.** Chapter content is stored as TipTap's native JSON, not HTML. HTML is generated on-demand via `generateHTML()` for preview/export. This enables structured operations (word counting walks the JSON tree) and future custom node types.
 
-**One route from TipTap JSON to rendered HTML.** Every rendered *HTML* surface —
+**One route from TipTap JSON to rendered HTML.** Every rendered _HTML_ surface —
 preview, snapshot view, and four of the five export formats (HTML, EPUB,
 markdown, plaintext, which funnel through the server's `chapterContentToHtml`) —
 goes through `renderEditorHtml()` in `packages/shared/src/editorExtensions.ts`.
@@ -257,7 +257,7 @@ synchronous-imperative for timing safety: the lock-down `setEditable(false)`
 **Mutation-busy is deliberately not machine state (F-08).** The machine exposes
 exactly one synchronous probe, `isLocked()`; busy is `mutation.isBusy()`, backed
 by `inFlightRef`, and a reducer field cannot replace it because the latch must
-be readable *before* the first `await` while reducer state is visible only after
+be readable _before_ the first `await` while reducer state is visible only after
 React commits. The machine previously carried a `busy` mirror no consumer read,
 giving two same-named `isBusy()` probes on sibling objects — one authoritative,
 one documented as wrong. Do not re-add it; if a render-time busy indicator is
@@ -407,7 +407,7 @@ Re-flagging one is warranted only if its stated premise changes.
   `ProjectStore` interface has exactly one implementation (no fake implements
   it; tests construct the concrete class over a real DB). The three-edit-per-
   operation tax (repo fn + slice interface + delegation) is compiler-guided, and
-  the `transaction(txStore)` seam is genuinely load-bearing. The 7-slice
+  the `transaction(txStore)` seam is genuinely load-bearing. The per-domain slice
   interface's documented data-surface value justifies the type surface; "fixing"
   it (typing `txStore` as the concrete class, dropping the interface) trades a
   documented contract for marginally less boilerplate. Net a mild smell, left
@@ -432,7 +432,7 @@ Re-flagging one is warranted only if its stated premise changes.
   the cross-hook invariant holds because this one component wires the same
   objects consistently. Six prior decompositions already extracted rendering
   and the controller hooks — the sixth (F-04, `useOuttakeCapture`) carved out
-  the outtake-capture flow precisely because it participates in *none* of the
+  the outtake-capture flow precisely because it participates in _none_ of the
   coordination: it writes no editor content, so it takes no busy/lock handle.
   The residual concentration is irreducible cross-hook coordination, not
   accidental complexity — but "irreducible" is a claim about the blocks that
@@ -569,6 +569,8 @@ The `ovid/snapshots-find-and-replace` branch (merged 2026-04-19) bundled two fea
 Line count is not a hard limit — a 3,000-line migration can be fine, a 500-line cross-cutting refactor may not be. The shape of the change matters more than the size.
 
 **Exceptions to the one-feature rule require an explicit decision recorded in the phase's decision log; the rule defaults to enforcement.** Recorded precedents live in `docs/roadmap-decisions/` (the earliest, Phase 4b.3, is in `docs/plans/2026-04-25-4b3a-review-followups-design.md`) — consult them for precedent rather than re-deriving the policy.
+
+**Architecture-report fix sessions are a standing recorded exception.** A `/paad:fix-architecture` branch closes several independent findings from one `paad/architecture-reviews/` report and has no roadmap phase, so it fits neither rule and has no phase decision log to record an exception in. The bounded carve-out is recorded in `docs/roadmap-decisions/2026-08-19-architecture-fix-session-pr-scope.md` and has **six** rules — read them there rather than from this summary. The shape: one report per branch, one finding per commit, a `Status:` block per finding, and no finding whose fix is itself a feature; plus the two a session most needs and this line used to omit — the mandatory Safety Net commit is an **allowed untagged commit** at the base of the branch (rule 5), and code-review follow-up commits are traced by a **report-qualified** tag (`[r3 S2]`) instead of a `Status:` block (rule 6). Two round-4 amendments widen rule 1 and rule 6: a **backlog fix is permitted in a file the session already has open** (tagged `[backlog <id>]`), and a **mechanical follow-up that answers to no finding** — lint fallout, typecheck fallout, a report filing — is tagged by kind (`[chore]`, `[lint]`, `[typecheck]`, `[report]`) so the log stays legible.
 
 ## Merging Branches
 

@@ -463,6 +463,49 @@ describe("Editor", () => {
     }
   });
 
+  it("unmount cleanup does not PATCH a locked editor (backlog 4d5b9e81)", async () => {
+    // The unmount cleanup fired onSave whenever the editor was dirty, with no
+    // isEditable check — unlike debouncedSave and the blur handler, which both
+    // have one. A lock means the server has committed something the editor is
+    // not showing (a persistent failure lock) or is about to (an in-flight
+    // useEditorMutation). PATCHing the on-screen content there overwrites the
+    // server's version with pre-mutation text.
+    //
+    // flushSave's documented C1 exemption does NOT extend here: flushSave is
+    // called deliberately BY the mutation to commit typing before it runs.
+    // Unmount is nobody's deliberate flush. Nothing is destroyed by skipping —
+    // dirtyRef stays true and the content cache still holds the draft
+    // (CLAUDE.md save-pipeline invariant 3).
+    const onSave = vi.fn().mockResolvedValue(true);
+    const onContentChange = vi.fn();
+    const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
+
+    const { container, unmount } = render(
+      <Editor
+        projectId="test-project"
+        content={null}
+        onSave={onSave}
+        onContentChange={onContentChange}
+        editorRef={editorRef}
+      />,
+    );
+
+    await vi.waitFor(() => expect(editorRef.current).not.toBeNull(), { timeout: 3000 });
+
+    const editorEl = container.querySelector("[role='textbox']") as HTMLElement;
+    fireEvent.focus(editorEl);
+    editorEl.textContent = "typed before the lock";
+    fireEvent.input(editorEl);
+
+    await vi.waitFor(() => expect(onContentChange).toHaveBeenCalled(), { timeout: 3000 });
+
+    onSave.mockClear();
+    editorRef.current?.setEditable(false);
+    unmount();
+
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
   it("flushSave fires onSave when editor is locked (useEditorMutation contract, C1 2026-04-26)", async () => {
     // useEditorMutation.run() locks the editor via setEditable(false)
     // and THEN calls flushSave to commit any pre-mutation typing
