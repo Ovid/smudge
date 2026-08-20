@@ -9,6 +9,7 @@ import {
   UpdateSettingsSchema,
   ChapterStatus,
   ExportSchema,
+  ReorderChaptersSchema,
 } from "../schemas";
 import { MAX_TIPTAP_DEPTH } from "../tiptap-safety";
 
@@ -56,6 +57,16 @@ describe("CreateProjectSchema", () => {
     if (result.success) {
       expect(result.data.title).toBe("My Novel");
     }
+  });
+
+  // F-25: a typo'd field used to answer 200 having changed nothing.
+  it("rejects unknown keys (strict)", () => {
+    const result = CreateProjectSchema.safeParse({
+      title: "My Novel",
+      mode: "fiction",
+      taget_word_count: 50000,
+    });
+    expect(result.success).toBe(false);
   });
 });
 
@@ -342,6 +353,30 @@ describe("ExportSchema", () => {
     const result = ExportSchema.safeParse({ format: "plaintext" });
     expect(result.success).toBe(true);
   });
+
+  // F-25: a typo'd field used to answer 200 having changed nothing.
+  it("rejects unknown keys (strict)", () => {
+    const result = ExportSchema.safeParse({ format: "html", include_tock: false });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("ReorderChaptersSchema", () => {
+  it("accepts a chapter_ids array of uuids", () => {
+    const result = ReorderChaptersSchema.safeParse({
+      chapter_ids: ["3f6c8b1e-1f2a-4c3d-8e9f-0a1b2c3d4e5f"],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  // F-25: a typo'd field used to answer 200 having changed nothing.
+  it("rejects unknown keys (strict)", () => {
+    const result = ReorderChaptersSchema.safeParse({
+      chapter_ids: ["3f6c8b1e-1f2a-4c3d-8e9f-0a1b2c3d4e5f"],
+      project_id: "3f6c8b1e-1f2a-4c3d-8e9f-0a1b2c3d4e5f",
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("UpdateSettingsSchema", () => {
@@ -355,6 +390,25 @@ describe("UpdateSettingsSchema", () => {
   it("rejects empty key", () => {
     const result = UpdateSettingsSchema.safeParse({
       settings: [{ key: "", value: "foo" }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  // F-25: a typo'd field used to answer 200 having changed nothing.
+  it("rejects unknown keys (strict)", () => {
+    const result = UpdateSettingsSchema.safeParse({
+      settings: [{ key: "timezone", value: "UTC" }],
+      overwrite: true,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  // F-25: the outer .strict() does NOT reach inside the array, so the entry
+  // object carries its own. Without it, `{key, value, valeu}` is the same
+  // silent no-op one level down — the exact flaw, at the same endpoint.
+  it("rejects unknown keys inside a settings entry (strict)", () => {
+    const result = UpdateSettingsSchema.safeParse({
+      settings: [{ key: "timezone", value: "UTC", valeu: "typo" }],
     });
     expect(result.success).toBe(false);
   });
