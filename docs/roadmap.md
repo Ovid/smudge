@@ -1937,7 +1937,8 @@ decision phase rather than a cleanup:
    stops accepting slugs, or if a UUID route stops rejecting non-UUIDs — all
    ten flips were checked in a sandbox. But a slug route _broadened_ to accept
    both kinds passes the whole server suite (64 files / 1075 tests) unchanged,
-   because the six slug routes carry no identifier validator at all.
+   because the eleven slug route registrations (nine distinct paths, across
+   three routers) carry no identifier validator at all.
 
 The everyday hazard is already closed: the client updates every in-memory slug
 holder and the browser URL on both slug-mutation paths. What is not closed is
@@ -1959,8 +1960,8 @@ Reverse or reaffirm the 2026-03-29 blanket-slug decision, in a
 /api/projects/:slug` as the single slug→project entry point the client hits
   once on load. The fragile key is then used in one place instead of eight,
   and a stale reference can only 404, never resolve to the wrong project. Costs
-  six route handlers, the services behind them, the client call sites, and
-  their tests.
+  ten route handlers — every slug registration except `GET /:slug` — the
+  services behind them, the client call sites, and their tests.
 
 Note what this does **not** buy either way: the user-facing route
 `/projects/:slug` stays slug-based by design, so the stale-bookmark case is
@@ -1969,7 +1970,7 @@ separate feature.
 
 #### 4b.19.2 Make the Tree Match
 
-Whichever way 4b.19.1 goes, bring all six routers into line — including
+Whichever way 4b.19.1 goes, bring all five routers into line — including
 outtakes, which today is a departure with no recorded reason. **Images is the
 one exception in either direction:** its `:projectId` must stay a UUID because
 the project id doubles as a filesystem directory name
