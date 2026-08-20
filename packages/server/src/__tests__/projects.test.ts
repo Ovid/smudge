@@ -133,14 +133,14 @@ describe("POST /api/projects", () => {
     expect(res.body.slug).toBe("my-novel");
   });
 
-  it("returns 400 when title duplicates an existing project", async () => {
+  it("returns 409 when title duplicates an existing project", async () => {
     await request(t.app).post("/api/projects").send({ title: "My Novel", mode: "fiction" });
 
     const res = await request(t.app)
       .post("/api/projects")
       .send({ title: "My Novel", mode: "fiction" });
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(409);
     expect(res.body.error.code).toBe("PROJECT_TITLE_EXISTS");
   });
 
@@ -263,7 +263,7 @@ describe("PATCH /api/projects/:slug", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns 400 when renaming to a duplicate title", async () => {
+  it("returns 409 when renaming to a duplicate title", async () => {
     await request(t.app).post("/api/projects").send({ title: "First", mode: "fiction" });
     const second = await request(t.app)
       .post("/api/projects")
@@ -273,7 +273,7 @@ describe("PATCH /api/projects/:slug", () => {
       .patch(`/api/projects/${second.body.slug}`)
       .send({ title: "First" });
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(409);
     expect(res.body.error.code).toBe("PROJECT_TITLE_EXISTS");
   });
 

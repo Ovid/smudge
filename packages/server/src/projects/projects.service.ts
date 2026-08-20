@@ -7,7 +7,7 @@ import {
   UNTITLED_CHAPTER,
 } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
-import { BadRequestError } from "../errors/appError";
+import { ConflictError } from "../errors/appError";
 import { enrichChaptersWithLabels, enrichChapterWithLabel } from "../chapters/chapters.types";
 import { applyImageRefDiff } from "../images/images.references";
 import type { ProjectRow, ProjectListRow, UpdateProjectData } from "./projects.types";
@@ -36,7 +36,13 @@ export interface DashboardResponse {
 
 // --- Errors ---
 
-export class ProjectTitleExistsError extends BadRequestError {
+// F-30: 409, not 400. CLAUDE.md §API Design defines 409 as "conflict cases
+// where the request is well-formed but violates a constraint the client needs
+// to resolve" — a uniqueness collision exactly. The sibling conflicts already
+// use it: IMAGE_IN_USE (images.routes.ts) and RESTORE_CONFLICT
+// (chapters.routes.ts). The client routes on error.code, and mapApiError
+// checks byCode before byStatus, so the writer-visible copy is unchanged.
+export class ProjectTitleExistsError extends ConflictError {
   constructor() {
     super("A project with that title already exists", "PROJECT_TITLE_EXISTS");
     this.name = "ProjectTitleExistsError";

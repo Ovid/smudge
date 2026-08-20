@@ -11,7 +11,7 @@ export function projectsRouter(): Router {
     "/",
     asyncHandler(async (req, res) => {
       // ProjectTitleExistsError is an AppError; it propagates to the
-      // global handler (400 PROJECT_TITLE_EXISTS) without a local catch.
+      // global handler (409 PROJECT_TITLE_EXISTS) without a local catch.
       const result = await ProjectService.createProject(req.body);
       if ("validationError" in result) {
         throw new BadRequestError(result.validationError ?? "Invalid input");

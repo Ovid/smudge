@@ -76,12 +76,12 @@ describe("error envelope contract (F-3 safety net)", () => {
     expect(res.body.error.message).toBe("Deleted chapter not found.");
   });
 
-  it("POST /api/projects — 400 PROJECT_TITLE_EXISTS on duplicate title", async () => {
+  it("POST /api/projects — 409 PROJECT_TITLE_EXISTS on duplicate title", async () => {
     await createProject("Duplicate Title Project");
     const res = await request(t.app)
       .post("/api/projects")
       .send({ title: "Duplicate Title Project", mode: "fiction" });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(409);
     expect(res.body.error.code).toBe("PROJECT_TITLE_EXISTS");
     expect(res.body.error.message).toBe("A project with that title already exists");
   });
