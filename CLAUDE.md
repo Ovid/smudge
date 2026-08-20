@@ -545,6 +545,47 @@ Core tables, all using UUID primary keys (except `settings` and `chapter_statuse
   renders outtake content to HTML/export **must** strip them there (§note-strip
   discipline); the forcing test in `outtakes.service.test.ts` pins the decision.
 
+## Documentation Discipline (Mandatory)
+
+Three hard rules. Each one exists because it was broken on the
+`ovid/architecture` branch and caught in review
+(`paad/code-reviews/ovid-architecture-2026-08-20-18-52-04-09aaba1e.md`).
+
+**1. Never run a formatter over markdown.** Prose in this repo is
+hand-formatted. `npm run format`'s globs exclude markdown, and `.prettierignore`
+now excludes `*.md` outright — do not remove that entry, do not add markdown to
+the `format` script's globs, and do not run `prettier --write` on a `.md` path
+by hand. The globs alone were not enough: an editor's format-on-save or an
+ad-hoc invocation bypasses them, and one such pass rewrote emphasis and inline
+code spans across three findings of an architecture report (`_false_` became
+`\_false*`; prose got glued into code spans). Reports and design docs are
+traceability artifacts — corrupting the prose of a finding degrades the evidence
+the next session starts from. If you believe markdown should be formatted, that
+is a decision to record, not a command to run.
+
+**2. Cite symbols, not line ranges — and verify every count against the
+source.** A citation in a steering file earns its keep only if a reader can
+follow it. `CLAUDE.md` cited `chapters.service.ts:255-263` for a block that a
+later commit **on the same branch** pushed to `:308-317`; the citation was
+stale before the branch even merged. Prefer `restoreChapter`'s parent-restore
+branch to a line range: a symbol name survives the next edit above it. Where a
+line range genuinely helps (a long file of similar-looking code), re-verify it
+against the tree before the branch lands. The same discipline covers numbers:
+`CLAUDE.md` said "Six routers mount on `/api/projects`" and then cited five
+mount lines, and that wrong count propagated into a roadmap phase as an
+actionable instruction. Run the grep; do not carry a count forward from another
+document.
+
+**3. Nothing goes between a function's doc comment and the function.** Adding a
+type, helper, or comment block in that gap silently orphans the doc: editors and
+TypeScript bind only the *last* comment preceding a declaration, so the original
+attaches to nothing and the function shows no documentation at all. This is not
+cosmetic here — §Accepted Architectural Trade-offs entry F-19 accepts the hidden
+side effects in `updateChapter` / `deleteChapter` / `restoreChapter` **on the
+condition** that each is enumerated in that function's doc comment. Detaching
+the enumeration removes the mitigation while leaving the trade-off accepted.
+Insert new declarations *above* the doc block, not between it and its function.
+
 ## Testing Philosophy
 
 The save pipeline gets the most rigorous coverage — it's the core trust promise. Integration tests run against real SQLite (not mocks). E2e tests cover all user stories including save-failure recovery via network interception. aXe-core runs in Playwright for automated a11y checks. ALL CODE MUST USE RED-GREEN-REFACTOR if feasible.
