@@ -2731,7 +2731,7 @@ The bind/port/data-dir/security concerns this phase addresses are independent of
 
 #### 7g.2 Dynamic Port Allocation
 
-Allow `SMUDGE_PORT=0` to let the OS assign a free port (`app.listen` already supports this — used today in `packages/server/src/__tests__/test-helpers.ts:20`). On startup, log the chosen port to stdout in a machine-readable form (e.g., `Smudge listening on http://127.0.0.1:<PORT>`) so the Electron main script can parse and plumb it to the renderer via a preload script. Avoids collisions with another Smudge instance or with whatever else may hold port 3456 on the host.
+Allow `SMUDGE_PORT=0` to let the OS assign a free port (`app.listen` already supports this — used today in `packages/server/src/__tests__/test-helpers.ts:20`). On startup, log the chosen port to stdout in a machine-readable form (e.g., `Smudge listening on http://127.0.0.1:<PORT>`) so the Electron main script can parse and plumb it to the renderer via a preload script. Avoids collisions with another Smudge instance or with whatever else may hold port 3456 on the host. **This removes the guard that currently prevents a second instance from starting at all** — see 7g.8, which must land with it.
 
 #### 7g.3 Data Directory Resolution
 
@@ -2758,13 +2758,28 @@ The client uses `window.__SMUDGE__?.serverUrl` (when present) instead of the har
 
 The renderer in Electron loads from `http://127.0.0.1:<port>`, which is treated as an HTTP origin and warrants a tighter CSP than the dev-mode Vite default. Define a CSP that allows only the local server origin, self-hosted fonts, and the inline styles TipTap requires for some marks.
 
+#### 7g.8 Single-Instance Lock
+
+**This is load-bearing for 7g.2 and must land with it, not after.** Two Smudge server processes against one data directory is unsupported and actively destructive, and today nothing enforces that — the enforcement is accidental. `packages/server/src/index.ts` calls `app.listen(PORT)` on a fixed port and registers an `error` handler that logs `"Port is already in use"` and `process.exit(1)` on `EADDRINUSE`, so a second instance dies on startup. **7g.2 deletes that guard.** With `SMUDGE_PORT=0` the second process binds a different free port, starts happily, and shares the first one's `DATA_DIR`.
+
+The hazard is not hypothetical and is already written down in the code. `packages/server/src/images/images.reaper.ts` documents it under "Single-process assumption (S2)": the startup orphan reaper snapshots the set of known image ids with one `select id from images`, then walks the image tree — so a sibling process's freshly-uploaded file, committed *after* the snapshot but *before* the walk, is deleted as an "orphan". That is silent data loss of a file the writer just added, and it is one of several: `purgeOldTrash` and the reaper both run before `app.listen` binds, which makes them safe against *in-process* concurrency and says nothing at all about a second process.
+
+Note also that the reasoning that makes most check-then-act races unreachable inside one process does **not** transfer here. better-sqlite3 is synchronous, so within a single process a request handler whose window holds only database calls cannot be interleaved by another handler (measured, recorded in F-29's Status notes in `paad/architecture-reviews/2026-08-11-smudge-architecture-report.md`). Two OS processes are genuinely concurrent; every one of those windows reopens, plus the WAL-level writer contention `PRAGMA busy_timeout` exists for.
+
+Two enforcement layers, because they cover different launches:
+
+- **Electron:** `app.requestSingleInstanceLock()` in `main.ts`. A second launch does not start a server at all — it hands its argv to the running instance's `second-instance` event, which focuses the existing window. This is the common case, since every Electron launch resolves the same `app.getPath('userData')`.
+- **Server:** a lock file under the resolved data directory (an exclusive `open` with `wx`, holding the pid, released on graceful shutdown and reclaimed if the recorded pid is gone). This covers the launches Electron's lock cannot see — two `SMUDGE_PORT=0` processes sharing a `DATA_DIR`, or a packaged app started alongside a `make dev` that was pointed at the same directory. Refuse to start with a message naming the holding pid and the directory, rather than starting and corrupting.
+
+The default `make dev` and Electron paths do *not* collide with each other today (dev resolves `packages/server/../../data`, Electron resolves `SMUDGE_USER_DATA_DIR`), so the server-side lock is guarding the explicit-override and dual-Electron cases, not the everyday one.
+
 ### Data Model Changes
 
 None. This phase changes runtime behavior, not schema.
 
 ### API Changes
 
-None. The server's HTTP surface is unchanged; only the bind address, port assignment, and data directory become runtime-configurable.
+None. The server's HTTP surface is unchanged; only the bind address, port assignment, and data directory become runtime-configurable. 7g.8's lock refusal happens before `app.listen`, so it produces a startup failure and a log line, not an HTTP status.
 
 ### UI/UX Notes
 
