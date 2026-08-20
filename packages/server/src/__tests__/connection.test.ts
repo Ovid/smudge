@@ -60,15 +60,21 @@ describe("db/connection", () => {
     expect(result[0].timeout).toBe(5000);
   });
 
-  it("initDb destroys the prior connection when called again", async () => {
+  // F-21: initDb used to destroy the prior handle and install a new one,
+  // silently. SqliteProjectStore captures the handle in its constructor, so a
+  // second initDb() left getProjectStore() returning a store bound to a
+  // destroyed connection — every later query failing with an opaque driver
+  // error instead of a seam error naming the cause. It now refuses, mirroring
+  // initProjectStore's contract. This asserts more than the test it replaced:
+  // the refusal must leave the existing connection usable, which is what makes
+  // throwing safe rather than merely loud. setDb (below) remains the seam that
+  // deliberately replaces.
+  it("initDb throws when already initialized, leaving the live connection intact", async () => {
     const first = await initDb(createTestKnexConfig());
     await first("projects").select("*"); // confirm first is live
-    const second = await initDb(createTestKnexConfig());
-    expect(second).not.toBe(first);
-    // The first connection was destroyed, so querying it now rejects.
-    await expect(first.raw("SELECT 1")).rejects.toThrow();
-    // The replacement is the live singleton.
-    expect(getDb()).toBe(second);
+    await expect(initDb(createTestKnexConfig())).rejects.toThrow("Database already initialized");
+    expect(getDb()).toBe(first);
+    await expect(first.raw("SELECT 1")).resolves.toBeDefined();
   });
 
   it("setDb destroys the previously-set instance when replaced", async () => {

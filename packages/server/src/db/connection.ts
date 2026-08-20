@@ -36,9 +36,22 @@ export async function setDb(instance: Knex): Promise<void> {
   await db.raw("PRAGMA foreign_keys = ON");
 }
 
+/**
+ * Initialize the process-wide Knex handle. Callable exactly once — call
+ * closeDb() before initializing again.
+ *
+ * F-21: this used to destroy the prior handle and install a new one silently,
+ * while its counterpart initProjectStore() threw on a second call. The
+ * asymmetry was the hazard: SqliteProjectStore captures the handle in its
+ * constructor, so a second initDb() with no intervening resetProjectStore()
+ * left getProjectStore() returning a store over a destroyed connection, with
+ * nothing failing at the seam — just opaque driver errors on every later
+ * query. Refusing here makes that state unreachable without an explicit
+ * teardown. setDb() remains the seam that deliberately replaces (tests).
+ */
 export async function initDb(config?: Knex.Config): Promise<Knex> {
   if (db) {
-    await db.destroy();
+    throw new Error("Database already initialized — call closeDb() first");
   }
   db = knex(config ?? createKnexConfig());
   // Raw SQL: PRAGMAs are SQLite-specific session settings with no Knex equivalent
