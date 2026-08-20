@@ -525,6 +525,36 @@ describe("renderPlainText", () => {
 });
 
 describe("renderDocx", () => {
+  // Review 67c00204 OOSS1, wider-occurrence sweep. `HEADING_MAP[level]` is
+  // the sibling of the settings-service lookup that finding is about: `level`
+  // comes off client-supplied TipTap JSON and is only *typed* as a number, so
+  // a crafted `attrs.level` of "toString" indexed through Object.prototype
+  // and handed docx an inherited function where a HeadingLevel belongs.
+  // Unknown levels must fall through to the plain-paragraph branch.
+  it("treats an Object.prototype method name as an unknown heading level", async () => {
+    const chapters = [
+      {
+        id: "ch-proto",
+        title: "Proto Heading",
+        content: {
+          type: "doc",
+          content: [
+            {
+              type: "heading",
+              attrs: { level: "toString" },
+              content: [{ type: "text", text: "Crafted heading" }],
+            },
+          ],
+        },
+        sort_order: 0,
+      },
+    ];
+    const buf = await renderDocx(projectInfo, chapters, { includeToc: false }, imageSrc);
+    const xml = await docxXml(buf);
+    expect(xml).toContain("Crafted heading");
+    expect(xml).not.toContain("function toString");
+  });
+
   it("produces a valid docx buffer", async () => {
     const buf = await renderDocx(projectInfo, sampleChapters, { includeToc: true }, imageSrc);
     expect(buf).toBeInstanceOf(Buffer);
