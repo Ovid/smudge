@@ -468,8 +468,10 @@ describe("chapters.service", () => {
    * two `read_failure` exits, the defensive slug-collision `conflict` exit,
    * and the rethrow of anything else.
    *
-   * The read_failure case deliberately does not care WHICH object the
-   * confirming read is made on — see the comment on that test.
+   * The two read_failure cases deliberately do not care WHICH object the
+   * confirming read is made on — see the comment on those tests. The
+   * membership test added below is the one that does, and it is the only case
+   * here that fails if F-28's fix is reverted.
    */
   describe("restoreChapter() — confirming reads and error routing", () => {
     it("returns the restored chapter enriched with status_label, project_slug, and a sort_order above the surviving chapters", async () => {
@@ -504,6 +506,58 @@ describe("chapters.service", () => {
 
       const row = await t.db("chapters").where({ id: chapterId }).first();
       expect(row.deleted_at).toBeNull();
+    });
+
+    // F-28 membership (finding I2 of
+    // `paad/code-reviews/ovid-architecture-2026-08-20-18-52-04-09aaba1e.md`).
+    // This is the tripwire the F-28 fix shipped without: every other case in
+    // this block passes whether the confirming reads run inside the transaction
+    // or after it, so reverting `confirmRestore(txStore, ...)` to the old
+    // post-commit pair on the outer store left all 22 cases green. Asserting
+    // the reads never touch the outer store is the only thing that tells the
+    // two implementations apart.
+    //
+    // This reverses a decision recorded in F-28's Status block, which rejected
+    // such a test as "pinning implementation rather than behaviour". The
+    // counter-argument, accepted 2026-08-21: WHICH object holds the read is the
+    // whole deliverable here. The invariant has no in-process symptom today
+    // (better-sqlite3 is synchronous, Smudge is single-writer), so there is no
+    // behaviour left for a test to observe — and roadmap Phase 7g.2 deletes the
+    // guard that keeps it symptomless, at which point a silent regression
+    // becomes a wrong-response bug rather than a test failure.
+    //
+    // The not-called assertions are the load-bearing half, matching the F-29
+    // membership tests in `snapshots.service.test.ts`: `transaction` hands the
+    // callback a distinct store built over the `trx` handle, so an outer-store
+    // call is observable — and it is precisely the starvation trap, since a
+    // non-scoped `store.*` call from inside a transaction queues on the `max: 1`
+    // pool the caller is already holding.
+    it("makes both confirming reads through the transaction-scoped store, never the outer one", async () => {
+      const { chapterId } = await createProjectAndChapter();
+      await t
+        .db("chapters")
+        .where({ id: chapterId })
+        .update({ deleted_at: new Date().toISOString() });
+
+      // The post-commit velocity snapshot opens a transaction of its own, so
+      // it is stubbed out to leave exactly one for the count below to mean
+      // something. `afterEach` calls `resetVelocityService()`.
+      setVelocityService({ updateDailySnapshot: async () => {} });
+
+      const store = getProjectStore();
+      const txSpy = vi.spyOn(store, "transaction");
+      const outerChapterRead = vi.spyOn(store, "findChapterById");
+      const outerProjectRead = vi.spyOn(store, "findProjectByIdIncludingDeleted");
+
+      try {
+        expect(await restoreChapter(chapterId)).toMatchObject({ id: chapterId });
+
+        expect(txSpy).toHaveBeenCalledTimes(1);
+        expect(outerChapterRead).not.toHaveBeenCalled();
+        expect(outerProjectRead).not.toHaveBeenCalled();
+      } finally {
+        vi.restoreAllMocks();
+      }
     });
 
     it("returns 'read_failure' and leaves the chapter restored when the confirming chapter read misses", async () => {
