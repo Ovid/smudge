@@ -603,9 +603,15 @@ describe("search.service", () => {
 
       const r = assertSearchResultReplace(result);
       expect(r.replaced_count).toBe(1);
+      // Exact string, not stringContaining: all four velocity failure wordings
+      // share the "Velocity updateDailySnapshot failed" prefix, so a prefix
+      // match pinned nothing this site owns. The wording is what identifies
+      // WHICH write path failed, and it matters most here — replace passes no
+      // `context`, so there is no chapter_id and the message is all the log
+      // line carries. See fireDailySnapshot's doc comment.
       expect(errorSpy).toHaveBeenCalledWith(
         expect.objectContaining({ err: expect.any(Error) }),
-        expect.stringContaining("Velocity updateDailySnapshot failed"),
+        "Velocity updateDailySnapshot failed after replace (best-effort)",
       );
 
       errorSpy.mockRestore();
