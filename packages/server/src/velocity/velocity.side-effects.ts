@@ -17,9 +17,19 @@ import { logger } from "../logger";
  *   already committed — the writer's text is safe and the velocity row is
  *   derived data that the next save recomputes. The error is logged at
  *   `error` level, not swallowed silently.
- * - Must be called AFTER the transaction commits, never inside it: it is not
- *   part of the write's atomicity, and running it inside would let a
- *   best-effort failure roll back committed content.
+ * - Must be called AFTER the transaction commits, never inside it. The reason
+ *   is deadlock, not atomicity — the `catch` below means a failure here can
+ *   never roll anything back. `updateDailySnapshot` reaches the
+ *   non-transaction-scoped `getProjectStore()` and opens its *own*
+ *   transaction, and knex's sqlite dialect pins the pool at `{min:1, max:1}`
+ *   (`knex/lib/dialects/sqlite3/index.js`, `poolDefaults`). Calling this from
+ *   inside an open transaction therefore waits for the one connection the
+ *   caller is still holding. `knexfile.ts` sets neither `pool` nor
+ *   `acquireConnectionTimeout`, so that wait runs for knex's 60-second default
+ *   and the timeout is then swallowed by the `catch` below: a 2xx returned
+ *   after a minute-long hang, with a log line as the only trace.
+ *   `updateDailySnapshot`'s own doc comment states the same constraint from
+ *   the other side.
  *
  * `failureMessage` is a parameter rather than a fixed string because the three
  * call sites have distinct messages ("...after save", "...after restore",
