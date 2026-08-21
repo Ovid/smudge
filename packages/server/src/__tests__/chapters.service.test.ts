@@ -665,6 +665,54 @@ describe("chapters.service", () => {
       }
     });
 
+    // S4 (2026-08-21 review). confirmRestore's doc comment used to claim that a
+    // throw from a confirming read would make chapter.restore's
+    // `committedCodes: ["RESTORE_READ_FAILURE"]` "actively wrong" by telling the
+    // writer a rolled-back restore might have saved. Both halves of that were
+    // false, and this pins the truth so the claim cannot drift back:
+    //
+    //   1. A throw never reaches RESTORE_READ_FAILURE. That code is emitted by
+    //      chapters.routes.ts only when the service RETURNS "read_failure";
+    //      restoreChapter's catch discriminates on ParentPurgedError,
+    //      ChapterPurgedError and a SQLITE_CONSTRAINT_UNIQUE slug collision, and
+    //      a SELECT failure is none of those, so it is rethrown.
+    //   2. Because F-28 moved both confirming reads inside the transaction, a
+    //      throw now rolls the restore BACK — so "it failed, retry" is accurate.
+    //      Before F-28 the read ran post-commit and a throw left the chapter
+    //      restored while reporting failure; that improvement was recorded as
+    //      "no observable delta" and is asserted here instead.
+    //
+    // Contrast the sibling case above, where the confirming read RETURNS null:
+    // there the transaction commits and the chapter stays restored.
+    it("rolls the restore back and rethrows when a confirming read throws, rather than returning 'read_failure'", async () => {
+      const { chapterId } = await createProjectAndChapter();
+      const now = new Date().toISOString();
+      await t.db("chapters").where({ id: chapterId }).update({ deleted_at: now });
+
+      const store = getProjectStore();
+      const origTransaction = store.transaction.bind(store);
+      vi.spyOn(store, "transaction").mockImplementation(async (fn) =>
+        origTransaction(async (txStore) => {
+          // Fail only the CONFIRMING read. findChapterById is not called
+          // anywhere else on this path, so the restore UPDATE and the parent
+          // bump both land before this fires.
+          vi.spyOn(txStore, "findChapterById").mockRejectedValue(new Error("io error"));
+          return fn(txStore);
+        }),
+      );
+
+      try {
+        await expect(restoreChapter(chapterId)).rejects.toThrow("io error");
+
+        // Rolled back: the chapter is still in the trash, so the generic 500
+        // the route renders for a rethrow is telling the writer the truth.
+        const row = await t.db("chapters").where({ id: chapterId }).first();
+        expect(row.deleted_at).not.toBeNull();
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
     it("rethrows an error that is neither a purge nor a slug collision", async () => {
       const { chapterId } = await createProjectAndChapter();
       const now = new Date().toISOString();

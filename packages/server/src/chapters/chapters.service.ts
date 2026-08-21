@@ -221,12 +221,30 @@ type RestoreTxOutcome = { chapter: ChapterRow; project: ProjectRow } | "read_fai
  * transaction-scoped store, so the response reflects exactly what this
  * transaction wrote.
  *
- * Returns a sentinel and MUST NOT throw. Throwing would roll the restore back,
- * which would make `chapter.restore`'s `committedCodes:
- * ["RESTORE_READ_FAILURE"]` (client `scopes.ts`) actively wrong — it would tell
- * the writer "this may have saved, do not retry" for a chapter that provably
- * was not. That is the same inversion F-12's status correction identified and
- * rejected for outtakes.
+ * Reports a miss by RETURNING the sentinel rather than throwing, because only a
+ * returned sentinel can reach `RESTORE_READ_FAILURE`. `restoreChapter`'s catch
+ * discriminates on `ParentPurgedError`, `ChapterPurgedError` and a
+ * `SQLITE_CONSTRAINT_UNIQUE` slug collision; a throw from here matches none of
+ * them (both calls are SELECTs, which cannot carry a UNIQUE-constraint code), so
+ * it is rethrown and rendered as a generic 500 `INTERNAL_ERROR` that no client
+ * scope discriminates. Returning is how the specific code gets emitted.
+ *
+ * An earlier version of this comment said a throw would make
+ * `chapter.restore`'s `committedCodes: ["RESTORE_READ_FAILURE"]` (client
+ * `scopes.ts`) "actively wrong". That was wrong (S4, 2026-08-21): a throw never
+ * reaches that code, so the entry is never consulted. Nor is a throw a
+ * correctness hazard — with both reads inside the transaction it rolls the
+ * restore BACK, so "the restore failed, retry" is accurate. That is a strict
+ * improvement over the pre-F-28 shape, where the confirming read ran after
+ * commit and a throw left the chapter restored while reporting failure.
+ *
+ * "MUST NOT throw" was never enforced either — there is no try/catch here, and
+ * none is needed: with both reads inside the transaction neither can miss
+ * (`findChapterById` filters `deleted_at IS NULL` and the UPDATE just cleared
+ * it; `findProjectByIdIncludingDeleted` filters nothing and read the same row
+ * at the top of this transaction), so `"read_failure"` is unreachable in
+ * production on every path, `alreadyActive` included. The sentinel is a
+ * compile-checked total-function exit, not a live error path.
  */
 async function confirmRestore(
   txStore: ProjectStore,
