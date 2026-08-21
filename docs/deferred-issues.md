@@ -39,23 +39,16 @@ The `{ ...chapter, status_label: ... }` pattern is repeated 6 times across two r
 
 **What's needed:** An `enrichChapter(chapter, labelMap)` utility, or extend `queryChapter`/`queryChapters` to accept a label map and enrich in one step.
 
-### content_corrupt flag not in shared Chapter type
-
-**Severity:** Suggestion
-**Files:** `packages/shared/src/types.ts`
-
-The server can return `content_corrupt: true` on chapters with corrupt JSON, but the shared `Chapter` TypeScript interface has no such field. Client code cannot detect corrupt chapters without type assertions.
-
-**What's needed:** Add `content_corrupt?: boolean` to the `Chapter` interface. Then update client code (particularly `useProjectEditor` and `EditorPage`) to handle it — e.g., disable auto-save for corrupt chapters, show a warning in the sidebar.
-
 ### Project detail and trash endpoints include corrupt chapters silently
 
 **Severity:** Suggestion
-**Files:** `packages/server/src/routes/projects.ts:203-218` (GET /:slug), `projects.ts:418-427` (GET /:slug/trash)
+**Files:** `packages/server/src/chapters/chapters.repository.ts` (`queryChapters`), `packages/server/src/chapters/chapters.types.ts` (`stripParseFailedFlag`)
 
-`GET /api/projects/:slug` and `GET /:slug/trash` return chapter arrays via `queryChapters`. If any chapter has corrupt JSON, it appears in the array with `content: null, content_corrupt: true` but no HTTP-level error. The client sidebar could show these chapters without warning.
+`GET /api/projects/:slug` and `GET /:slug/trash` return chapter arrays. A chapter whose stored JSON does not parse is flagged internally as `content_parse_failed`, but that flag is stripped before the row crosses into a wire type, so the chapter arrives with `content: null` and nothing distinguishing it from a genuinely empty chapter. There is no HTTP-level error either — the 500 `CORRUPT_CONTENT` route fires only for single-chapter `GET` and `PATCH`. The client sidebar therefore lists corrupt chapters without warning.
 
-**What's needed:** Depends on the `content_corrupt` type addition above. Once the client can detect the flag, the sidebar can render a warning icon. Alternatively, the server could strip content from project-level responses entirely (the client fetches individual chapters via GET anyway).
+**What's needed:** A wire-visible signal, under a name that is **not** `content_corrupt`. That name already belongs to `OuttakeRow` in `packages/shared/src/types.ts` and carries a different contract there: a corrupt outtake is returned with a substituted empty doc and the flag as the only way to tell, whereas a corrupt chapter is not returned at all. Architecture finding F-22 renamed the chapter-side flag to end exactly that collision, so re-introducing the shared name would undo it — and worse than before, since the client branches on bare truthiness of `content_corrupt` in `OuttakeCard.tsx` and `EditorPage.tsx`. Alternatively, strip content from project-level responses entirely: the client fetches individual chapters via `GET` anyway, and would then hit the existing `CORRUPT_CONTENT` route.
+
+(An earlier entry here asked to add `content_corrupt?: boolean` to the shared `Chapter` interface so the client could detect corrupt chapters. That premise no longer holds — a corrupt single-chapter fetch is a 500 `CORRUPT_CONTENT`, which the client already maps as a terminal code, and the misleading-overlay half is tracked by the first entry in this file.)
 
 ## From agentic review 2026-03-31-13-11-39 (ovid/architecture branch)
 
@@ -73,9 +66,9 @@ The Express app sets no security-related HTTP headers (no `helmet()`, CSP, X-Fra
 ### Post-update corrupt check can misrepresent outcome to client
 
 **Severity:** Suggestion
-**Files:** `packages/server/src/routes/chapters.ts:106-127`
+**Files:** `packages/server/src/chapters/chapters.service.ts` (`updateChapter`), `packages/server/src/chapters/chapters.routes.ts` (the `PATCH /:id` handler)
 
-After PATCH successfully commits an update transaction, the handler re-fetches the chapter via `queryChapter` and checks `content_corrupt`. If the re-parsed content is flagged as corrupt (e.g., due to a bug in the JSON roundtrip or DB layer), the endpoint returns 500 even though the update committed. The client would show a save error for a save that actually succeeded.
+After PATCH successfully commits an update transaction, the service re-reads the chapter and tests it with `isCorruptChapter` (the internal `content_parse_failed` flag). If the re-parsed content is flagged as corrupt (e.g., due to a bug in the JSON roundtrip or DB layer), the endpoint returns 500 even though the update committed. The client would show a save error for a save that actually succeeded.
 
 **What's needed:** Consider constructing the response from the known-valid `parsed.data` merged with the DB row's metadata, or at minimum log a critical error if this path is hit (since it would indicate a serious bug, not user-facing content corruption).
 
