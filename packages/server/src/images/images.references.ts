@@ -80,7 +80,12 @@ export function extractImageIds(content: Record<string, unknown> | null): string
         // symmetric with stripImageNodes (packages/shared/src/tiptap-images.ts),
         // which DROPS the same children. If one side walked an array-wrapped
         // child and the other did not, the two halves of the reference count
-        // would disagree and the reaper would GC a still-referenced image.
+        // would disagree. The bite is not the reaper — reapOrphanImages
+        // deletes only files with no DB row and never reads reference_count —
+        // it is that THIS walker also backs the delete gate
+        // (scanChapterContentForImage -> deleteImage), so an image node it
+        // cannot see is one the gate reports as unreferenced, and the bytes
+        // are unlinked while the chapter still shows the picture.
         if (isTipTapNode(child)) {
           walk(child as Record<string, unknown>, depth + 1);
         }

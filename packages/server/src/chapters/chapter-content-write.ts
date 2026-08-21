@@ -19,11 +19,15 @@ import type { ProjectStore } from "../stores/project-store.types";
  * agreement is enforced by each caller, at each caller.
  *
  * The coupling is the point (architecture finding F-03). Writing content
- * without re-running {@link applyImageRefDiff} leaves an image referenced by the
- * chapter but counted as unreferenced, so the reaper garbage-collects a picture
- * that is still on the page; writing it without recounting leaves `word_count`
- * describing the previous revision, which the dashboard and velocity snapshots
- * then report as the writer's progress.
+ * without re-running {@link applyImageRefDiff} leaves `reference_count`
+ * describing the previous revision, so the gallery labels a still-used image
+ * "unused" (`ImageGallery.tsx`) until `deleteImage`'s live chapter scan
+ * corrects the count. It is NOT a data-loss path: `reapOrphanImages` deletes
+ * only files with no DB row and never reads `reference_count`, and the delete
+ * gate scans chapter content live rather than trusting the counter. Writing
+ * content without recounting words leaves `word_count` describing the previous
+ * revision, which the dashboard and velocity snapshots then report as the
+ * writer's progress.
  *
  * Deliberately NOT included, because they are not uniform across callers:
  * - **The project `updated_at` bump.** `restoreSnapshot` bumps once per chapter,
