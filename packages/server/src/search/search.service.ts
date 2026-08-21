@@ -2,7 +2,6 @@ import {
   searchInDoc,
   replaceInDoc,
   buildRegex,
-  countWords,
   assertSafeRegexPattern,
   RegExpSafetyError,
   RegExpTimeoutError,
@@ -17,11 +16,11 @@ import type { SearchErrorCode } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { truncateGraphemes } from "../utils/grapheme";
 import { MAX_CHAPTER_CONTENT_BYTES } from "../constants";
-import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
-import { applyImageRefDiff } from "../images/images.references";
 import { buildAutoSnapshotLabel } from "../snapshots/labels";
 import { insertAutoSnapshotIfChanged } from "../snapshots/auto-snapshot";
+import { writeChapterContent } from "../chapters/chapter-content-write";
+import { fireDailySnapshot } from "../velocity/velocity.side-effects";
 import type { SearchResult, ReplaceResult } from "@smudge/shared";
 
 /**
@@ -329,17 +328,17 @@ export async function replaceInProject(
         if (Buffer.byteLength(newContentJson, "utf8") > MAX_CHAPTER_CONTENT_BYTES) {
           throw new ContentTooLargeError();
         }
-        const newWordCount = countWords(newDoc);
-        const now = new Date().toISOString();
-
-        await txStore.updateChapter(chapter.id, {
-          content: newContentJson,
-          word_count: newWordCount,
-          updated_at: now,
+        // Content, word count and the image ref-count diff move together —
+        // see writeChapterContent. It deliberately does NOT bump the project
+        // timestamp: that happens once below, after the loop.
+        await writeChapterContent(txStore, {
+          chapterId: chapter.id,
+          projectId,
+          previousContent: chapter.content,
+          nextContent: newContentJson,
+          nextDoc: newDoc,
+          now: new Date().toISOString(),
         });
-
-        // Adjust image reference counts
-        await applyImageRefDiff(txStore, chapter.content, newContentJson, projectId);
       }
 
       // Bump the project's updated_at once per replace, not once per chapter
@@ -379,15 +378,10 @@ export async function replaceInProject(
 
   // Fire velocity side-effects after the transaction commits
   if (txResult.affected_chapter_ids.length > 0) {
-    try {
-      const svc = getVelocityService();
-      await svc.updateDailySnapshot(projectId);
-    } catch (err: unknown) {
-      logger.error(
-        { err, project_id: projectId },
-        "Velocity updateDailySnapshot failed after replace (best-effort)",
-      );
-    }
+    await fireDailySnapshot({
+      projectId,
+      failureMessage: "Velocity updateDailySnapshot failed after replace (best-effort)",
+    });
   }
 
   const final = {

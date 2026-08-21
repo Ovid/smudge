@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { randomUUID as uuid } from "node:crypto";
 import { setupTestDb } from "./test-helpers";
-import type { SearchResult } from "@smudge/shared";
+import type { SearchResult, ReplaceResult } from "@smudge/shared";
 
 function assertSearchResult(
   result: SearchResult | null | { validationError: string },
@@ -9,6 +9,16 @@ function assertSearchResult(
   if (result === null) throw new Error("expected SearchResult, got null");
   if ("validationError" in result)
     throw new Error(`expected SearchResult, got validationError: ${result.validationError}`);
+  return result;
+}
+
+function assertSearchResultReplace(
+  result: Awaited<ReturnType<typeof import("../search/search.service").replaceInProject>>,
+): ReplaceResult {
+  if (result === null) throw new Error("expected a replace result, got null");
+  if (typeof result === "string") throw new Error(`expected a replace result, got ${result}`);
+  if ("validationError" in result)
+    throw new Error(`expected a replace result, got validationError: ${result.validationError}`);
   return result;
 }
 
@@ -252,9 +262,7 @@ describe("search.service", () => {
 
       const result = await replaceInProject(projectId, "hello", "goodbye");
 
-      expect(result).not.toBeNull();
-      expect("validationError" in (result as object)).toBe(false);
-      const r = result as { replaced_count: number; affected_chapter_ids: string[] };
+      const r = assertSearchResultReplace(result);
       expect(r.replaced_count).toBe(2);
       expect(r.affected_chapter_ids).toContain(ch1);
       expect(r.affected_chapter_ids).toContain(ch2);
@@ -311,7 +319,7 @@ describe("search.service", () => {
         chapter_id: chId,
         match_index: 1,
       });
-      const r = result as { replaced_count: number; affected_chapter_ids: string[] };
+      const r = assertSearchResultReplace(result);
       expect(r.replaced_count).toBe(1);
       expect(r.affected_chapter_ids).toEqual([chId]);
 
@@ -361,7 +369,7 @@ describe("search.service", () => {
         chapter_id: ch1,
       });
 
-      const r = result as { replaced_count: number; affected_chapter_ids: string[] };
+      const r = assertSearchResultReplace(result);
       expect(r.replaced_count).toBe(1);
       expect(r.affected_chapter_ids).toEqual([ch1]);
 
@@ -418,7 +426,7 @@ describe("search.service", () => {
 
       const result = await replaceInProject(projectId, "xyz", "abc");
 
-      const r = result as { replaced_count: number; affected_chapter_ids: string[] };
+      const r = assertSearchResultReplace(result);
       expect(r.replaced_count).toBe(0);
       expect(r.affected_chapter_ids).toEqual([]);
     });
@@ -509,7 +517,7 @@ describe("search.service", () => {
 
       const result = await replaceInProject(projectId, "hello ", "");
 
-      const r = result as { replaced_count: number; affected_chapter_ids: string[] };
+      const r = assertSearchResultReplace(result);
       expect(r.replaced_count).toBe(1);
 
       const row = await t.db("chapters").where({ id: ch1 }).first();
@@ -552,11 +560,7 @@ describe("search.service", () => {
 
         const result = await replaceInProject(projectId, "hello", "goodbye");
 
-        const r = result as {
-          replaced_count: number;
-          affected_chapter_ids: string[];
-          skipped_chapter_ids?: string[];
-        };
+        const r = assertSearchResultReplace(result);
         expect(r.replaced_count).toBe(1);
         expect(r.affected_chapter_ids).toEqual([ch1]);
         expect(r.skipped_chapter_ids).toEqual([wrongShapeId]);
@@ -575,11 +579,7 @@ describe("search.service", () => {
 
       const result = await replaceInProject(projectId, "hello", "goodbye");
 
-      const r = result as {
-        replaced_count: number;
-        affected_chapter_ids: string[];
-        skipped_chapter_ids?: string[];
-      };
+      const r = assertSearchResultReplace(result);
       expect(r.replaced_count).toBe(1);
       expect(r.affected_chapter_ids).toEqual([ch1]);
       expect(r.skipped_chapter_ids).toEqual([corruptId]);
@@ -601,19 +601,65 @@ describe("search.service", () => {
 
       const result = await replaceInProject(projectId, "hello", "goodbye");
 
-      const r = result as { replaced_count: number };
+      const r = assertSearchResultReplace(result);
       expect(r.replaced_count).toBe(1);
+      // Exact string, not stringContaining: all four velocity failure wordings
+      // share the "Velocity updateDailySnapshot failed" prefix, so a prefix
+      // match pinned nothing this site owns. The wording is what identifies
+      // WHICH write path failed, and it matters most here — replace passes no
+      // `context`, so there is no chapter_id and the message is all the log
+      // line carries. See fireDailySnapshot's doc comment.
       expect(errorSpy).toHaveBeenCalledWith(
         expect.objectContaining({ err: expect.any(Error) }),
-        expect.stringContaining("Velocity updateDailySnapshot failed"),
+        "Velocity updateDailySnapshot failed after replace (best-effort)",
       );
 
       errorSpy.mockRestore();
       velocitySpy.mockRestore();
     });
 
-    it("image reference counts adjusted via applyImageRefDiff", async () => {
+    // Safety net for F-03. This is the one obligation in the content-write
+    // bundle that is deliberately NOT uniform across its three sites:
+    // chapters.service and snapshots.service bump the project timestamp once
+    // per chapter, but replaceInProject bumps it once per REPLACE, outside
+    // the per-chapter loop ("Bump the project's updated_at once per replace,
+    // not once per chapter"). An extraction that folds the bump into a shared
+    // per-chapter helper would flatten that distinction, and no existing test
+    // would notice: the column ends up with a fresh timestamp either way, so
+    // asserting the value cannot detect it. Counting the calls can.
+    it("bumps the project's updated_at exactly once, not once per chapter", async () => {
       const { replaceInProject } = await import("../search/search.service");
+      const { SqliteProjectStore } = await import("../stores/sqlite-project-store");
+      const spy = vi.spyOn(SqliteProjectStore.prototype, "updateProjectTimestamp");
+
+      const projectId = await createProject();
+      await createChapter(projectId, "Ch1", JSON.stringify(makeDoc("hello world")), 0);
+      await createChapter(projectId, "Ch2", JSON.stringify(makeDoc("hello again")), 1);
+      await createChapter(projectId, "Ch3", JSON.stringify(makeDoc("hello once more")), 2);
+
+      const result = assertSearchResultReplace(await replaceInProject(projectId, "hello", "bye"));
+
+      // All three chapters were rewritten...
+      expect(result.affected_chapter_ids).toHaveLength(3);
+      // ...but the project timestamp was touched exactly once.
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledWith(projectId, expect.any(String));
+    });
+
+    // The assertion that carries this test is the SPY, not the reference count.
+    // `replaceInDoc` only rewrites text nodes, so an image node survives every
+    // replace intact and the ref diff on this path is always empty
+    // (`added=[]`, `removed=[]`) — meaning `reference_count` reads 1 whether or
+    // not `applyImageRefDiff` runs at all. That is what this test asserted
+    // before (review 1b96b3b4, OOSS1): it was named for a call it could not
+    // detect. `findImagesByIds` is reached from nowhere else on the replace
+    // path (only `applyImageRefDiff` calls it), so spying on it proves the
+    // call was made; the count assertion then says the empty diff changed
+    // nothing, which is the behaviour worth pinning.
+    it("runs applyImageRefDiff on the replace path, leaving an untouched image at the same count", async () => {
+      const { replaceInProject } = await import("../search/search.service");
+      const { SqliteProjectStore } = await import("../stores/sqlite-project-store");
+      const refDiffSpy = vi.spyOn(SqliteProjectStore.prototype, "findImagesByIds");
       const projectId = await createProject();
       const imageId = uuid();
 
@@ -640,6 +686,11 @@ describe("search.service", () => {
 
       // Replace text — image refs should stay the same (no image change)
       await replaceInProject(projectId, "hello", "goodbye");
+
+      // applyImageRefDiff actually ran for the rewritten chapter...
+      expect(refDiffSpy).toHaveBeenCalledTimes(1);
+      // ...and found nothing to change, because the image node was untouched.
+      expect(refDiffSpy).toHaveBeenCalledWith([]);
 
       const image = await t.db("images").where({ id: imageId }).first();
       expect(image.reference_count).toBe(1); // unchanged — image still there
@@ -751,7 +802,7 @@ describe("search.service", () => {
 
       const { replaceInProject } = await import("../search/search.service");
       const result = await replaceInProject(projectId, "hello", "goodbye");
-      expect((result as { replaced_count: number }).replaced_count).toBe(1);
+      expect(assertSearchResultReplace(result).replaced_count).toBe(1);
 
       // Dedup against the latest snapshot (matching the manual-snapshot path)
       // skips the redundant pre-replace auto-snapshot.
@@ -780,7 +831,7 @@ describe("search.service", () => {
 
       const { replaceInProject } = await import("../search/search.service");
       const result = await replaceInProject(projectId, "hello", "goodbye");
-      expect((result as { replaced_count: number }).replaced_count).toBe(1);
+      expect(assertSearchResultReplace(result).replaced_count).toBe(1);
 
       // Dedup against the latest snapshot of ANY kind skips the redundant
       // pre-replace auto-snapshot — only the seed remains.
@@ -826,8 +877,7 @@ describe("search.service", () => {
 
       const { replaceInProjectBySlug } = await import("../search/search.service");
       const result = await replaceInProjectBySlug(slug, "hello", "goodbye");
-      expect(result && typeof result === "object" && "replaced_count" in result).toBe(true);
-      expect((result as { replaced_count: number }).replaced_count).toBe(1);
+      expect(assertSearchResultReplace(result).replaced_count).toBe(1);
     });
   });
 });

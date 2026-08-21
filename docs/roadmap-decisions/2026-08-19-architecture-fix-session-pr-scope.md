@@ -86,6 +86,27 @@ one-feature rule, bounded as follows:
    violation of this rule: filing a report the session produced answers to no
    finding, which is exactly the round-4 amendment's case for a kind tag.
 
+   **Violated a third way and recorded rather than fixed (2026-08-21, review
+   `6c71314a`, finding S8).** The two recurrences above are SHA-filling
+   commits mis-tagged; this one is the gap the placeholder-then-fill clause
+   exists to close, left open. `97c5160e` ships the F-03 code fix **and** ten
+   lines of F-03's `Status:` block in one commit, using neither legal route —
+   no `PENDING` placeholder, and no separate afterwards commit — and its
+   `Status commit` SHA was inserted with `git commit --amend`. The consequence
+   is confirmed, not theoretical: the report as shipped in `97c5160e` reads
+   `**Status commit:** 29e40186`, a SHA that `git cat-file -t` resolves only
+   because it survives in this clone's reflog. `git merge-base --is-ancestor
+   29e40186 HEAD` fails, so that citation does not exist in a fresh clone. A
+   later commit (`f8773951`) corrected the SHA, which is why the branch tip is
+   sound; the amend is what made the correction necessary.
+
+   The code review that raised the amend (`1b96b3b4`, finding I2) had two
+   halves. The tag half was fixed by retagging; the bundling half was neither
+   fixed nor recorded, which is asymmetric with how this branch treated rule
+   5's violation. It is **not fixed now** for the reason given three times
+   above: `97c5160e` is cited three times in F-03's `Status:` block, so a
+   rebase to split it would stale every one of them.
+
    **Why it keeps happening, since correcting the rule twice has not stopped
    it:** both kinds of commit touch nothing but markdown under `paad/`, so
    "what did this commit touch" cannot tell them apart. Decide the tag from
@@ -107,6 +128,30 @@ one-feature rule, bounded as follows:
    "at the head of the branch" until review round 3, S8, which contradicted the
    preceding "_before_ any fix commit lands" and the branch's actual layout:
    `89bc9361` is the oldest commit on it.)
+
+   **Violated once and recorded rather than fixed (2026-08-21, review
+   `1b96b3b4`, finding S4).** `af2a7161` is a correctly-placed safety-net
+   commit — first in `git log main..HEAD --reverse`, and its body cites this
+   rule — but its subject is tagged `test(architecture): [F-03] …`. The tag is
+   a violation: the branch then carries two `[F-03]` commits, so the log cannot
+   say which one is the fix without opening both, while the branch's one
+   untagged-commit allowance goes unused.
+
+   It was **not retagged.** The finding's own justification for retagging is
+   self-refuting: it argues that "F-03's `Status commit` line already records
+   `af2a7161` by SHA, so dropping the tag loses no traceability", but that
+   recorded SHA is precisely what a retag destroys — `git commit --amend`
+   changes the commit's SHA. `af2a7161` is the **base** of the branch, so the
+   rebase also rewrites the five commits after it, including `97c5160e`, which
+   F-03 records as its fix. Three currently-correct citations in F-03's
+   `Status:` block would all go stale to buy one corrected commit subject —
+   the same trade rule 2 and rule 6 have each declined twice above, resolved
+   the same way.
+
+   The distinction that decides it, since this same session **did** retag one
+   commit (`1b96b3b4` → `f8773951`, finding I2): retag when the commit is the
+   branch tip and no `Status commit` line names it or anything after it.
+   Otherwise record and move on.
 6. **Code-review follow-ups are traced by commit tag, not by a `Status:`
    block.** A fix-session branch will itself be reviewed (`/paad:agentic-review`),
    and the resulting fixes are neither architecture findings nor feature work.
