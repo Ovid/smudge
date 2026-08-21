@@ -115,8 +115,8 @@ packages/
   server/       # Express API, domain modules, db/, migrations/
     src/
       projects/           # routes, service, repository, types
-      chapters/           # routes, service, repository, types
-      velocity/           # routes, service, repository, types, injectable
+      chapters/           # routes, service, repository, types + chapter-content-write
+      velocity/           # routes, service, repository, types, injectable, side-effects
       settings/           # routes, service, repository, types
       chapter-statuses/   # routes, service, repository, types
       snapshots/          # routes, service, repository, types + auto-snapshot, content-hash, labels
