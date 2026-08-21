@@ -47,6 +47,24 @@ import type { ProjectStore } from "../stores/project-store.types";
  * @param txStore  A transaction-scoped store. Must be inside an open transaction —
  *                 the content write and the reference-count adjustment have to
  *                 commit or roll back together.
+ *
+ *                 Nothing in the type system enforces that, and the sibling
+ *                 helper extracted from these same two call sites carries the
+ *                 same warning (`auto-snapshot.ts`, S9): the ROOT store from
+ *                 `getProjectStore()` satisfies this `Pick<…>` exactly as well
+ *                 as a tx-scoped one, and `isTransactionScoped` is private so
+ *                 it never crosses the type boundary. The parameter is named
+ *                 `txStore` because it MUST be one — call this only from
+ *                 inside `store.transaction(...)`, with the `txStore` that
+ *                 transaction handed you. Passed the root store from *inside*
+ *                 a transaction, the two calls below queue behind the caller's
+ *                 own connection until `acquireConnectionTimeout` (60s, knex's
+ *                 sqlite pool is `{max:1}`). Passed it from *outside* one — the
+ *                 likelier mistake, since nothing stalls — `updateChapter` and
+ *                 `applyImageRefDiff` autocommit separately, so a failure
+ *                 between them leaves the content new and `reference_count`
+ *                 stale (a mislabelled gallery badge, self-healed at delete
+ *                 time; see the coupling note above).
  */
 export async function writeChapterContent(
   txStore: Pick<ProjectStore, "updateChapter" | "incrementImageReferenceCount" | "findImagesByIds">,
