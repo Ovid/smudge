@@ -287,6 +287,13 @@ export async function restoreSnapshot(
     // must reassign `newParsed` alongside it, or the chapter stores one
     // document while `word_count` describes another and the dashboard reports
     // the wrong daily progress with no error anywhere.
+    // The pair already diverges once, deliberately: the `content: []` coercion
+    // on `docObj` above touches only `newParsed`, so a snapshot stored as
+    // `{"type":"doc"}` is written back byte-for-byte while the counted document
+    // carries an empty `content` array. That divergence is word-count-neutral
+    // and image-neutral by construction — `countWords` returns 0 for both
+    // shapes and `extractImageIds` finds nothing in either — which is why it is
+    // allowed to stand while a NEW transform is not.
     // `previousContent` is the coalesced `currentContent` used for
     // the pre-restore auto-snapshot above, not `chapter.content`, so a
     // never-saved chapter (NULL content) is treated as the empty doc here too.
