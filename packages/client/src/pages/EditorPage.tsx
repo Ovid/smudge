@@ -344,7 +344,12 @@ export function EditorPage() {
   ]);
 
   // OOSI1 (agentic-review 2026-05-30): re-assert editor editability after a
-  // committed_but_unreloaded replace that settled on a now-unrelated chapter.
+  // possibly-committed replace that settled on a now-unrelated chapter.
+  //
+  // F-07 (2026-08-21) narrowed this to the 2xx-BAD_JSON path only. The
+  // committed_but_unreloaded path no longer reaches here — useEditorMutation
+  // settles that transition itself — and the snapshot controller, whose only
+  // use was that path, no longer takes this dep at all.
   // Dispatches MUTATION_SETTLED_SUPERSEDED ({editable:true, lock:null})
   // — the same terminal state the mutation hook emits when IT
   // detects supersession — so finalizeReplaceSuccess's stale branch can
@@ -379,7 +384,6 @@ export function EditorPage() {
     isActionBusy,
     actionBusyRef,
     applyReloadFailedLock,
-    reassertEditorEditable,
     setActionError,
     setActionInfo,
   });

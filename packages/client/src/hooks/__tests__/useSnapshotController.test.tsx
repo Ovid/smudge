@@ -317,6 +317,14 @@ describe("useSnapshotController — handleRestoreSnapshot mutate callback", () =
 
     expect(h.mutateSpecs[0]).toEqual({
       clearCacheFor: ["ch-1"],
+      // F-07: the copy and drift reference point the seam needs to settle the
+      // committed path itself. targetChapterId is the RESTORE target, matching
+      // reloadChapterId below and for the same reason — the restore was about a
+      // specific chapter's snapshot, not whichever chapter is active on return.
+      committedLock: {
+        message: STRINGS.snapshots.restoreSucceededReloadFailed,
+        targetChapterId: "ch-1",
+      },
       reloadActiveChapter: true,
       reloadChapterId: "ch-1",
       data: { staleChapterSwitch: false },
@@ -391,6 +399,7 @@ describe("useSnapshotController — handleRestoreSnapshot mutate callback", () =
         ok: false,
         stage: "committed_but_unreloaded",
         data: { staleChapterSwitch: false },
+        drifted: false,
       },
     });
 
@@ -399,10 +408,10 @@ describe("useSnapshotController — handleRestoreSnapshot mutate callback", () =
     });
 
     expect(h.setActionInfo).toHaveBeenCalledWith(STRINGS.snapshots.restoreDroppedImages(2));
-    // ...and the lock banner still goes up; the two occupy separate slots.
-    expect(h.applyReloadFailedLock).toHaveBeenCalledWith(
-      STRINGS.snapshots.restoreSucceededReloadFailed,
-    );
+    // ...and the lock banner still goes up alongside it — since F-07 raised by
+    // the seam rather than from here, so what this arm must not do is dispatch
+    // a competing transition of its own. The two still occupy separate slots.
+    expect(h.applyReloadFailedLock).not.toHaveBeenCalled();
   });
 
   it("does not pin the lock banner to an unrelated chapter when the target drifted (OOSS1)", async () => {
@@ -421,6 +430,7 @@ describe("useSnapshotController — handleRestoreSnapshot mutate callback", () =
         ok: false,
         stage: "committed_but_unreloaded",
         data: { staleChapterSwitch: false },
+        drifted: true,
       },
     });
 
@@ -428,8 +438,11 @@ describe("useSnapshotController — handleRestoreSnapshot mutate callback", () =
       await h.result.current.handleRestoreSnapshot();
     });
 
+    // F-07: the seam already re-enabled the unrelated editor, so this arm must
+    // dispatch nothing. What it still owns is the chapter-attributed notice —
+    // without it the user is never told which chapter changed under them.
     expect(h.applyReloadFailedLock).not.toHaveBeenCalled();
-    expect(h.reassertEditorEditable).toHaveBeenCalled();
+    expect(h.reassertEditorEditable).not.toHaveBeenCalled();
     expect(h.setActionError).toHaveBeenLastCalledWith(
       STRINGS.snapshots.restoreSucceededReloadFailedOnOtherChapter(h.activeChapter.title),
     );
@@ -444,6 +457,7 @@ describe("useSnapshotController — handleRestoreSnapshot mutate callback", () =
         ok: false,
         stage: "committed_but_unreloaded",
         data: { staleChapterSwitch: false },
+        drifted: false,
       },
     });
 
@@ -451,9 +465,10 @@ describe("useSnapshotController — handleRestoreSnapshot mutate callback", () =
       await h.result.current.handleRestoreSnapshot();
     });
 
-    expect(h.applyReloadFailedLock).toHaveBeenCalledWith(
-      STRINGS.snapshots.restoreSucceededReloadFailed,
-    );
+    // F-07: the lock is raised by the seam, which carries this flow's copy in
+    // the directive's committedLock. Dispatching here too would be a second
+    // transition on an already-settled machine.
+    expect(h.applyReloadFailedLock).not.toHaveBeenCalled();
     expect(h.reassertEditorEditable).not.toHaveBeenCalled();
   });
 
@@ -468,6 +483,10 @@ describe("useSnapshotController — handleRestoreSnapshot mutate callback", () =
 
     expect(h.mutateSpecs[0]).toEqual({
       clearCacheFor: [],
+      committedLock: {
+        message: STRINGS.snapshots.restoreSucceededReloadFailed,
+        targetChapterId: "ch-1",
+      },
       reloadActiveChapter: false,
       data: { staleChapterSwitch: true },
     });
@@ -504,6 +523,7 @@ describe("useSnapshotController — handleRestoreSnapshot result stages", () => 
         ok: false,
         stage: "committed_but_unreloaded",
         data: { staleChapterSwitch: false },
+        drifted: false,
       },
     });
 
@@ -511,9 +531,9 @@ describe("useSnapshotController — handleRestoreSnapshot result stages", () => 
       await h.result.current.handleRestoreSnapshot();
     });
 
-    expect(h.applyReloadFailedLock).toHaveBeenCalledWith(
-      STRINGS.snapshots.restoreSucceededReloadFailed,
-    );
+    // F-07: the banner is the seam's; the cache clear and the panel refreshes
+    // below are what this arm still owns.
+    expect(h.applyReloadFailedLock).not.toHaveBeenCalled();
     expect(mockClearCachedContent).toHaveBeenCalledWith("ch-1");
     expect(h.refreshSnapshots).toHaveBeenCalled();
     // The server wrote a pre-restore auto-snapshot; the badge is stale by one.

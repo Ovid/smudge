@@ -12,7 +12,6 @@ import type { useSnapshotState } from "../useSnapshotState";
 import { ApiRequestError, api } from "../../api/client";
 import { clearCachedContent, clearAllCachedContent } from "../useContentCache";
 import { STRINGS } from "../../strings";
-import { editorMutationReducer, type EditorMutationState } from "../useEditorMutationMachine";
 
 // OOSI1 (agentic-review 2026-05-30): unit-level regression for the
 // finalizeReplaceSuccess `reloadFailed && stale` branch. Reproducing the
@@ -145,11 +144,21 @@ function buildDeps(overrides: {
   };
 }
 
-const COMMITTED_UNRELOADED: MutationResult<ReplaceData> = {
-  ok: false,
-  stage: "committed_but_unreloaded",
-  data: { replaced_count: 2, affected_chapter_ids: ["ch-1"] },
-};
+/** F-07: `drifted` is the seam's verdict — useEditorMutation compares the live
+ * active chapter against the directive's committedLock.targetChapterId, and has
+ * ALREADY settled the machine accordingly by the time the controller sees this.
+ * The controller's remaining job on this path is the copy, so these tests vary
+ * the flag rather than the active chapter. */
+function committedUnreloaded(drifted: boolean): MutationResult<ReplaceData> {
+  return {
+    ok: false,
+    stage: "committed_but_unreloaded",
+    data: { replaced_count: 2, affected_chapter_ids: ["ch-1"] },
+    drifted,
+  };
+}
+
+const COMMITTED_UNRELOADED = committedUnreloaded(false);
 
 const FROZEN_CHAPTER_REPLACE = {
   scope: { type: "chapter" as const, chapter_id: "ch-1" },
@@ -174,16 +183,30 @@ describe("useFindReplaceController — finalizeReplaceSuccess reloadFailed branc
     vi.clearAllMocks();
   });
 
-  it("re-asserts editor editable (not a persistent lock) when the active chapter has drifted from the replace target", async () => {
-    // committed_but_unreloaded leaves the editor setEditable(false) (the hook's
-    // reloadFailed path dispatches no terminal event). The user has since
-    // navigated to a DIFFERENT chapter than the replace targeted (ch-2 vs
-    // ch-1), so a persistent lock banner would be misattributed to an
-    // untouched chapter. The branch must instead re-assert editable on the
-    // now-unrelated editor and surface a dismissible action error — otherwise
-    // the editor is stranded read-only with only a dismissible signal (OOSI1).
+  // F-07 (2026-08-21): these used to assert that the controller CALLED
+  // applyReloadFailedLock / reassertEditorEditable, and a pair below them
+  // reduced those callbacks through the real reducer to pin the end state.
+  // Both rested on the controller owning the machine transition on this path.
+  // It no longer does — useEditorMutation settles the machine itself and hands
+  // the controller its verdict — so assertions on those spies would now pin the
+  // absence of a call rather than the presence of correct behaviour.
+  //
+  // The behaviour they protected (the OOSI1 defect: an unrelated chapter's
+  // editor stranded read-only) did not move to a comment. It moved to
+  // committedUnreloadedEndState.test.tsx, which drives the REAL seam, the REAL
+  // machine and this REAL controller together and asserts the end state a user
+  // would experience. That file is dispatcher-agnostic by construction, which is
+  // exactly what these two could not be.
+  //
+  // What remains the controller's own on this path is the COPY, plus the
+  // obligation NOT to dispatch a second time.
+
+  it("surfaces a dismissible notice, and dispatches nothing, when the seam reports drift", async () => {
+    // The seam already re-enabled the now-unrelated editor. A second dispatch
+    // from here would be a redundant transition on a machine that is already
+    // settled; the notice is the only signal this arm still owns.
     const { deps, applyReloadFailedLock, reassertEditorEditable, setActionError } = buildDeps({
-      runResult: COMMITTED_UNRELOADED,
+      runResult: committedUnreloaded(true),
       activeChapterId: "ch-2",
     });
 
@@ -193,22 +216,18 @@ describe("useFindReplaceController — finalizeReplaceSuccess reloadFailed branc
       await result.current.executeReplace(FROZEN_CHAPTER_REPLACE);
     });
 
-    // Editor re-asserted editable (the fix): the unrelated chapter must not be
-    // left read-only.
-    expect(reassertEditorEditable).toHaveBeenCalledTimes(1);
-    // No persistent lock banner pinned to the untouched chapter.
-    expect(applyReloadFailedLock).not.toHaveBeenCalled();
-    // The dismissible action error is still the user-visible signal.
     expect(setActionError).toHaveBeenCalledWith(STRINGS.findReplace.replaceSucceededReloadFailed);
+    expect(reassertEditorEditable).not.toHaveBeenCalled();
+    expect(applyReloadFailedLock).not.toHaveBeenCalled();
   });
 
-  it("raises the persistent lock (and does NOT re-assert editable) when the active chapter still matches the replace target", async () => {
-    // Contrast / non-regression: not stale (active chapter == target). The
-    // editor genuinely shows the chapter whose post-mutation state we could
-    // not confirm, so the persistent lock banner is correct and the editor
-    // must stay read-only — reassertEditorEditable must NOT fire here.
+  it("leaves the banner to the seam, and dispatches nothing, when the seam reports no drift", async () => {
+    // The seam raised COMMITTED_UNRELOADED with this flow's copy, so the banner
+    // is already on screen as machine state. Setting a dismissible error here
+    // too would double-report it, in a dismissible form that contradicts the
+    // non-dismissible one.
     const { deps, applyReloadFailedLock, reassertEditorEditable, setActionError } = buildDeps({
-      runResult: COMMITTED_UNRELOADED,
+      runResult: committedUnreloaded(false),
       activeChapterId: "ch-1",
     });
 
@@ -218,86 +237,11 @@ describe("useFindReplaceController — finalizeReplaceSuccess reloadFailed branc
       await result.current.executeReplace(FROZEN_CHAPTER_REPLACE);
     });
 
-    expect(applyReloadFailedLock).toHaveBeenCalledWith(
-      STRINGS.findReplace.replaceSucceededReloadFailed,
-    );
+    expect(applyReloadFailedLock).not.toHaveBeenCalled();
     expect(reassertEditorEditable).not.toHaveBeenCalled();
     expect(setActionError).not.toHaveBeenCalledWith(
       STRINGS.findReplace.replaceSucceededReloadFailed,
     );
-  });
-
-  // ── F-07 safety net: END STATE, not call-shape ──────────────────────────
-  //
-  // The two tests above assert that the controller CALLS the injected
-  // applyReloadFailedLock / reassertEditorEditable deps. That pins the current
-  // division of labour, which is exactly what F-07 puts in question: today
-  // useEditorMutation's `finally` dispatches nothing on the committed path and
-  // the consumer owns COMMITTED_UNRELOADED. Any fix that moves that dispatch to
-  // the seam would legitimately rewrite those spy assertions — and a rewrite
-  // that got the stale case wrong would strand an unrelated chapter's editor
-  // read-only again (the OOSI1 defect), with no test left to notice.
-  //
-  // These two pin the machine's RESULTING STATE instead, through the real
-  // reducer, wired the way EditorPage wires it (applyReloadFailedLock →
-  // COMMITTED_UNRELOADED, reassertEditorEditable → MUTATION_SETTLED_SUPERSEDED).
-  //
-  // Scope, stated honestly (S3, review 2026-08-18): this is NOT
-  // dispatcher-agnostic. `mutation` here is a stub that dispatches nothing and
-  // withRealMachine patches only the two injected deps, so a seam-level fix
-  // that moved the dispatch into useEditorMutation would redden both of these
-  // while production stayed correct. Treat that redness as a prompt to
-  // re-verify the end state under the new division of labour — not as proof of
-  // a regression. What they add over
-  // `editorMutationReducer(seed, <event>)` (already pinned in
-  // useEditorMutationMachine.test.tsx) is that the CONTROLLER picks the right
-  // event for the drift/no-drift split, and the right copy with it.
-  function withRealMachine(deps: FindReplaceControllerDeps) {
-    // Precondition: what useEditorMutation leaves behind on the committed path
-    // — MUTATION_STARTED applied (editable:false) and NO terminal event.
-    let state: EditorMutationState = { editable: false, lock: null };
-    const patched: FindReplaceControllerDeps = {
-      ...deps,
-      applyReloadFailedLock: (message: string) => {
-        state = editorMutationReducer(state, { type: "COMMITTED_UNRELOADED", message });
-      },
-      reassertEditorEditable: () => {
-        state = editorMutationReducer(state, { type: "MUTATION_SETTLED_SUPERSEDED" });
-      },
-    };
-    return { deps: patched, getState: () => state };
-  }
-
-  it("leaves the machine editable and unlocked when the replace target drifted (end state)", async () => {
-    const built = buildDeps({ runResult: COMMITTED_UNRELOADED, activeChapterId: "ch-2" });
-    const { deps, getState } = withRealMachine(built.deps);
-
-    const { result } = renderHook(() => useFindReplaceController(deps));
-    await act(async () => {
-      await result.current.executeReplace(FROZEN_CHAPTER_REPLACE);
-    });
-
-    // The now-unrelated chapter must be typeable again, with no banner pinned
-    // to it. A committed-path regression that dispatched nothing at all would
-    // leave editable:false here and this goes red.
-    expect(getState()).toEqual({ editable: true, lock: null });
-  });
-
-  it("leaves the machine locked with replace copy when the target is still active (end state)", async () => {
-    const built = buildDeps({ runResult: COMMITTED_UNRELOADED, activeChapterId: "ch-1" });
-    const { deps, getState } = withRealMachine(built.deps);
-
-    const { result } = renderHook(() => useFindReplaceController(deps));
-    await act(async () => {
-      await result.current.executeReplace(FROZEN_CHAPTER_REPLACE);
-    });
-
-    // Read-only AND banner, as one state. The copy is asserted because a
-    // seam-level fix could dispatch hook-owned generic copy and still lock.
-    expect(getState()).toEqual({
-      editable: false,
-      lock: { message: STRINGS.findReplace.replaceSucceededReloadFailed },
-    });
   });
 });
 
@@ -523,7 +467,7 @@ describe("useFindReplaceController — handleReplaceOne", () => {
     // what is on screen. The editor must stay read-only until refresh — an
     // auto-save from the unconfirmed display would overwrite the commit.
     const { deps, applyReloadFailedLock, setActionInfo } = buildDeps({
-      runResult: COMMITTED_UNRELOADED,
+      runResult: committedUnreloaded(false),
       activeChapterId: "ch-1",
     });
 
@@ -533,9 +477,9 @@ describe("useFindReplaceController — handleReplaceOne", () => {
       await result.current.handleReplaceOne("ch-1", 0);
     });
 
-    expect(applyReloadFailedLock).toHaveBeenCalledWith(
-      STRINGS.findReplace.replaceSucceededReloadFailed,
-    );
+    // F-07: the lock is the seam's to raise (it holds this flow's copy in the
+    // directive), so the controller must not dispatch it a second time.
+    expect(applyReloadFailedLock).not.toHaveBeenCalled();
     // The count came back in the result, so the success banner still fires.
     expect(setActionInfo).toHaveBeenCalledWith(STRINGS.findReplace.replaceSuccess(2));
   });
@@ -545,7 +489,7 @@ describe("useFindReplaceController — handleReplaceOne", () => {
     // ch-2 which the replace never touched. Locking that editor would strand
     // an unrelated chapter read-only.
     const { deps, applyReloadFailedLock, reassertEditorEditable, setActionError } = buildDeps({
-      runResult: COMMITTED_UNRELOADED,
+      runResult: committedUnreloaded(true),
       activeChapterId: "ch-2",
     });
 
@@ -555,7 +499,9 @@ describe("useFindReplaceController — handleReplaceOne", () => {
       await result.current.handleReplaceOne("ch-1", 0);
     });
 
-    expect(reassertEditorEditable).toHaveBeenCalledTimes(1);
+    // F-07: the seam re-enabled the unrelated editor already. The dismissible
+    // notice is what this arm still owns.
+    expect(reassertEditorEditable).not.toHaveBeenCalled();
     expect(applyReloadFailedLock).not.toHaveBeenCalled();
     expect(setActionError).toHaveBeenCalledWith(STRINGS.findReplace.replaceSucceededReloadFailed);
   });

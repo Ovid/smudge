@@ -17,6 +17,12 @@ import type { Chapter } from "@smudge/shared";
 import { clearAllCachedContent } from "./useContentCache";
 import { expectConsole } from "../__tests__/expectConsole";
 
+/** Banner copy the mutate callback hands the seam for the committed path
+ * (F-07). These directives supply no targetChapterId, so the seam reads every
+ * committed run below as "not drifted" and raises the lock — the drift branch
+ * is exercised separately in the F-07 describe block at the end of this file. */
+const LOCK_COPY = "Saved, but the page could not be refreshed.";
+
 const STUB_CHAPTER: Chapter = {
   id: "stub",
   project_id: "p1",
@@ -93,6 +99,7 @@ describe("useEditorMutation — happy path", () => {
       calls.push("mutate");
       return {
         clearCacheFor: ["c1"],
+        committedLock: { message: LOCK_COPY },
         reloadActiveChapter: true,
         reloadChapterId: "c1",
         data: undefined,
@@ -131,6 +138,7 @@ describe("useEditorMutation — happy path", () => {
 
     await result.current.run(async () => ({
       clearCacheFor: [],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: false,
       data: undefined,
     }));
@@ -146,6 +154,7 @@ describe("useEditorMutation — happy path", () => {
 
     await result.current.run(async () => ({
       clearCacheFor: [],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: true,
       reloadChapterId: "c1",
       data: undefined,
@@ -162,6 +171,7 @@ describe("useEditorMutation — happy path", () => {
 
     const res = await result.current.run<{ replaced: number }>(async () => ({
       clearCacheFor: [],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: false,
       data: { replaced: 7 },
     }));
@@ -325,6 +335,7 @@ describe("useEditorMutation — reload failure", () => {
     const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor, dispatch }));
     const res = await result.current.run<{ replaced: number }>(async () => ({
       clearCacheFor: ["c1"],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: true,
       reloadChapterId: "c1",
       data: { replaced: 3 },
@@ -334,17 +345,19 @@ describe("useEditorMutation — reload failure", () => {
       ok: false,
       stage: "committed_but_unreloaded",
       data: { replaced: 3 },
+      drifted: false,
     });
     // Editor must stay read-only on reload failure: markClean + cache-clear
     // have already happened, but the TipTap doc still holds pre-mutation
     // content. Re-enabling would let the user type over stale content and
     // the next auto-save would silently revert the server-committed replace.
-    // The hook dispatches NO terminal re-enable on the committed path —
-    // editable stays false (from MUTATION_STARTED). The lock-down
-    // setEditable(false) still fires on entry.
+    // F-07: the hook now SETTLES the committed path itself rather than leaving
+    // the machine mid-transition for the consumer. This directive names no
+    // targetChapterId, so the user cannot have drifted off it and the terminal
+    // event is the lock. The lock-down setEditable(false) still fires on entry.
     expect(editorRef.current!.setEditable).toHaveBeenCalledTimes(1);
     expect(editorRef.current!.setEditable).toHaveBeenLastCalledWith(false);
-    expect(events.map((e) => e.type)).toEqual(["MUTATION_STARTED"]);
+    expect(events.map((e) => e.type)).toEqual(["MUTATION_STARTED", "COMMITTED_UNRELOADED"]);
     const final = events.reduce(editorMutationReducer, INITIAL_EDITOR_MUTATION_STATE);
     expect(final.editable).toBe(false);
     // cache-clear still happened — server committed the mutation
@@ -369,6 +382,7 @@ describe("useEditorMutation — reload failure", () => {
     );
     const res = await result.current.run(async () => ({
       clearCacheFor: [],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: true,
       reloadChapterId: "c1",
       data: undefined,
@@ -389,6 +403,7 @@ describe("useEditorMutation — reload failure", () => {
     );
     const res = await result.current.run<{ affected: string[] }>(async () => ({
       clearCacheFor: [],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: true,
       reloadChapterId: "c1",
       data: { affected: ["c9"] },
@@ -406,6 +421,7 @@ describe("useEditorMutation — reload failure", () => {
     projectEditor.reloadActiveChapter = vi.fn(async () => "reloaded" as const);
     const res2 = await result.current.run(async () => ({
       clearCacheFor: [],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: true,
       reloadChapterId: "c1",
       data: undefined,
@@ -421,6 +437,7 @@ describe("useEditorMutation — committed_but_unreloaded stage (A3)", () => {
       ok: false,
       stage: "committed_but_unreloaded",
       data: { n: 3 },
+      drifted: false,
     };
     expect(r.ok).toBe(false);
     if (!r.ok && r.stage === "committed_but_unreloaded") {
@@ -447,6 +464,7 @@ describe("useEditorMutation — reload superseded (I5)", () => {
     );
     const res = await result.current.run<{ replaced: number }>(async () => ({
       clearCacheFor: ["c1"],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: true,
       reloadChapterId: "c1",
       data: { replaced: 3 },
@@ -481,6 +499,7 @@ describe("useEditorMutation — reload superseded (I5)", () => {
     );
     const res = await result.current.run(async () => ({
       clearCacheFor: ["c1", "c2"],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: true,
       reloadChapterId: "c1",
       data: undefined,
@@ -514,17 +533,23 @@ describe("useEditorMutation — reload superseded (I5)", () => {
     );
     const res = await result.current.run<{ n: number }>(async () => ({
       clearCacheFor: ["c1", "c2"],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: true,
       reloadChapterId: "c1",
       data: { n: 5 },
     }));
 
-    expect(res).toEqual({ ok: false, stage: "committed_but_unreloaded", data: { n: 5 } });
+    expect(res).toEqual({
+      ok: false,
+      stage: "committed_but_unreloaded",
+      data: { n: 5 },
+      drifted: false,
+    });
     // B5 (race-only supersession): active chapter IS in clearCacheFor so a
-    // second reload fires. When that second reload also fails the hook must
-    // dispatch NO terminal re-enable — MUTATION_STARTED only. The consumer
-    // raises the lock banner (COMMITTED_UNRELOADED) with its own copy.
-    expect(events.map((e) => e.type)).toEqual(["MUTATION_STARTED"]);
+    // second reload fires. When that second reload also fails the hook raises
+    // the lock banner itself with the copy the directive supplied (F-07); it
+    // used to dispatch nothing and leave that to the consumer.
+    expect(events.map((e) => e.type)).toEqual(["MUTATION_STARTED", "COMMITTED_UNRELOADED"]);
   });
 
   it("plain supersession (active ∉ clearCacheFor) → ok:true and terminal MUTATION_SETTLED_SUPERSEDED (B5)", async () => {
@@ -544,6 +569,7 @@ describe("useEditorMutation — reload superseded (I5)", () => {
     );
     const res = await result.current.run<{ n: number }>(async () => ({
       clearCacheFor: ["c2"],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: true,
       reloadChapterId: "c1",
       data: { n: 1 },
@@ -573,6 +599,7 @@ describe("useEditorMutation — reload superseded (I5)", () => {
     );
     const res = await result.current.run(async () => ({
       clearCacheFor: ["c1", "c2"],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: true,
       reloadChapterId: "c1",
       data: undefined,
@@ -604,6 +631,7 @@ describe("useEditorMutation — reload superseded (I5)", () => {
 
     await result.current.run(async () => ({
       clearCacheFor: [],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: true,
       reloadChapterId: "ch-1",
       data: undefined,
@@ -640,6 +668,7 @@ describe("useEditorMutation — busy guard", () => {
         resolveMutate = () =>
           resolve({
             clearCacheFor: [],
+            committedLock: { message: LOCK_COPY },
             reloadActiveChapter: false,
             data: undefined,
           });
@@ -656,6 +685,7 @@ describe("useEditorMutation — busy guard", () => {
 
     const secondResult = await result.current.run(async () => ({
       clearCacheFor: ["x"],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: true,
       reloadChapterId: "c1",
       data: undefined,
@@ -702,6 +732,7 @@ describe("useEditorMutation — synchronous setEditable throw (C1)", () => {
 
     const first = await result.current.run(async () => ({
       clearCacheFor: [],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: false,
       data: undefined,
     }));
@@ -712,6 +743,7 @@ describe("useEditorMutation — synchronous setEditable throw (C1)", () => {
     // The latch must have cleared so a follow-up run proceeds normally.
     const second = await result.current.run(async () => ({
       clearCacheFor: [],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: false,
       data: undefined,
     }));
@@ -731,6 +763,7 @@ describe("useEditorMutation — synchronous setEditable throw (C1)", () => {
 
     const first = await result.current.run(async () => ({
       clearCacheFor: [],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: false,
       data: undefined,
     }));
@@ -743,6 +776,7 @@ describe("useEditorMutation — synchronous setEditable throw (C1)", () => {
     // The latch must have cleared so a follow-up run is not rejected as busy.
     const second = await result.current.run(async () => ({
       clearCacheFor: [],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: false,
       data: undefined,
     }));
@@ -768,6 +802,7 @@ describe("useEditorMutation — synchronous setEditable throw (C1)", () => {
     await expect(
       result.current.run(async () => ({
         clearCacheFor: [],
+        committedLock: { message: LOCK_COPY },
         reloadActiveChapter: false,
         data: undefined,
       })),
@@ -776,6 +811,7 @@ describe("useEditorMutation — synchronous setEditable throw (C1)", () => {
     // A follow-up run is not rejected as busy: the latch cleared first.
     const second = await result.current.run(async () => ({
       clearCacheFor: [],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: false,
       data: undefined,
     }));
@@ -795,7 +831,12 @@ describe("useEditorMutation — isBusy probe (I2)", () => {
     const blockingMutate = () =>
       new Promise<MutationDirective>((resolve) => {
         resolveMutate = () =>
-          resolve({ clearCacheFor: [], reloadActiveChapter: false, data: undefined });
+          resolve({
+            clearCacheFor: [],
+            reloadActiveChapter: false,
+            data: undefined,
+            committedLock: { message: LOCK_COPY },
+          });
       });
 
     const { result } = renderHook(() =>
@@ -829,6 +870,7 @@ describe("useEditorMutation — null editor ref", () => {
 
     const res = await result.current.run(async () => ({
       clearCacheFor: ["c1"],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: true,
       reloadChapterId: "c1",
       data: undefined,
@@ -871,6 +913,7 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
       editorRef.current = newEditor;
       return {
         clearCacheFor: [],
+        committedLock: { message: LOCK_COPY },
         reloadActiveChapter: false,
         data: undefined,
       };
@@ -897,6 +940,7 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
 
     await result.current.run(async () => ({
       clearCacheFor: [],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: false,
       data: undefined,
     }));
@@ -931,7 +975,12 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
 
     await result.current.run(async () => {
       editorRef.current = newEditor;
-      return { clearCacheFor: [], reloadActiveChapter: false, data: undefined };
+      return {
+        clearCacheFor: [],
+        reloadActiveChapter: false,
+        data: undefined,
+        committedLock: { message: LOCK_COPY },
+      };
     });
 
     // No imperative re-enable anywhere — the terminal event drives it.
@@ -977,6 +1026,7 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
       editorRef.current = throwingEditor;
       return {
         clearCacheFor: ["ch-1"],
+        committedLock: { message: LOCK_COPY },
         reloadActiveChapter: true,
         reloadChapterId: "ch-1",
         data: { payload: "committed" } as const,
@@ -1030,6 +1080,7 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
       editorRef.current = throwingEditor;
       return {
         clearCacheFor: ["ch-1"],
+        committedLock: { message: LOCK_COPY },
         reloadActiveChapter: false,
         data: { replaced_count: 0 } as const,
       };
@@ -1085,6 +1136,7 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
       editorRef.current = throwingEditor;
       return {
         clearCacheFor: ["ch-1"],
+        committedLock: { message: LOCK_COPY },
         reloadActiveChapter: false,
         data: { replaced_count: 1 } as const,
       };
@@ -1133,6 +1185,7 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
 
     const res = await result.current.run(async () => ({
       clearCacheFor: [],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: false,
       data: undefined,
     }));
@@ -1182,6 +1235,7 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
     );
     const res = await result.current.run(async () => ({
       clearCacheFor: ["c1"],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: false,
       data: { replaced_count: 0 } as const,
     }));
@@ -1229,6 +1283,7 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
       editorRef.current = newEditor;
       return {
         clearCacheFor: ["c1"],
+        committedLock: { message: LOCK_COPY },
         reloadActiveChapter: false,
         data: { replaced_count: 0 } as const,
       };
@@ -1274,6 +1329,7 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
     );
     const res = await result.current.run(async () => ({
       clearCacheFor: ["c1"],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: true,
       reloadChapterId: "c1",
       data: { payload: "x" } as const,
@@ -1319,6 +1375,7 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
     );
     const res = await result.current.run(async () => ({
       clearCacheFor: ["c1"],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: false,
       data: { replaced_count: 0 } as const,
     }));
@@ -1350,6 +1407,7 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
     );
     const res = await result.current.run(async () => ({
       clearCacheFor: ["c1", "c2"],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: true,
       reloadChapterId: "c1",
       data: { payload: "x" } as const,
@@ -1400,6 +1458,7 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
       // during clearAllCachedContent (simulated above).
       return {
         clearCacheFor: ["c1"],
+        committedLock: { message: LOCK_COPY },
         reloadActiveChapter: true,
         reloadChapterId: "c1",
         data: undefined,
@@ -1429,6 +1488,7 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
 
     const res = await result.current.run(async () => ({
       clearCacheFor: ["c1"],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: true,
       reloadChapterId: "c1",
       data: { payload: "committed" } as const,
@@ -1478,6 +1538,7 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
       editorRef.current = throwingEditor;
       return {
         clearCacheFor: ["ch-1"],
+        committedLock: { message: LOCK_COPY },
         reloadActiveChapter: true,
         reloadChapterId: "ch-1",
         data: undefined,
@@ -1510,6 +1571,7 @@ describe("useEditorMutation — expected chapter id (I2)", () => {
     );
     await result.current.run(async () => ({
       clearCacheFor: ["ch-1"],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: true,
       reloadChapterId: "ch-1",
       data: undefined,
@@ -1557,6 +1619,7 @@ describe("useEditorMutation — lock gating now lives in the reducer (A4/A6)", (
 
     const res = await result.current.run(async () => ({
       clearCacheFor: [],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: false,
       data: undefined,
     }));
@@ -1580,6 +1643,7 @@ describe("useEditorMutation — lock gating now lives in the reducer (A4/A6)", (
 
     await result.current.run(async () => ({
       clearCacheFor: [],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: false,
       data: undefined,
     }));
@@ -1604,6 +1668,7 @@ describe("useEditorMutation — lock gating now lives in the reducer (A4/A6)", (
 
     await result.current.run(async () => ({
       clearCacheFor: [],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: true,
       reloadChapterId: "c1",
       data: undefined,
@@ -1628,6 +1693,7 @@ describe("useEditorMutation — lock gating now lives in the reducer (A4/A6)", (
 
     await result.current.run(async () => ({
       clearCacheFor: [],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: false,
       data: undefined,
     }));
@@ -1673,6 +1739,7 @@ describe("useEditorMutation — latest-ref pattern", () => {
 
     await result.current.run(async () => ({
       clearCacheFor: [],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: true,
       reloadChapterId: "c1",
       data: undefined,
@@ -1712,6 +1779,7 @@ describe("useEditorMutation — synchronous lock-down before first await (A7)", 
 
     await result.current.run(async () => ({
       clearCacheFor: [],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: false,
       data: undefined,
     }));
@@ -1737,6 +1805,7 @@ describe("useEditorMutation — machine dispatch (A4)", () => {
     const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor, dispatch }));
     const res = await result.current.run(async () => ({
       clearCacheFor: [],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: false,
       data: undefined,
     }));
@@ -1744,7 +1813,7 @@ describe("useEditorMutation — machine dispatch (A4)", () => {
     expect(events.map((e) => e.type)).toEqual(["MUTATION_STARTED", "MUTATION_SETTLED_OK"]);
   });
 
-  it("on reload-GET failure: returns committed_but_unreloaded and dispatches NO re-enable", async () => {
+  it("on reload-GET failure: returns committed_but_unreloaded and dispatches the lock, never a re-enable", async () => {
     const { editorRef, projectEditor } = buildHandles();
     const events: EditorMutationEvent[] = [];
     const dispatch = (e: EditorMutationEvent) => events.push(e);
@@ -1752,13 +1821,22 @@ describe("useEditorMutation — machine dispatch (A4)", () => {
     const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor, dispatch }));
     const res = await result.current.run(async () => ({
       clearCacheFor: ["c1"],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: true,
       reloadChapterId: "c1",
       data: { x: 1 },
     }));
-    expect(res).toEqual({ ok: false, stage: "committed_but_unreloaded", data: { x: 1 } });
-    // hook leaves editable:false (no terminal re-enable); consumer raises the banner.
-    expect(events.map((e) => e.type)).toEqual(["MUTATION_STARTED"]);
+    expect(res).toEqual({
+      ok: false,
+      stage: "committed_but_unreloaded",
+      data: { x: 1 },
+      drifted: false,
+    });
+    // F-07: the hook raises the banner itself. What must never appear here is a
+    // re-enable — MUTATION_SETTLED_OK / RELOADED would hand the user a writable
+    // editor showing pre-mutation content, whose next auto-save reverts the
+    // server-committed change.
+    expect(events.map((e) => e.type)).toEqual(["MUTATION_STARTED", "COMMITTED_UNRELOADED"]);
   });
 
   it("re-entrancy: a second run() while busy returns stage:busy and dispatches nothing", async () => {
@@ -1771,7 +1849,13 @@ describe("useEditorMutation — machine dispatch (A4)", () => {
       () =>
         new Promise<MutationDirective>(
           (r) =>
-            (release = () => r({ clearCacheFor: [], reloadActiveChapter: false, data: undefined })),
+            (release = () =>
+              r({
+                clearCacheFor: [],
+                reloadActiveChapter: false,
+                data: undefined,
+                committedLock: { message: LOCK_COPY },
+              })),
         ),
     );
     // Yield so the first run latches inFlightRef before the second call.
@@ -1779,6 +1863,7 @@ describe("useEditorMutation — machine dispatch (A4)", () => {
     await Promise.resolve();
     const second = await result.current.run(async () => ({
       clearCacheFor: [],
+      committedLock: { message: LOCK_COPY },
       reloadActiveChapter: false,
       data: undefined,
     }));
@@ -1789,5 +1874,81 @@ describe("useEditorMutation — machine dispatch (A4)", () => {
     await first;
     // After the first settles, its terminal event has landed.
     expect(events.map((e) => e.type)).toEqual(["MUTATION_STARTED", "MUTATION_SETTLED_OK"]);
+  });
+});
+
+// F-07: the drift verdict on the committed path is the SEAM's, not the
+// caller's. Before the fix, `run()` dispatched nothing here and each consumer
+// decided for itself whether the persistent lock belonged on screen — the
+// duplication that produced the OOSI1 and OOSS1 defects, where an unrelated
+// chapter's editor was left read-only with nothing to explain it.
+//
+// The end-to-end consequences are pinned in committedUnreloadedEndState.test.tsx
+// against the real controllers. These pin the decision itself, including the
+// two cases that read as "not drifted" for different reasons.
+describe("useEditorMutation — committed-path drift verdict (F-07)", () => {
+  async function runCommitted(opts: { activeChapter: Chapter | null; targetChapterId?: string }) {
+    const { editorRef, projectEditor } = buildHandles();
+    const events: EditorMutationEvent[] = [];
+    projectEditor.reloadActiveChapter = vi.fn(async () => "failed" as const);
+    projectEditor.getActiveChapter = vi.fn(() => opts.activeChapter);
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor, dispatch: (e) => events.push(e) }),
+    );
+    const res = await result.current.run(async () => ({
+      clearCacheFor: ["c1"],
+      committedLock: { message: LOCK_COPY, targetChapterId: opts.targetChapterId },
+      reloadActiveChapter: true,
+      reloadChapterId: "c1",
+      data: undefined,
+    }));
+    return {
+      res,
+      events: events.map((e) => e.type),
+      final: events.reduce(editorMutationReducer, INITIAL_EDITOR_MUTATION_STATE),
+    };
+  }
+
+  it("re-enables and reports drifted when the user moved off the target chapter", async () => {
+    const { res, events, final } = await runCommitted({
+      activeChapter: chapterWithId("c2"),
+      targetChapterId: "c1",
+    });
+
+    // A persistent, non-dismissible banner here would name c1 while the user
+    // looks at c2. Re-enabling is safe: c2 was loaded after the server commit.
+    expect(events).toEqual(["MUTATION_STARTED", "MUTATION_SETTLED_SUPERSEDED"]);
+    expect(final).toEqual({ editable: true, lock: null });
+    expect(res.ok).toBe(false);
+    if (!res.ok && res.stage === "committed_but_unreloaded") expect(res.drifted).toBe(true);
+  });
+
+  it("locks when the user is still on the target chapter", async () => {
+    const { res, events, final } = await runCommitted({
+      activeChapter: chapterWithId("c1"),
+      targetChapterId: "c1",
+    });
+
+    expect(events).toEqual(["MUTATION_STARTED", "COMMITTED_UNRELOADED"]);
+    expect(final).toEqual({ editable: false, lock: { message: LOCK_COPY } });
+    if (!res.ok && res.stage === "committed_but_unreloaded") expect(res.drifted).toBe(false);
+  });
+
+  it("locks when the directive names no target chapter — there is nothing to have drifted from", async () => {
+    const { events, final } = await runCommitted({ activeChapter: chapterWithId("c2") });
+
+    expect(events).toEqual(["MUTATION_STARTED", "COMMITTED_UNRELOADED"]);
+    expect(final).toEqual({ editable: false, lock: { message: LOCK_COPY } });
+  });
+
+  it("locks when no chapter is open at all, rather than re-enabling nothing", async () => {
+    // Decided during the F-07 fix: the two consumers disagreed here (replace
+    // treated a null active chapter as drift, restore did not). Restore's
+    // reading wins — with no chapter open there is no editor to strand, and the
+    // banner is the honest signal that the page needs a refresh.
+    const { events, final } = await runCommitted({ activeChapter: null, targetChapterId: "c1" });
+
+    expect(events).toEqual(["MUTATION_STARTED", "COMMITTED_UNRELOADED"]);
+    expect(final).toEqual({ editable: false, lock: { message: LOCK_COPY } });
   });
 });

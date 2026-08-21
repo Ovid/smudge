@@ -92,6 +92,7 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       reloadFailed,
       lockMessage,
       targetChapterId,
+      seamOutcome,
     }: {
       replacedCount: number | null;
       reloadFailed: boolean;
@@ -107,6 +108,16 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       // possibly_committed stale-chapter-switch branch. Omit to preserve legacy
       // unconditional-lock behavior (e.g. paths where no target can be inferred).
       targetChapterId?: string;
+      /** F-07: present only when the committed_but_unreloaded path ran. There,
+       * useEditorMutation has ALREADY settled the machine — lock on target,
+       * re-enable on drift — so this function must not dispatch again; it owns
+       * the copy and nothing else, and it takes the seam's drift verdict rather
+       * than recomputing one that could disagree with the state on screen.
+       *
+       * Absent for the 2xx-BAD_JSON path, which surfaces as stage:"mutate" and
+       * never reaches the seam's committed branch, so the machine there is
+       * still this function's to settle. */
+      seamOutcome?: { drifted: boolean };
     }) => {
       // I6 (review 2026-04-21): read the LIVE slug from the ref instead of
       // the closure-captured value. A project rename that lands mid-replace
@@ -127,7 +138,9 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       // chapter switch anyway. Fall through to the dismissible action-error
       // branch below in that case.
       const currentId = targetChapterId !== undefined ? getActiveChapter()?.id : undefined;
-      const stale = targetChapterId !== undefined && currentId !== targetChapterId;
+      const stale = seamOutcome
+        ? seamOutcome.drifted
+        : targetChapterId !== undefined && currentId !== targetChapterId;
       if (reloadFailed && !stale) {
         // I6: applyReloadFailedLock sets banner + safeSetEditable as an
         // invariant pair. In the stage:"committed_but_unreloaded" path the hook kept the
@@ -138,7 +151,9 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
         // the banner and the editor state never disagree (C1). The
         // embedded safeSetEditable (I2) prevents a TipTap mid-remount
         // throw from skipping the awaited search refresh below.
-        applyReloadFailedLock(lockMessage ?? STRINGS.findReplace.replaceSucceededReloadFailed);
+        if (!seamOutcome) {
+          applyReloadFailedLock(lockMessage ?? STRINGS.findReplace.replaceSucceededReloadFailed);
+        }
       } else if (reloadFailed && stale) {
         // I1: the target chapter is no longer active. A persistent lock
         // banner here would be misattributed — the user is looking at a
@@ -159,7 +174,7 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
         // chapter switch — this just closes the timing gap deterministically.
         // The drifted chapter was loaded by handleSelectChapter's GET after the
         // server commit, so its on-screen content is fresh and safe to edit.
-        reassertEditorEditable();
+        if (!seamOutcome) reassertEditorEditable();
         setActionError(lockMessage ?? STRINGS.findReplace.replaceSucceededReloadFailed);
       }
       // findReplace.search catches network/5xx/4xx internally and resolves
@@ -264,18 +279,30 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
           // now-active chapter was affected.
           const current = getActiveChapter();
           const reload = !!current && resp.affected_chapter_ids.includes(current.id);
+          // F-07: the seam owns the committed-path transition, so it needs the
+          // banner copy and the chapter the user started from. targetChapterId
+          // is the CLICK-time chapter, not `current` — a project-scope replace
+          // can reload a chapter the user drifted onto mid-flight, and pinning
+          // a non-dismissible banner there would name a chapter they never
+          // started on.
+          const committedLock = {
+            message: STRINGS.findReplace.replaceSucceededReloadFailed,
+            targetChapterId,
+          };
           if (reload && current) {
             return {
               clearCacheFor: resp.affected_chapter_ids,
               reloadActiveChapter: true,
               reloadChapterId: current.id,
               data: resp,
+              committedLock,
             };
           }
           return {
             clearCacheFor: resp.affected_chapter_ids,
             reloadActiveChapter: false,
             data: resp,
+            committedLock,
           };
         });
 
@@ -317,6 +344,7 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
             replacedCount: result.data.replaced_count,
             reloadFailed: true,
             targetChapterId,
+            seamOutcome: { drifted: result.drifted },
           });
           return;
         }
@@ -530,18 +558,27 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
           const reload =
             resp.replaced_count > 0 && !!current && resp.affected_chapter_ids.includes(current.id);
           const clearCacheFor = resp.replaced_count > 0 ? resp.affected_chapter_ids : [];
+          // F-07: replace-one always targets chapterId, so that is the drift
+          // reference point regardless of which chapter is active when the
+          // response lands.
+          const committedLock = {
+            message: STRINGS.findReplace.replaceSucceededReloadFailed,
+            targetChapterId: chapterId,
+          };
           if (reload && current) {
             return {
               clearCacheFor,
               reloadActiveChapter: true,
               reloadChapterId: current.id,
               data: resp,
+              committedLock,
             };
           }
           return {
             clearCacheFor,
             reloadActiveChapter: false,
             data: resp,
+            committedLock,
           };
         });
 
@@ -583,6 +620,7 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
             // I1 (this review): replace-one always targets chapterId. If the
             // user switched chapters mid-flight, route to dismissible error.
             targetChapterId: chapterId,
+            seamOutcome: { drifted: result.drifted },
           });
           return;
         }

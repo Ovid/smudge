@@ -6,6 +6,31 @@ import { clearAllCachedContent } from "./useContentCache";
 import { safeSetEditable } from "../utils/editorSafeOps";
 import { clientWarn } from "../errors";
 
+/** What the seam needs in order to finish the committed-but-unreloaded
+ * transition itself instead of handing a half-made state to the caller (F-07).
+ *
+ * Required, and that is the point. Before F-07's fix the terminal dispatch on
+ * this path was a caller obligation carried by a comment, so a new caller that
+ * simply ignored the returned MutationResult left the machine at
+ * `{editable:false}` with no banner — a read-only editor with nothing on
+ * screen to explain it. Making the mutate callback hand over the banner copy
+ * and the drift reference point converts that obligation into a compile error.
+ */
+export type CommittedLockSpec = {
+  /** strings.ts copy for the persistent lock banner. Flow-specific (a restore
+   * and a replace say different things), so the seam cannot author it. */
+  message: string;
+  /** The chapter this mutation was ABOUT, captured when the user asked for it.
+   * The seam compares it against the live active chapter to decide whether the
+   * banner still belongs on screen. Deliberately not derived from
+   * `reloadChapterId`: that is the chapter the reload targeted at directive
+   * time, which for a project-scope replace can be a chapter the user drifted
+   * ONTO mid-flight — pinning a persistent banner there would misattribute it
+   * to a chapter the user never started from. Omit only when the mutation has
+   * no meaningful target (no chapter open), which reads as "never drifted". */
+  targetChapterId?: string;
+};
+
 // Discriminated union so the type system forces reloadChapterId whenever
 // reloadActiveChapter is true. Without this, a caller that set
 // reloadActiveChapter: true without reloadChapterId would arm the
@@ -19,6 +44,7 @@ import { clientWarn } from "../errors";
 export type MutationDirective<T = void> = {
   clearCacheFor: string[];
   data: T;
+  committedLock: CommittedLockSpec;
 } & ({ reloadActiveChapter: false } | { reloadActiveChapter: true; reloadChapterId: string });
 
 export type MutationResult<T = void> =
@@ -26,11 +52,17 @@ export type MutationResult<T = void> =
   // committed_but_unreloaded: server-side mutation committed but the client
   // cannot confirm what is on screen (follow-up GET failed, or race-only
   // supersession). Subsumes the former stage:"reload". No `error` field —
-  // callers always render a hardcoded strings.ts banner via
-  // applyReloadFailedLock whose wording does not depend on any failure text,
-  // so keeping an error here would only invite drift between the hook's
-  // passed-through message and the banner copy.
-  | { ok: false; stage: "committed_but_unreloaded"; data: T }
+  // callers always render a hardcoded strings.ts banner whose wording does not
+  // depend on any failure text, so keeping an error here would only invite
+  // drift between the hook's passed-through message and the banner copy.
+  //
+  // `drifted` reports the decision the seam ALREADY acted on when it dispatched
+  // (F-07): true means the user is no longer on the chapter this mutation was
+  // about, so the seam re-enabled the editor and the caller should surface a
+  // dismissible, chapter-attributed notice; false means the seam raised the
+  // persistent lock. Callers read it rather than recomputing the comparison, so
+  // the copy they choose cannot contradict the state the machine is in.
+  | { ok: false; stage: "committed_but_unreloaded"; data: T; drifted: boolean }
   // flush and mutate are split into separate members (rather than a single
   // stage:"flush" | "mutate" member) so that each consumer's stage-discriminated
   // if-chain narrows the residual to `never` for the exhaustive `_exhaustive`
@@ -47,10 +79,12 @@ export type UseEditorMutationArgs = {
     "cancelPendingSaves" | "reloadActiveChapter" | "getActiveChapter"
   >;
   /** Editor-state machine dispatch (EditorPage owns the machine). The hook
-   * emits MUTATION_STARTED at entry and one terminal event on settle
-   * (MUTATION_SETTLED_OK / _SUPERSEDED / RELOADED). On the committed path it
-   * dispatches NO terminal event — the consumer raises COMMITTED_UNRELOADED
-   * with its own strings.ts copy via applyReloadFailedLock. */
+   * emits MUTATION_STARTED at entry and exactly one terminal event on settle,
+   * on every path (F-07): MUTATION_SETTLED_OK / _SUPERSEDED / RELOADED, or —
+   * on the committed-but-unreloaded path — COMMITTED_UNRELOADED with the copy
+   * the mutate callback supplied, or MUTATION_SETTLED_SUPERSEDED when the user
+   * has drifted off the chapter the mutation was about. Consumers never need to
+   * complete a transition themselves. */
   dispatch: Dispatch<EditorMutationEvent>;
 };
 
@@ -92,7 +126,17 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
       // stale content, whose auto-save PATCH would silently revert the
       // server-side replace/restore. Keep the editor read-only and surface
       // a banner directing the user to refresh.
-      let reloadFailed = false;
+      //
+      // F-07: set by committed() below, and the sole record of the committed
+      // path having been taken. Holds the drift verdict and the banner copy so
+      // the finally's dispatch and the value handed back to the caller are
+      // decided in one place and cannot disagree.
+      // Held in an object rather than a bare `let` so the finally can narrow it:
+      // committed() assigns from inside a closure, which TypeScript's
+      // control-flow analysis does not follow for a plain local.
+      const committedOutcome: { value: { drifted: boolean; message: string } | null } = {
+        value: null,
+      };
       // Track reload *success* too: when a prior run left the editor in the
       // lock state and the current run just successfully re-fetched the
       // server copy via reloadActiveChapter, the lock's premise ("we never
@@ -117,6 +161,32 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
       // longer holds" semantics are different: on superseded the
       // premise was always about a different chapter.
       let reloadSuperseded = false;
+      /**
+       * Take the committed-but-unreloaded path (F-07).
+       *
+       * The server mutation landed but the client cannot vouch for what is on
+       * screen. Whether that warrants the persistent lock depends on where the
+       * user actually is now: if they have drifted to a different chapter, a
+       * non-dismissible banner would pin to a chapter this mutation was never
+       * about, and — because MUTATION_STARTED already set editable:false —
+       * skipping the lock without re-enabling would strand that unrelated
+       * editor read-only with nothing to explain it. That pairing is the OOSI1
+       * and OOSS1 defects, and it is why the drift verdict is computed here
+       * rather than left to each caller.
+       *
+       * A mutation with no target chapter, or a user with no chapter open at
+       * all, reads as "not drifted": there is no unrelated editor to strand,
+       * and the banner is the honest signal that a refresh is needed.
+       */
+      const committed = (d: MutationDirective<T>): MutationResult<T> => {
+        const currentId = projectEditorRef.current.getActiveChapter()?.id;
+        const drifted =
+          d.committedLock.targetChapterId !== undefined &&
+          currentId !== undefined &&
+          currentId !== d.committedLock.targetChapterId;
+        committedOutcome.value = { drifted, message: d.committedLock.message };
+        return { ok: false, stage: "committed_but_unreloaded", data: d.data, drifted };
+      };
       // Entry-time editor snapshot — used to detect mid-mutate remounts:
       // if editorAtEntry was null (chapter mid-remount) and a new TipTap
       // instance mounts during the await mutate(), we must re-read the
@@ -317,21 +387,11 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
               // unaffected and the ok:true branch still applies.
               const currentId = projectEditorRef.current.getActiveChapter()?.id;
               if (currentId && directive.clearCacheFor.includes(currentId)) {
-                reloadFailed = true;
-                return {
-                  ok: false,
-                  stage: "committed_but_unreloaded",
-                  data: directive.data,
-                };
+                return committed(directive);
               }
               return { ok: true, data: directive.data };
             }
-            reloadFailed = true;
-            return {
-              ok: false,
-              stage: "committed_but_unreloaded",
-              data: directive.data,
-            };
+            return committed(directive);
           }
         }
         if (directive.clearCacheFor.length > 0) {
@@ -374,12 +434,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
               if (!directive.reloadActiveChapter) {
                 return { ok: true, data: directive.data };
               }
-              reloadFailed = true;
-              return {
-                ok: false,
-                stage: "committed_but_unreloaded",
-                data: directive.data,
-              };
+              return committed(directive);
             }
           }
         }
@@ -409,20 +464,10 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
             );
           } catch (err) {
             clientWarn("useEditorMutation: reloadActiveChapter threw", err);
-            reloadFailed = true;
-            return {
-              ok: false,
-              stage: "committed_but_unreloaded",
-              data: directive.data,
-            };
+            return committed(directive);
           }
           if (outcome === "failed") {
-            reloadFailed = true;
-            return {
-              ok: false,
-              stage: "committed_but_unreloaded",
-              data: directive.data,
-            };
+            return committed(directive);
           }
           // "reloaded": fresh server state is on screen — set the unlock
           // flag so a prior lock can clear.
@@ -479,21 +524,11 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
               } catch (err) {
                 clientWarn("useEditorMutation: second reloadActiveChapter threw", err);
                 reloadSuperseded = false;
-                reloadFailed = true;
-                return {
-                  ok: false,
-                  stage: "committed_but_unreloaded",
-                  data: directive.data,
-                };
+                return committed(directive);
               }
               if (secondOutcome === "failed") {
                 reloadSuperseded = false;
-                reloadFailed = true;
-                return {
-                  ok: false,
-                  stage: "committed_but_unreloaded",
-                  data: directive.data,
-                };
+                return committed(directive);
               }
               if (secondOutcome === "reloaded") {
                 // Fresh content is on screen; prefer the "success" unlock
@@ -514,13 +549,28 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
         // Release the synchronous re-entrancy latch FIRST (order matters: a
         // throw must not leave the latch set for the session).
         inFlightRef.current = false;
-        // Terminal machine event. The committed path (reloadFailed) dispatches
-        // NOTHING here: editable stays false (from MUTATION_STARTED) and the
-        // consumer raises COMMITTED_UNRELOADED with its own banner copy. The
-        // re-enable is now machine intent reconciled by EditorPage's effect —
-        // no imperative setEditable(true) here (Decided Q3).
-        if (reloadFailed) {
-          // no-op: consumer owns COMMITTED_UNRELOADED
+        // Terminal machine event — EVERY path settles the machine here, with no
+        // residual obligation on the caller (F-07). The re-enable is machine
+        // intent reconciled by EditorPage's effect, not an imperative
+        // setEditable(true) (Decided Q3).
+        //
+        // The committed path used to dispatch nothing at all and leave the
+        // consumer to finish the transition, which is the flaw F-07 records: a
+        // caller that ignored the returned MutationResult stranded the editor
+        // at editable:false with no banner. Consumers still own their copy and
+        // their refreshes — they just no longer own the machine.
+        const outcome = committedOutcome.value;
+        if (outcome !== null) {
+          if (outcome.drifted) {
+            // The user moved to a chapter this mutation was not about. Same
+            // terminal state as a supersession the hook detects itself: the
+            // drifted chapter was loaded after the server commit, so it is safe
+            // to type in, and a persistent banner pinned there would name the
+            // wrong chapter (OOSI1 / OOSS1).
+            dispatch({ type: "MUTATION_SETTLED_SUPERSEDED" });
+          } else {
+            dispatch({ type: "COMMITTED_UNRELOADED", message: outcome.message });
+          }
         } else if (reloadSucceeded) {
           dispatch({ type: "RELOADED" });
         } else if (reloadSuperseded) {
