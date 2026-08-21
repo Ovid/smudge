@@ -1913,7 +1913,7 @@ codec)` plus three codec factories (`numberInRange`, `flag`, `text`). The
 ### Goal
 
 Decide, and record, whether the API should keep addressing projects by their
-mutable slug or move to the immutable project UUID — then make the six
+mutable slug or move to the immutable project UUID — then make the five
 `/api/projects` routers agree with whatever is decided.
 
 ### Why Now
@@ -1997,10 +1997,11 @@ shape.
 
 ### API Changes
 
-Determined by 4b.19.1. If the UUID direction wins, six route paths change and
-the client's call sites move from `project.slug` to `project.id` for those
-routes. Single-user app, no external API consumers, so no deprecation window is
-needed.
+Determined by 4b.19.1. If the UUID direction wins, the ten route
+registrations named in 4b.19.1 change — every slug registration except
+`GET /:slug` — and the client's call sites move from `project.slug` to
+`project.id` for those routes. Single-user app, no external API consumers, so
+no deprecation window is needed.
 
 ### Out of Scope
 
