@@ -12,6 +12,16 @@ function assertSearchResult(
   return result;
 }
 
+function assertSearchResultReplace(
+  result: Awaited<ReturnType<typeof import("../search/search.service").replaceInProject>>,
+): { replaced_count: number; affected_chapter_ids: string[] } {
+  if (result === null) throw new Error("expected a replace result, got null");
+  if (typeof result === "string") throw new Error(`expected a replace result, got ${result}`);
+  if ("validationError" in result)
+    throw new Error(`expected a replace result, got validationError: ${result.validationError}`);
+  return result;
+}
+
 const t = setupTestDb();
 
 afterEach(() => {
@@ -610,6 +620,34 @@ describe("search.service", () => {
 
       errorSpy.mockRestore();
       velocitySpy.mockRestore();
+    });
+
+    // Safety net for F-03. This is the one obligation in the content-write
+    // bundle that is deliberately NOT uniform across its three sites:
+    // chapters.service and snapshots.service bump the project timestamp once
+    // per chapter, but replaceInProject bumps it once per REPLACE, outside
+    // the per-chapter loop ("Bump the project's updated_at once per replace,
+    // not once per chapter"). An extraction that folds the bump into a shared
+    // per-chapter helper would flatten that distinction, and no existing test
+    // would notice: the column ends up with a fresh timestamp either way, so
+    // asserting the value cannot detect it. Counting the calls can.
+    it("bumps the project's updated_at exactly once, not once per chapter", async () => {
+      const { replaceInProject } = await import("../search/search.service");
+      const { SqliteProjectStore } = await import("../stores/sqlite-project-store");
+      const spy = vi.spyOn(SqliteProjectStore.prototype, "updateProjectTimestamp");
+
+      const projectId = await createProject();
+      await createChapter(projectId, "Ch1", JSON.stringify(makeDoc("hello world")), 0);
+      await createChapter(projectId, "Ch2", JSON.stringify(makeDoc("hello again")), 1);
+      await createChapter(projectId, "Ch3", JSON.stringify(makeDoc("hello once more")), 2);
+
+      const result = assertSearchResultReplace(await replaceInProject(projectId, "hello", "bye"));
+
+      // All three chapters were rewritten...
+      expect(result.affected_chapter_ids).toHaveLength(3);
+      // ...but the project timestamp was touched exactly once.
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledWith(projectId, expect.any(String));
     });
 
     it("image reference counts adjusted via applyImageRefDiff", async () => {

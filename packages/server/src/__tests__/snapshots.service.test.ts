@@ -426,6 +426,39 @@ describe("snapshots.service", () => {
       expect(beforeRestore).toBeUndefined();
     });
 
+    // Safety net for F-03: restoreSnapshot bumps the parent project's
+    // updated_at (snapshots.service.ts, inside the restore transaction), and
+    // nothing asserted it. That obligation is about to move into a shared
+    // helper, so an extraction that dropped it here would have gone
+    // unnoticed — the sibling assertion exists for updateChapter
+    // ("bumps the parent project's updated_at (hidden side effect)") but had
+    // no counterpart on this path.
+    it("bumps the parent project's updated_at", async () => {
+      stubVelocity();
+      const { projectId, chapterId } = await createProjectAndChapter();
+      const { createSnapshot, restoreSnapshot } = await import("../snapshots/snapshots.service");
+
+      const snap = (await createSnapshot(chapterId, "Original")) as Exclude<
+        Awaited<ReturnType<typeof createSnapshot>>,
+        null | "duplicate"
+      >;
+
+      await t
+        .db("chapters")
+        .where({ id: chapterId })
+        .update({ content: JSON.stringify(DOC_JSON_ALT), word_count: 2 });
+
+      const OLD = "2020-01-01T00:00:00.000Z";
+      await t.db("projects").where({ id: projectId }).update({ updated_at: OLD });
+
+      const result = await restoreSnapshot(snap.id);
+      expect(result).not.toBeNull();
+      expect(result).not.toBe("corrupt_snapshot");
+
+      const project = await t.db("projects").where({ id: projectId }).first();
+      expect(project.updated_at > OLD).toBe(true);
+    });
+
     it("adjusts image reference counts when restoring", async () => {
       stubVelocity();
       const imageId = uuid();

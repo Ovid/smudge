@@ -160,6 +160,34 @@ describe("chapters.service", () => {
       expect(project.updated_at).not.toBe(OLD);
       expect(project.updated_at > OLD).toBe(true);
     });
+
+    // Safety net for F-03: the content-write obligation bundle is being
+    // extracted into a shared helper, and word_count is one of the
+    // obligations. It was only covered indirectly (dashboard.test.ts
+    // "returns correct totals" asserts the project aggregate), so a helper
+    // that dropped the recalculation for the single-chapter update path
+    // could still have left that aggregate assertion green. This pins the
+    // recalculation on the chapter row itself, at the site that performs it.
+    it("recalculates word_count server-side from the saved content", async () => {
+      setVelocityService({ updateDailySnapshot: async () => {} });
+      const { chapterId } = await createProjectAndChapter();
+
+      const result = await updateChapter(chapterId, {
+        content: {
+          type: "doc",
+          content: [
+            { type: "paragraph", content: [{ type: "text", text: "one two three four five" }] },
+          ],
+        },
+      });
+
+      expect(result).toHaveProperty("chapter");
+      const { chapter } = result as { chapter: { word_count: number } };
+      expect(chapter.word_count).toBe(5);
+
+      const row = await t.db("chapters").where({ id: chapterId }).first();
+      expect(row.word_count).toBe(5);
+    });
   });
 
   describe("deleteChapter()", () => {
