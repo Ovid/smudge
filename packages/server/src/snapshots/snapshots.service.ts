@@ -1,17 +1,13 @@
 import { randomUUID as uuidv4 } from "node:crypto";
-import {
-  countWords,
-  TipTapDocSchema,
-  sanitizeSnapshotLabel,
-  stripImageNodes,
-} from "@smudge/shared";
+import { TipTapDocSchema, sanitizeSnapshotLabel, stripImageNodes } from "@smudge/shared";
 import { truncateGraphemes } from "../utils/grapheme";
 import { buildAutoSnapshotLabel } from "./labels";
 import { insertAutoSnapshotIfChanged } from "./auto-snapshot";
+import { writeChapterContent } from "../chapters/chapter-content-write";
+import { fireDailySnapshot } from "../velocity/velocity.side-effects";
 import { getProjectStore } from "../stores/project-store.injectable";
-import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
-import { applyImageRefDiff, extractImageIds, imageIdFromNode } from "../images/images.references";
+import { extractImageIds, imageIdFromNode } from "../images/images.references";
 import { enrichChapterWithLabel, type ChapterWithLabel } from "../chapters/chapters.types";
 import { canonicalContentHash } from "./content-hash";
 import { MAX_CHAPTER_CONTENT_BYTES } from "../constants";
@@ -282,19 +278,24 @@ export async function restoreSnapshot(
     // word count, the persisted row, and the ref-count diff must all agree on
     // ONE content value, or the chapter would hold content whose images the
     // refcounter never saw.
-    const newWordCount = countWords(newParsed);
+    // writeChapterContent is what enforces that agreement: it derives the word
+    // count from the same document it stores and runs the ref-count diff in the
+    // same call. `previousContent` is the coalesced `currentContent` used for
+    // the pre-restore auto-snapshot above, not `chapter.content`, so a
+    // never-saved chapter (NULL content) is treated as the empty doc here too.
     const now = new Date().toISOString();
-    await txStore.updateChapter(chapter.id, {
-      content: restoreContent,
-      word_count: newWordCount,
-      updated_at: now,
+    await writeChapterContent(txStore, {
+      chapterId: chapter.id,
+      projectId: chapter.project_id,
+      previousContent: currentContent,
+      nextContent: restoreContent,
+      nextDoc: newParsed,
+      now,
     });
+    // Bumped here, per chapter, rather than inside writeChapterContent —
+    // replaceInProject bumps once per replace instead, so the helper
+    // deliberately leaves this to the caller.
     await txStore.updateProjectTimestamp(chapter.project_id, now);
-
-    // Adjust image reference counts — use the same coalesced content used
-    // for the pre-restore auto-snapshot so a never-saved chapter (NULL
-    // content) is treated as the empty doc here too.
-    await applyImageRefDiff(txStore, currentContent, restoreContent, chapter.project_id);
 
     // Re-read inside the transaction so a concurrent autosave landing
     // between commit and a post-tx read cannot overwrite the response
@@ -313,15 +314,11 @@ export async function restoreSnapshot(
   if (!result) return null;
 
   // Fire velocity side-effects after the transaction commits
-  try {
-    const svc = getVelocityService();
-    await svc.updateDailySnapshot(result.project_id);
-  } catch (err: unknown) {
-    logger.error(
-      { err, project_id: result.project_id, chapter_id: result.chapter_id },
-      "Velocity updateDailySnapshot failed after restore (best-effort)",
-    );
-  }
+  await fireDailySnapshot(
+    result.project_id,
+    "Velocity updateDailySnapshot failed after restore (best-effort)",
+    { chapter_id: result.chapter_id },
+  );
 
   // Enrich with status_label to match every other chapter-returning endpoint
   // (updateChapter, restoreChapter, etc). The client types the response as

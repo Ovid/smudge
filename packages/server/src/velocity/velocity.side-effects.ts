@@ -1,0 +1,42 @@
+import { getVelocityService } from "./velocity.injectable";
+import { logger } from "../logger";
+
+/**
+ * Fire the post-commit daily-velocity snapshot for a project, best-effort.
+ *
+ * Every chapter-content write owes this call once its transaction has
+ * committed (`chapters.service.updateChapter`, `snapshots.service.restoreSnapshot`,
+ * `search.service.replaceInProject`). All three previously open-coded the
+ * identical try/catch, which is the shotgun-surgery risk architecture finding
+ * F-03 names: a new post-commit obligation had to be added at three sites and
+ * nothing forced it.
+ *
+ * Side effects and failure contract:
+ * - Calls `getVelocityService().updateDailySnapshot(projectId)`.
+ * - **Never throws.** A velocity failure must not fail a save whose content is
+ *   already committed — the writer's text is safe and the velocity row is
+ *   derived data that the next save recomputes. The error is logged at
+ *   `error` level, not swallowed silently.
+ * - Must be called AFTER the transaction commits, never inside it: it is not
+ *   part of the write's atomicity, and running it inside would let a
+ *   best-effort failure roll back committed content.
+ *
+ * `failureMessage` is a parameter rather than a fixed string because the three
+ * call sites have distinct messages ("...after save", "...after restore",
+ * "...after replace") that are pinned by existing tests; the message identifies
+ * which write path failed, which is the only thing the log line adds over the
+ * structured fields. `context` supplies the site's extra log fields (e.g.
+ * `chapter_id`, which the project-wide replace has no single value for).
+ */
+export async function fireDailySnapshot(
+  projectId: string,
+  failureMessage: string,
+  context: Record<string, unknown> = {},
+): Promise<void> {
+  try {
+    const svc = getVelocityService();
+    await svc.updateDailySnapshot(projectId);
+  } catch (err: unknown) {
+    logger.error({ err, project_id: projectId, ...context }, failureMessage);
+  }
+}

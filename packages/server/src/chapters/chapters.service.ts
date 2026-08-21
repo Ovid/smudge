@@ -1,7 +1,6 @@
 import { UpdateChapterSchema, countWords, generateSlug } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
-import { getVelocityService } from "../velocity/velocity.injectable";
-import { logger } from "../logger";
+import { fireDailySnapshot } from "../velocity/velocity.side-effects";
 import { applyImageRefDiff } from "../images/images.references";
 import {
   isCorruptChapter,
@@ -127,15 +126,13 @@ export async function updateChapter(
 
   // Fire velocity side-effects (best-effort — must not break the save)
   if (parsed.data.content !== undefined) {
-    try {
-      const svc = getVelocityService();
-      await svc.updateDailySnapshot(projectId);
-    } catch (err: unknown) {
-      logger.error(
-        { err, project_id: projectId, chapter_id: id },
-        "Velocity updateDailySnapshot failed after save (best-effort)",
-      );
-    }
+    await fireDailySnapshot(
+      projectId,
+      "Velocity updateDailySnapshot failed after save (best-effort)",
+      {
+        chapter_id: id,
+      },
+    );
   }
 
   // Only check corruption when content was part of the update
@@ -184,14 +181,9 @@ export async function deleteChapter(id: string): Promise<boolean> {
 
   if (!projectId) return false;
 
-  try {
-    await getVelocityService().updateDailySnapshot(projectId);
-  } catch (err: unknown) {
-    logger.error(
-      { err, project_id: projectId, chapter_id: id },
-      "Velocity updateDailySnapshot failed (best-effort)",
-    );
-  }
+  await fireDailySnapshot(projectId, "Velocity updateDailySnapshot failed (best-effort)", {
+    chapter_id: id,
+  });
   return true;
 }
 
@@ -361,14 +353,9 @@ export async function restoreChapter(
     throw err;
   }
 
-  try {
-    await getVelocityService().updateDailySnapshot(chapter.project_id);
-  } catch (err: unknown) {
-    logger.error(
-      { err, project_id: chapter.project_id, chapter_id: id },
-      "Velocity updateDailySnapshot failed (best-effort)",
-    );
-  }
+  await fireDailySnapshot(chapter.project_id, "Velocity updateDailySnapshot failed (best-effort)", {
+    chapter_id: id,
+  });
 
   if (txOutcome === "read_failure") return "read_failure";
   const { chapter: restored, project: updatedProject } = txOutcome;
