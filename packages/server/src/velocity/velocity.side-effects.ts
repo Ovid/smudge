@@ -26,17 +26,22 @@ import { logger } from "../logger";
  *   `error` level, not swallowed silently.
  * - Must be called AFTER the transaction commits, never inside it. The reason
  *   is deadlock, not atomicity — the `catch` below means a failure here can
- *   never roll anything back. `updateDailySnapshot` reaches the
- *   non-transaction-scoped `getProjectStore()` and opens its *own*
- *   transaction, and knex's sqlite dialect pins the pool at `{min:1, max:1}`
- *   (`knex/lib/dialects/sqlite3/index.js`, `poolDefaults`). Calling this from
- *   inside an open transaction therefore waits for the one connection the
- *   caller is still holding. `knexfile.ts` sets neither `pool` nor
- *   `acquireConnectionTimeout`, so that wait runs for knex's 60-second default
- *   and the timeout is then swallowed by the `catch` below: a 2xx returned
- *   after a minute-long hang, with a log line as the only trace.
- *   `updateDailySnapshot`'s own doc comment states the same constraint from
- *   the other side.
+ *   never roll anything back. Everything `updateDailySnapshot` does reaches
+ *   the non-transaction-scoped `getProjectStore()`, and the FIRST such reach
+ *   is not its own transaction but the plain `findSettingByKey("timezone")`
+ *   inside `getTodayDate`, awaited before `store.transaction(...)` is called
+ *   at all — so a trace of a 60-second hang that starts at `store.transaction`
+ *   is looking at a line that never ran. `velocity.service.ts` states it from
+ *   that side. Either acquire starves the same way: `knexfile.ts` sets
+ *   `client: "better-sqlite3"`, whose dialect inherits `poolDefaults` from the
+ *   sqlite3 dialect it extends (`knex/lib/dialects/better-sqlite3/index.js`,
+ *   `class Client_BetterSQLite3 extends Client_SQLite3`), pinning the pool at
+ *   `{min:1, max:1}`. Calling this from inside an open transaction therefore
+ *   waits for the one connection the caller is still holding. `knexfile.ts`
+ *   sets neither `pool` nor `acquireConnectionTimeout`, so that wait runs for
+ *   knex's 60-second default and the timeout is then swallowed by the `catch`
+ *   below: a 2xx returned after a minute-long hang, with a log line as the
+ *   only trace.
  *
  * `failureMessage` is a parameter rather than a fixed string because the call
  * sites do not share one wording: four distinct messages across the five
