@@ -62,7 +62,7 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 4b.16   | Dialog Lifecycle Hook                     | Extract `useDialogLifecycle({ open, onClose, initialFocusRef, blockEscapePropagation }) => { dialogRef, onBackdropClick }` and migrate the 5 dialogs (Confirm, Export, NewProject, ProjectSettings, ShortcutHelp) one at a time; preserve `stopImmediatePropagation` as an opt-in (`blockEscapePropagation`); ARIA `role` stays in JSX and the `showModal/close` try/catch is an always-on guard.                                                                                                                                                                                                                                                                          | Done        |
 | 4b.17   | AbortController ESLint Rule               | Add ESLint rule banning hand-rolled `useRef<AbortController>` allocations; convert `migrationStructuralCheck.test.ts`'s `PHASE_4B_3B_ALLOWLIST` + companion assertion to inline `// eslint-disable-next-line` annotations on each of the 6 surviving allocation sites across 5 files (post F-2 split). Split from Phase 4b.4 on 2026-05-28 per §Pull Request Scope one-feature rule.                                                                                                                                                                                                                                                                                       | Done        |
 | 4b.18   | Persisted-Setting Storage Helper          | Dedup the four hand-rolled `getSaved* + try/catch` localStorage readers (`useReferencePanelState` width/open/active-tab, `useSidebarState` width) behind one helper. Each reader validates differently (range clamp, strict boolean, string default), so the helper must take the validator — a bare `getSavedString` would re-open the unvalidated-read bug fixed in 4c.0 (review item I1). `useContentCache` is out of scope (own `clientWarn` logging, JSON payloads, not a setting). Raised as a Suggestion in the 4c.0 review (`paad/code-reviews/ovid-4c0-reference-panel-tabs-2026-07-12-14-55-59-3f7822c.md`); split out per §Pull Request Scope one-feature rule. | Done        |
-| 4c      | Notes, Tags & Outtakes                    | Inline notes, paragraph tags, scratchpad for cut text (split into 4c.0–4c.3; 4c.0 done, 4c.1 data layer only — UI rescheduled as 4c.1a)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | In Progress |
+| 4c      | Notes, Tags & Outtakes                    | Inline notes, paragraph tags, scratchpad for cut text (split into 4c.0–4c.3; 4c.0 done, 4c.1 data layer only — UI rescheduled as 4c.1a)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | In Progress |
 | 5a      | Fiction: Characters                       | Character sheets with structured fields and freeform notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Planned     |
 | 5b      | Fiction: Scene Cards                      | Scene cards / outline mode with drag-and-drop                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Planned     |
 | 5c      | Fiction: World-Building                   | World-building bible, "who's in the room" tracker                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Planned     |
@@ -2097,16 +2097,16 @@ does not need re-brainstorming.
 
 **Remaining tasks:**
 
-| Task | Deliverable                                                                                                                  |
-| ---- | ---------------------------------------------------------------------------------------------------------------------------- |
-| 7    | `STRINGS.notes` group (add label, dialog title, placeholder, overlap warning)                                                |
-| 8    | `packages/client/src/editor/noteCommands.ts` — `setNote`, `updateNote`, `removeNote`, `noteRangeAt`, `selectionOverlapState` |
-| 9    | `NoteDialog` — modal `<dialog>` via `useDialogLifecycle`, mirroring `ConfirmDialog`                                          |
-| 10   | Lift a position-tagged note list from `Editor.tsx`'s `onUpdate` up to `EditorPage`                                           |
-| 11   | `NotesPanel.tsx` + a Notes tab registered through the 4c.0 tab API                                                           |
-| 12   | "Add note" toolbar button + Ctrl/Cmd+Alt+M shortcut                                                                          |
-| 13   | Record the new entry points in `editorEntryPointSurface.test.ts`; pin word-count invariance with and without notes           |
-| 14   | `e2e/notes.spec.ts` — capture, list, preview-strip, aXe scan                                                                 |
+| Task | Deliverable |
+| ---- | ----------- |
+| 7  | `STRINGS.notes` group (add label, dialog title, placeholder, overlap warning) |
+| 8  | `packages/client/src/editor/noteCommands.ts` — `setNote`, `updateNote`, `removeNote`, `noteRangeAt`, `selectionOverlapState` |
+| 9  | `NoteDialog` — modal `<dialog>` via `useDialogLifecycle`, mirroring `ConfirmDialog` |
+| 10 | Lift a position-tagged note list from `Editor.tsx`'s `onUpdate` up to `EditorPage` |
+| 11 | `NotesPanel.tsx` + a Notes tab registered through the 4c.0 tab API |
+| 12 | "Add note" toolbar button + Ctrl/Cmd+Alt+M shortcut |
+| 13 | Record the new entry points in `editorEntryPointSurface.test.ts`; pin word-count invariance with and without notes |
+| 14 | `e2e/notes.spec.ts` — capture, list, preview-strip, aXe scan |
 
 **Carried-forward constraints** (from the 4c.1 pushback rounds — do not
 re-derive):
@@ -2154,8 +2154,8 @@ Paragraph-level or section-level tags that allow the writer to find all content 
 
 ### Data Model Changes
 
-**New table: Outtake** _(4c.2 design supersedes this sketch — see
-`docs/plans/2026-07-19-scratchpad-outtakes-design.md`)_
+**New table: Outtake** *(4c.2 design supersedes this sketch — see
+`docs/plans/2026-07-19-scratchpad-outtakes-design.md`)*
 
 - `id` — UUID, primary key
 - `project_id` — foreign key -> Project
@@ -2871,7 +2871,7 @@ The renderer in Electron loads from `http://127.0.0.1:<port>`, which is treated 
 
 **This is load-bearing for 7g.2 and must land with it, not after.** Two Smudge server processes against one data directory is unsupported and actively destructive, and today nothing enforces that — the enforcement is accidental. `packages/server/src/index.ts` calls `app.listen(PORT)` on a fixed port and registers an `error` handler that logs `"Port is already in use"` and `process.exit(1)` on `EADDRINUSE`, so a second instance dies on startup. **7g.2 deletes that guard.** With `SMUDGE_PORT=0` the second process binds a different free port, starts happily, and shares the first one's `DATA_DIR`.
 
-The hazard is not hypothetical and is already written down in the code. `packages/server/src/images/images.reaper.ts` documents it under "Single-process assumption (S2)": the startup orphan reaper snapshots the set of known image ids with one `select id from images`, then walks the image tree — so a sibling process's freshly-uploaded file, committed _after_ the snapshot but _before_ the walk, is deleted as an "orphan". That is silent data loss of a file the writer just added, and it is one of several: `purgeOldTrash` and the reaper both run before `app.listen` binds, which makes them safe against _in-process_ concurrency and says nothing at all about a second process.
+The hazard is not hypothetical and is already written down in the code. `packages/server/src/images/images.reaper.ts` documents it under "Single-process assumption (S2)": the startup orphan reaper snapshots the set of known image ids with one `select id from images`, then walks the image tree — so a sibling process's freshly-uploaded file, committed *after* the snapshot but *before* the walk, is deleted as an "orphan". That is silent data loss of a file the writer just added, and it is one of several: `purgeOldTrash` and the reaper both run before `app.listen` binds, which makes them safe against *in-process* concurrency and says nothing at all about a second process.
 
 Note also that the reasoning that makes most check-then-act races unreachable inside one process does **not** transfer here. better-sqlite3 is synchronous, so within a single process a request handler whose window holds only database calls cannot be interleaved by another handler (measured, recorded in F-29's Status notes in `paad/architecture-reviews/2026-08-11-smudge-architecture-report.md`). Two OS processes are genuinely concurrent; every one of those windows reopens, plus the WAL-level writer contention `PRAGMA busy_timeout` exists for.
 
@@ -2880,7 +2880,7 @@ Two enforcement layers, because they cover different launches:
 - **Electron:** `app.requestSingleInstanceLock()` in `main.ts`. A second launch does not start a server at all — it hands its argv to the running instance's `second-instance` event, which focuses the existing window. This is the common case, since every Electron launch resolves the same `app.getPath('userData')`.
 - **Server:** a lock file under the resolved data directory (an exclusive `open` with `wx`, holding the pid, released on graceful shutdown and reclaimed if the recorded pid is gone). This covers the launches Electron's lock cannot see — two `SMUDGE_PORT=0` processes sharing a `DATA_DIR`, or a packaged app started alongside a `make dev` that was pointed at the same directory. Refuse to start with a message naming the holding pid and the directory, rather than starting and corrupting.
 
-The default `make dev` and Electron paths do _not_ collide with each other today (dev resolves `packages/server/../../data`, Electron resolves `SMUDGE_USER_DATA_DIR`), so the server-side lock is guarding the explicit-override and dual-Electron cases, not the everyday one.
+The default `make dev` and Electron paths do *not* collide with each other today (dev resolves `packages/server/../../data`, Electron resolves `SMUDGE_USER_DATA_DIR`), so the server-side lock is guarding the explicit-override and dual-Electron cases, not the everyday one.
 
 ### Data Model Changes
 
