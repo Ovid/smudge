@@ -372,11 +372,13 @@ Re-flagging one is warranted only if its stated premise changes.
   idiomatic functional TypeScript, not a defect — a "fix" would mean an OO
   entities-with-behavior rewrite against the grain of the codebase.
 - **Hidden side effects in chapter mutations (F-19).** `updateChapter` /
-  `deleteChapter` do more than their names suggest (bump project `updated_at`,
-  decrement image ref counts, fire post-commit velocity snapshots). Each side
-  effect is enumerated in the function's doc comment and best-effort failures
-  are logged, not swallowed — the doc discipline, not decomposition, is the
-  mitigation. New mutations with non-obvious side effects must keep it.
+  `deleteChapter` / `restoreChapter` do more than their names suggest (bump
+  project `updated_at`, decrement or increment image ref counts, fire
+  post-commit velocity snapshots — and `restoreChapter` additionally un-deletes
+  a soft-deleted parent project and regenerates its slug). Each side effect is
+  enumerated in the function's doc comment and best-effort failures are logged,
+  not swallowed — the doc discipline, not decomposition, is the mitigation. New
+  mutations with non-obvious side effects must keep it.
 - **Image-URI rule encoded twice (F-16).** The client `ALLOWED_URI_REGEXP`
   (relative-only, fail-closed XSS allowlist) and the server `IMAGE_SRC_RE`
   (optional `https?://host` prefix, reference-count matcher) intentionally
