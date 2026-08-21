@@ -4,12 +4,19 @@ import { logger } from "../logger";
 /**
  * Fire the post-commit daily-velocity snapshot for a project, best-effort.
  *
- * Every chapter-content write owes this call once its transaction has
- * committed (`chapters.service.updateChapter`, `snapshots.service.restoreSnapshot`,
- * `search.service.replaceInProject`). All three previously open-coded the
- * identical try/catch, which is the shotgun-surgery risk architecture finding
- * F-03 names: a new post-commit obligation had to be added at three sites and
- * nothing forced it.
+ * Five call sites, of two kinds.
+ *
+ * Three are the chapter-content writes that owe this call once their
+ * transaction has committed: `chapters.service.updateChapter`,
+ * `snapshots.service.restoreSnapshot`, `search.service.replaceInProject`.
+ * Those three are the ones architecture finding F-03 names — each open-coded
+ * the identical try/catch, so a new post-commit obligation had to be added at
+ * three sites and nothing forced it.
+ *
+ * Two more are not content writes but change the project's word total the same
+ * way: `chapters.service.deleteChapter` and `chapters.service.restoreChapter`.
+ * They carried the identical block and were folded in here rather than left as
+ * open-coded copies in the very file being de-duplicated.
  *
  * Side effects and failure contract:
  * - Calls `getVelocityService().updateDailySnapshot(projectId)`.
@@ -31,12 +38,22 @@ import { logger } from "../logger";
  *   `updateDailySnapshot`'s own doc comment states the same constraint from
  *   the other side.
  *
- * `failureMessage` is a parameter rather than a fixed string because the three
- * call sites have distinct messages ("...after save", "...after restore",
- * "...after replace") that are pinned by existing tests; the message identifies
- * which write path failed, which is the only thing the log line adds over the
- * structured fields. `context` supplies the site's extra log fields (e.g.
- * `chapter_id`, which the project-wide replace has no single value for).
+ * `failureMessage` is a parameter rather than a fixed string because the call
+ * sites do not share one wording: four distinct messages across the five
+ * sites, each pinned by an existing test. The message identifies which write
+ * path failed, which is the only thing the log line adds over the structured
+ * fields.
+ *
+ * It does not identify all five, though. `deleteChapter` and `restoreChapter`
+ * share the generic "Velocity updateDailySnapshot failed (best-effort)", so a
+ * log line cannot tell a failed delete from a failed restore — and neither can
+ * the two assertions that pin it (`chapters.service.test.ts:212,252` expect
+ * the same string). Giving either site its own wording is a one-line change
+ * plus the matching assertion, if that distinction is ever wanted.
+ *
+ * `context` supplies the site's extra log fields: `chapter_id` at four sites,
+ * omitted at the fifth, since the project-wide replace has no single value
+ * for it.
  */
 export async function fireDailySnapshot(
   projectId: string,
