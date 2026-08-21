@@ -5,12 +5,14 @@ import { logger } from "../logger";
 import { applyImageRefDiff } from "../images/images.references";
 import {
   isCorruptChapter,
-  stripCorruptFlag,
   enrichChapterWithLabel,
+  type ChapterRow,
   type ChapterWithLabel,
   type RestoredChapterResponse,
   type UpdateChapterData,
 } from "./chapters.types";
+import type { ProjectRow } from "../projects/projects.types";
+import type { ProjectStore } from "../stores/project-store.types";
 
 // --- Transaction control-flow errors ---
 
@@ -141,26 +143,12 @@ export async function updateChapter(
     return { corrupt: true };
   }
 
-  let enriched: ChapterWithLabel;
-  try {
-    enriched = await enrichChapterWithLabel(store, updated);
-  } catch (err: unknown) {
-    // Enrichment failed but the save succeeded — fall back to status as label
-    // so the client sees a successful save, not a false 500.
-    // I5: route through the shared helper. This inline twin was re-introduced
-    // by b694a86 six days after e6fd38b consolidated the strips, and survived
-    // bdb6c99's fix to the identical shape in snapshots.service.ts.
-    // F-31: log it. This is the app's hottest endpoint, so a persistent
-    // chapter_statuses lookup failure would degrade status_label on every save
-    // forever with zero log lines. Matches the level and field shape of the
-    // identical degrade in snapshots.service.restoreSnapshot.
-    logger.error(
-      { err, project_id: projectId, chapter_id: id },
-      "enrichChapterWithLabel failed after save; returning status as label",
-    );
-    enriched = { ...stripCorruptFlag(updated), status_label: updated.status };
-  }
-  return { chapter: enriched };
+  // The enrichment degrade (log + fall back to status as label) used to be
+  // wrapped here. It now lives inside enrichChapterWithLabel itself, because
+  // restoreChapter and projects.service.createChapter needed the identical
+  // guard and had none (OOSI1). This site keeps no local catch: a second one
+  // would only be reachable if the shared guard were removed.
+  return { chapter: await enrichChapterWithLabel(store, updated) };
 }
 
 /**
@@ -208,6 +196,56 @@ export async function deleteChapter(id: string): Promise<boolean> {
 }
 
 /**
+ * What {@link restoreChapter}'s transaction hands back: either the two rows the
+ * response is built from, both read inside the transaction, or the sentinel.
+ */
+type RestoreTxOutcome = { chapter: ChapterRow; project: ProjectRow } | "read_failure";
+
+/**
+ * Re-read the restored chapter and its parent project through the
+ * transaction-scoped store, so the response reflects exactly what this
+ * transaction wrote.
+ *
+ * Reports a miss by RETURNING the sentinel rather than throwing, because only a
+ * returned sentinel can reach `RESTORE_READ_FAILURE`. `restoreChapter`'s catch
+ * discriminates on `ParentPurgedError`, `ChapterPurgedError` and a
+ * `SQLITE_CONSTRAINT_UNIQUE` slug collision; a throw from here matches none of
+ * them (both calls are SELECTs, which cannot carry a UNIQUE-constraint code), so
+ * it is rethrown and rendered as a generic 500 `INTERNAL_ERROR` that no client
+ * scope discriminates. Returning is how the specific code gets emitted.
+ *
+ * An earlier version of this comment said a throw would make
+ * `chapter.restore`'s `committedCodes: ["RESTORE_READ_FAILURE"]` (client
+ * `scopes.ts`) "actively wrong". That was wrong (S4, 2026-08-21): a throw never
+ * reaches that code, so the entry is never consulted. Nor is a throw a
+ * correctness hazard — with both reads inside the transaction it rolls the
+ * restore BACK, so "the restore failed, retry" is accurate. That is a strict
+ * improvement over the pre-F-28 shape, where the confirming read ran after
+ * commit and a throw left the chapter restored while reporting failure.
+ *
+ * "MUST NOT throw" was never enforced either — there is no try/catch here, and
+ * none is needed: with both reads inside the transaction neither can miss
+ * (`findChapterById` filters `deleted_at IS NULL` and the UPDATE just cleared
+ * it; `findProjectByIdIncludingDeleted` filters nothing and read the same row
+ * at the top of this transaction), so `"read_failure"` is unreachable in
+ * production on every path, `alreadyActive` included. The sentinel is a
+ * compile-checked total-function exit, not a live error path.
+ */
+async function confirmRestore(
+  txStore: ProjectStore,
+  id: string,
+  projectId: string,
+): Promise<RestoreTxOutcome> {
+  const restored = await txStore.findChapterById(id);
+  if (!restored) return "read_failure";
+
+  const project = await txStore.findProjectByIdIncludingDeleted(projectId);
+  if (!project) return "read_failure";
+
+  return { chapter: restored, project };
+}
+
+/**
  * Restore a soft-deleted chapter.
  *
  * Side effects beyond clearing the chapter's `deleted_at` (F-8 — intentional,
@@ -229,9 +267,23 @@ export async function restoreChapter(
   const chapter = await store.findDeletedChapterById(id);
   if (!chapter) return null;
 
+  // F-28: the confirming reads run INSIDE the transaction. Without that, a
+  // concurrent writer landing between commit and a post-tx read would let the
+  // other writer's state ride back in this response — the rule stated at
+  // updateChapter above and repeated at snapshots.service.restoreSnapshot.
+  // There is no observable delta in this process (better-sqlite3 is
+  // synchronous and Smudge is single-writer), but roadmap Phase 7g.2 deletes
+  // the guard that keeps it single-writer; see 7g.8.
+  //
+  // Two things deliberately stay OUTSIDE, and both are traps:
+  //  - the velocity snapshot, which is a post-commit best-effort side effect;
+  //  - enrichChapterWithLabel, which reaches the store for the status label.
+  //    Knex's better-sqlite3 pool is max:1, so a non-scoped `store.*` call from
+  //    inside a transaction STARVES until timeout rather than failing fast.
+  let txOutcome: RestoreTxOutcome;
   try {
     const now = new Date().toISOString();
-    await store.transaction(async (txStore) => {
+    txOutcome = await store.transaction<RestoreTxOutcome>(async (txStore) => {
       const parentProject = await txStore.findProjectByIdIncludingDeleted(chapter.project_id);
       if (!parentProject) {
         throw new ParentPurgedError();
@@ -246,7 +298,12 @@ export async function restoreChapter(
         // Distinguish by checking if the chapter exists as active.
         const alreadyActive = await txStore.findChapterById(id);
         if (alreadyActive) {
-          return; // Already restored by another request — no action needed
+          // Already restored by another request. The project-restore and the
+          // image-ref increment below belong to whichever request did the
+          // restore, so they are skipped here — but the response still has to
+          // be confirmed, and confirming inside the transaction is the whole
+          // point of F-28. Hence a returned outcome rather than a bare return.
+          return confirmRestore(txStore, id, chapter.project_id);
         }
         throw new ChapterPurgedError();
       }
@@ -274,6 +331,8 @@ export async function restoreChapter(
       if (restoredRow?.content) {
         await applyImageRefDiff(txStore, null, restoredRow.content, restoredRow.project_id);
       }
+
+      return confirmRestore(txStore, id, chapter.project_id);
     });
   } catch (err: unknown) {
     if (err instanceof ParentPurgedError) {
@@ -311,11 +370,8 @@ export async function restoreChapter(
     );
   }
 
-  const restored = await store.findChapterById(id);
-  if (!restored) return "read_failure";
-
-  const updatedProject = await store.findProjectByIdIncludingDeleted(chapter.project_id);
-  if (!updatedProject) return "read_failure";
+  if (txOutcome === "read_failure") return "read_failure";
+  const { chapter: restored, project: updatedProject } = txOutcome;
 
   const enriched = await enrichChapterWithLabel(store, restored);
   return {

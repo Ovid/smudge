@@ -73,6 +73,27 @@ one-feature rule, bounded as follows:
    F-25's `Status commit`, a worse traceability outcome than the one the rule
    protects. The rule is corrected here so the next session does not repeat it.
 
+   **It was repeated anyway, and is recorded rather than fixed (2026-08-21,
+   finding S3).** `d7595686` (recording F-24's `Status commit`) and `09aaba1e`
+   (recording F-22's, F-28's and F-38's) are both SHA-filling commits — rule 2
+   commits by the paragraph above — and both are tagged `[report]`. They are
+   **not retagged**, for the reason already given twice here: rebasing from
+   `d7595686` rewrites `80dcd33e`, `1129749a` and `68810d1b`, every one of
+   which is recorded as a `Status commit` SHA in the report, so the retag would
+   invalidate more traceability than it restores.
+
+   `964bae82 [report] file the 2026-08-20 agentic-review report` is **not** a
+   violation of this rule: filing a report the session produced answers to no
+   finding, which is exactly the round-4 amendment's case for a kind tag.
+
+   **Why it keeps happening, since correcting the rule twice has not stopped
+   it:** both kinds of commit touch nothing but markdown under `paad/`, so
+   "what did this commit touch" cannot tell them apart. Decide the tag from
+   what the commit **answers to**. A commit that exists because a finding was
+   fixed — including one that only writes down that fix's SHA — takes the
+   finding IDs. A commit that exists because the session produced a document
+   takes a kind tag.
+
 3. **Every finding carries a `Status:` block** in the report, recording what
    was done, what was deliberately _not_ done, and the fix commit SHA.
 4. **A finding whose fix is itself a feature is out of scope** for a fix

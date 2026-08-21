@@ -1,0 +1,11 @@
+# Prose is hand-formatted; Prettier is for code only.
+#
+# `npm run format`'s globs already exclude markdown, but that only governs the
+# CLI. An editor's format-on-save or an ad-hoc `prettier --write <path>` bypasses
+# them, and a pass like that rewrites markdown emphasis and inline code spans:
+# it turned `_false_` into `\_false*` and glued prose into code spans across
+# three findings of an architecture report on 2026-08-20 (agentic-review I3).
+# This file is the enforcement the globs cannot provide.
+#
+# See CLAUDE.md §Documentation Discipline.
+*.md

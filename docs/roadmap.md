@@ -62,6 +62,7 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 4b.16   | Dialog Lifecycle Hook                     | Extract `useDialogLifecycle({ open, onClose, initialFocusRef, blockEscapePropagation }) => { dialogRef, onBackdropClick }` and migrate the 5 dialogs (Confirm, Export, NewProject, ProjectSettings, ShortcutHelp) one at a time; preserve `stopImmediatePropagation` as an opt-in (`blockEscapePropagation`); ARIA `role` stays in JSX and the `showModal/close` try/catch is an always-on guard.                                                                                                                                                                                                                                                                          | Done        |
 | 4b.17   | AbortController ESLint Rule               | Add ESLint rule banning hand-rolled `useRef<AbortController>` allocations; convert `migrationStructuralCheck.test.ts`'s `PHASE_4B_3B_ALLOWLIST` + companion assertion to inline `// eslint-disable-next-line` annotations on each of the 6 surviving allocation sites across 5 files (post F-2 split). Split from Phase 4b.4 on 2026-05-28 per §Pull Request Scope one-feature rule.                                                                                                                                                                                                                                                                                       | Done        |
 | 4b.18   | Persisted-Setting Storage Helper          | Dedup the four hand-rolled `getSaved* + try/catch` localStorage readers (`useReferencePanelState` width/open/active-tab, `useSidebarState` width) behind one helper. Each reader validates differently (range clamp, strict boolean, string default), so the helper must take the validator — a bare `getSavedString` would re-open the unvalidated-read bug fixed in 4c.0 (review item I1). `useContentCache` is out of scope (own `clientWarn` logging, JSON payloads, not a setting). Raised as a Suggestion in the 4c.0 review (`paad/code-reviews/ovid-4c0-reference-panel-tabs-2026-07-12-14-55-59-3f7822c.md`); split out per §Pull Request Scope one-feature rule. | Done        |
+| 4b.19   | Project Identifier Addressing             | Decide whether the API keeps addressing projects by their mutable `slug` or moves to the immutable project UUID, then bring the five `/api/projects` routers into line. Images is a permanent carve-out in either direction: its `:projectId` doubles as a filesystem directory name and its UUID validator is a path-traversal guard. Deferred here by architecture finding F-24 (`paad/architecture-reviews/2026-08-11-smudge-architecture-report.md`) rather than decided inline; CLAUDE.md §API Design routes every future project sub-resource author here. | Planned     |
 | 4c      | Notes, Tags & Outtakes                    | Inline notes, paragraph tags, scratchpad for cut text (split into 4c.0–4c.3; 4c.0 done, 4c.1 data layer only — UI rescheduled as 4c.1a)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | In Progress |
 | 5a      | Fiction: Characters                       | Character sheets with structured fields and freeform notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Planned     |
 | 5b      | Fiction: Scene Cards                      | Scene cards / outline mode with drag-and-drop                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Planned     |
@@ -1233,7 +1234,7 @@ Pattern analysis across the six `ovid/architecture` code reviews (2026-04-19 to 
 
 ### Scope
 
-- One `EditorMutationState` primitive (shape decided at design time) that owns `{ editable, locked, busy }` as a machine driven by explicit events, not by independent setState calls. *(Superseded 2026-08-17 by architecture finding F-08: the `busy` field was a mirror no consumer ever read — the authoritative latch is `inFlightRef` in `useEditorMutation`, which must be readable before the first `await`. It was removed and the machine now owns `{ editable, locked }`. The rest of this phase's record stands as shipped.)*
+- One `EditorMutationState` primitive (shape decided at design time) that owns `{ editable, locked, busy }` as a machine driven by explicit events, not by independent setState calls. _(Superseded 2026-08-17 by architecture finding F-08: the `busy` field was a mirror no consumer ever read — the authoritative latch is `inFlightRef` in `useEditorMutation`, which must be readable before the first `await`. It was removed and the machine now owns `{ editable, locked }`. The rest of this phase's record stands as shipped.)_
 - Extend `MutationResult.stage` with a `"committed_but_unreloaded"` variant covering:
   - 2xx `BAD_JSON` on replace / restore response bodies.
   - `expectedChapterId` skip where the hook would otherwise treat skip as success.
@@ -1908,6 +1909,116 @@ codec)` plus three codec factories (`numberInRange`, `flag`, `text`). The
 
 ---
 
+## Phase 4b.19: Project Identifier Addressing
+
+### Goal
+
+Decide, and record, whether the API should keep addressing projects by their
+mutable slug or move to the immutable project UUID — then make the five
+`/api/projects` routers agree with whatever is decided.
+
+### Why Now
+
+Filed 2026-08-20 from architecture finding F-24, after a `/paad:rethink` pass
+falsified the reasoning that had been about to close F-24 as a documentation
+fix. Three facts came out of that pass, and together they are why this is a
+decision phase rather than a cleanup:
+
+1. **There is already a decision on record, and the tree diverges from it.**
+   `docs/plans/2026-03-29-project-slugs-design.md:12` says "All project
+   endpoints switch from `:id` to `:slug`", carving out only chapter endpoints.
+   Images and outtakes departed from it later without recording why.
+2. **The slug is not merely mutable, it is reclaimable.** `resolveUniqueSlug`
+   ignores soft-deleted projects (`projects.repository.ts:129,137`), so
+   renaming a project away from slug S releases S, and the next project whose
+   title generates S takes it over. Demonstrated by execution, not inferred:
+   an old `/projects/my-novel` URL afterwards resolves to a _different_
+   project, with no 404 to signal it.
+3. **The routes are only half-pinned.** Existing tests fail if a slug route
+   stops accepting slugs, or if a UUID route stops rejecting non-UUIDs — all
+   ten flips were checked in a sandbox. But a slug route _broadened_ to accept
+   both kinds passes the whole server suite (64 files / 1075 tests) unchanged,
+   because the eleven slug route registrations (nine distinct paths, across
+   three routers) carry no identifier validator at all.
+
+The everyday hazard is already closed: the client updates every in-memory slug
+holder and the browser URL on both slug-mutation paths. What is not closed is
+(a) the machinery that exists only because a rename can move the slug out from
+under an in-flight request, and (b) the two committed-but-unreadable branches
+where a client-held slug goes stale anyway.
+
+### Features
+
+#### 4b.19.1 The Decision
+
+Reverse or reaffirm the 2026-03-29 blanket-slug decision, in a
+`docs/roadmap-decisions/` entry. The two candidates:
+
+- **Keep slugs.** One rule, matches the record, no code moves. Leaves a
+  mutable, reclaimable key in eight places and keeps the slug-drift recovery
+  paths cross-cutting.
+- **Move sub-resource routes to the project UUID**, leaving `GET
+/api/projects/:slug` as the single slug→project entry point the client hits
+  once on load. The fragile key is then used in one place instead of eight,
+  and a stale reference can only 404, never resolve to the wrong project. Costs
+  ten route handlers — every slug registration except `GET /:slug` — the
+  services behind them, the client call sites, and their tests.
+
+Note what this does **not** buy either way: the user-facing route
+`/projects/:slug` stays slug-based by design, so the stale-bookmark case is
+untouched by this phase. Fixing that needs a redirect-on-stale-slug, which is a
+separate feature.
+
+#### 4b.19.2 Make the Tree Match
+
+Whichever way 4b.19.1 goes, bring all five routers into line — including
+outtakes, which today is a departure with no recorded reason. **Images is the
+one exception in either direction:** its `:projectId` must stay a UUID because
+the project id doubles as a filesystem directory name
+(`images.paths.ts:94-96`) and its validator is a path-traversal guard
+(`5c75077e`). Record that as a permanent carve-out rather than an anomaly.
+
+#### 4b.19.3 Pin the Direction Tests Do Not Cover
+
+Add the missing assertion direction: a slug route must _reject_ a project
+UUID, and a UUID route must reject a slug. Today only one direction is
+pinned, so a route silently broadened to accept both stays green.
+
+**Do not build a source-scanning route-discovery guard for this.**
+`mutationCommittedSurface.test.ts` needed four consecutive review rounds and a
+switch to the TypeScript parser before it stopped green-passing shapes it was
+recorded as blocking; F-07's own round-4 caveat says the answer to a fifth miss
+is a structural fix, not a fifth patch. Per-route behavioural assertions are
+enough here.
+
+### Data Model Changes
+
+None. `projects.id` and `projects.slug` both already exist and neither changes
+shape.
+
+### API Changes
+
+Determined by 4b.19.1. If the UUID direction wins, the ten route
+registrations named in 4b.19.1 change — every slug registration except
+`GET /:slug` — and the client's call sites move from `project.slug` to
+`project.id` for those routes. Single-user app, no external API consumers, so
+no deprecation window is needed.
+
+### Out of Scope
+
+- Redirect-on-stale-slug for user-facing URLs (the bookmark case). Separate
+  feature; does not depend on this phase.
+- The two committed-but-unreadable stale-slug client branches
+  (`useChapterMetadata.ts:134-179`, which locks the editor, and
+  `useTrashManager.ts:243-327`, which does not). Worth fixing, but they are
+  client recovery bugs and would survive either decision here.
+
+### Dependencies
+
+None. This phase is independent of 4c and everything after it.
+
+---
+
 ## Phase 4c: Notes, Tags & Outtakes
 
 <!-- plan: 2026-07-12-notes-design.md -->
@@ -1946,6 +2057,7 @@ codec)` plus three codec factories (`numberInRange`, `flag`, `text`). The
 >   > confirmed commits bearing the label existed, not that the plan's tasks
 >   > were finished; the four `feat(4c.1)` commits are Tasks 1–3 plus the CSS.
 >   > Verify a phase against its plan's task list, not against commit labels.
+>
 > - **4c.2** Scratchpad / Outtakes — 🔨 **In Progress** (brainstormed
 >   2026-07-19; design `docs/plans/2026-07-19-scratchpad-outtakes-design.md`,
 >   plan `docs/plans/2026-07-19-scratchpad-outtakes-plan.md`, decisions
@@ -2022,14 +2134,13 @@ against 4c.2a is a preference, not a dependency: 4c.1a finishes a feature that
 is currently invisible to the writer, whereas 4c.2a adds a destructive
 convenience to a feature that already works. Swap them freely.
 
-
 #### 4c.2 Scratchpad / Outtakes Folder
 
 A per-project space for text that's been cut from the manuscript but might be useful later. Writers call these "killed darlings."
 
-- Outtakes are free-form text entries with an optional label (e.g., "Cut from Chapter 7 — the marketplace scene"). *(2026-08-18: they are created only by capturing text from a chapter — the drawer has no compose form. See `docs/roadmap-decisions/2026-07-19-phase-4c-2-scratchpad-outtakes.md`.)*
+- Outtakes are free-form text entries with an optional label (e.g., "Cut from Chapter 7 — the marketplace scene"). _(2026-08-18: they are created only by capturing text from a chapter — the drawer has no compose form. See `docs/roadmap-decisions/2026-07-19-phase-4c-2-scratchpad-outtakes.md`.)_
 - Outtakes are searchable.
-- A writer can move text from the editor to outtakes (cut selection -> paste to outtakes) and vice versa. *(Shipped in 4c.2 as a **non-destructive copy** — the chapter is untouched. The "cut" half of this bullet, which removes the selection, is Phase 4c.2a and has not shipped.)*
+- A writer can move text from the editor to outtakes (cut selection -> paste to outtakes) and vice versa. _(Shipped in 4c.2 as a **non-destructive copy** — the chapter is untouched. The "cut" half of this bullet, which removes the selection, is Phase 4c.2a and has not shipped.)_
 - Outtakes are not included in the manuscript word count, preview, or export.
 
 #### 4c.3 Tags and Cross-References

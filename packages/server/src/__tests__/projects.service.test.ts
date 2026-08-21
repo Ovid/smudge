@@ -4,10 +4,12 @@ import { setupTestDb } from "./test-helpers";
 import { logger } from "../logger";
 import {
   createProject,
+  createChapter,
   getProject,
   deleteProject,
   ProjectTitleExistsError,
 } from "../projects/projects.service";
+import { getProjectStore } from "../stores/project-store.injectable";
 
 const t = setupTestDb();
 
@@ -36,6 +38,42 @@ describe("projects.service", () => {
     it("returns validationError for invalid body", async () => {
       const result = await createProject({ mode: "fiction" });
       expect(result).toHaveProperty("validationError");
+    });
+  });
+
+  describe("createChapter()", () => {
+    // OOSI1 (2026-08-21 review, backlog 767fdc1e). The twin of the unguarded
+    // enrichChapterWithLabel in chapters.service.restoreChapter: the call runs
+    // after the insert transaction commits, so a status-lookup throw turned a
+    // COMMITTED chapter into a generic 500 and left the writer with a chapter
+    // they were told had not been created. The guard now lives inside
+    // enrichChapterWithLabel, which is why one edit closed both sites.
+    it("degrades to status-as-label rather than failing a committed insert when the status lookup throws", async () => {
+      const created = await createProject({ title: "Enrich Degrade", mode: "fiction" });
+      if (!("project" in created)) throw new Error("unexpected");
+
+      const store = getProjectStore();
+      const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+      vi.spyOn(store, "getStatusLabel").mockRejectedValue(new Error("SQLITE_BUSY"));
+
+      try {
+        const result = await createChapter(created.project.slug);
+
+        expect(result).not.toBe("project_not_found");
+        expect(result).not.toBe("read_after_create_failure");
+        expect(result).toMatchObject({ status_label: "outline", title: "Untitled Chapter" });
+
+        expect(logSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ project_id: created.project.id }),
+          expect.stringContaining("status as label"),
+        );
+
+        // The insert really did commit: two chapters now, not one.
+        const chapters = await t.db("chapters").where({ project_id: created.project.id });
+        expect(chapters).toHaveLength(2);
+      } finally {
+        vi.restoreAllMocks();
+      }
     });
   });
 

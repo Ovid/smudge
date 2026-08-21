@@ -225,10 +225,16 @@ export async function createChapter(
     // and repeated in snapshots.service.ts, which this function used to be the
     // exception to. Returning null here does NOT roll the insert back, and that is
     // deliberate: the row stays committed, so chapter.create's
-    // committedCodes: ["READ_AFTER_CREATE_FAILURE"] entry stays truthful. Throwing
-    // instead would roll back and make that entry tell the writer "this may have
-    // saved, do not retry" for a chapter that provably was not (cf. F-12, which
-    // rejected exactly that inversion for outtakes).
+    // committedCodes: ["READ_AFTER_CREATE_FAILURE"] entry stays truthful.
+    //
+    // Throwing instead would roll back — but it would not reach that entry at
+    // all, and an earlier version of this comment claiming it would invert the
+    // entry was wrong (S4, 2026-08-21). READ_AFTER_CREATE_FAILURE is emitted by
+    // projects.routes.ts only when this function RETURNS the sentinel; nothing
+    // here catches, so a throw surfaces as a generic 500 INTERNAL_ERROR that no
+    // client scope discriminates. Returning is preferred because it is the only
+    // route to the specific code — not because throwing would make a
+    // committed-codes claim actively wrong.
     return txStore.findChapterById(chapterId);
   });
   if (!chapter) return "read_after_create_failure";

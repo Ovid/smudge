@@ -372,11 +372,13 @@ Re-flagging one is warranted only if its stated premise changes.
   idiomatic functional TypeScript, not a defect — a "fix" would mean an OO
   entities-with-behavior rewrite against the grain of the codebase.
 - **Hidden side effects in chapter mutations (F-19).** `updateChapter` /
-  `deleteChapter` do more than their names suggest (bump project `updated_at`,
-  decrement image ref counts, fire post-commit velocity snapshots). Each side
-  effect is enumerated in the function's doc comment and best-effort failures
-  are logged, not swallowed — the doc discipline, not decomposition, is the
-  mitigation. New mutations with non-obvious side effects must keep it.
+  `deleteChapter` / `restoreChapter` do more than their names suggest (bump
+  project `updated_at`, decrement or increment image ref counts, fire
+  post-commit velocity snapshots — and `restoreChapter` additionally un-deletes
+  a soft-deleted parent project and regenerates its slug). Each side effect is
+  enumerated in the function's doc comment and best-effort failures are logged,
+  not swallowed — the doc discipline, not decomposition, is the mitigation. New
+  mutations with non-obvious side effects must keep it.
 - **Image-URI rule encoded twice (F-16).** The client `ALLOWED_URI_REGEXP`
   (relative-only, fail-closed XSS allowlist) and the server `IMAGE_SRC_RE`
   (optional `https?://host` prefix, reference-count matcher) intentionally
@@ -467,6 +469,17 @@ REST endpoints under `/api/`. Error envelope: `{ "error": { "code": "MACHINE_REA
 - **409** is used for conflict cases where the request is well-formed but violates a constraint the client needs to resolve (e.g. attempting to delete an image still referenced by chapters — the `{ error: { code, message, chapters: [...] } }` shape carries the referencing chapter list so the UI can route the user to them).
 - **413** is emitted when a request body exceeds the size guard (e.g. a chapter PATCH whose content would break the per-row limit). Clients should present a "too large" message rather than a generic retry prompt.
 
+**Project sub-resources address the project by slug, except images and outtakes (F-24).** Five routers mount on `/api/projects` (`app.ts:41,45,46,50,52`). The decision on record is blanket — `docs/plans/2026-03-29-project-slugs-design.md:12`, "API uses slugs too. All project endpoints switch from `:id` to `:slug`", with exactly one carve-out (chapter endpoints stay UUID). Two later routers departed from it without recording why, and they are **not** the same case:
+
+- **Images (`images.routes.ts:39`, `:projectId`) has a hard technical driver.** The project id doubles as a filesystem directory name — `images.paths.ts:94-96`, `containedPath(getImagesDir(), projectId, ...)` — so a mutable slug there would orphan an entire image directory on every project rename, and the UUID validator is a path-traversal guard (`5c75077e`). This departure is correct and stays.
+- **Outtakes (`outtakes.routes.ts:14,44`, `:id`) has no driver.** It stores `project_id` as an ordinary FK like every other table, its design doc and decision log both state the route shape without justifying it, and it landed three months after images. Treat it as imitation, not precedent.
+
+**Do not retro-fit a rule to this split.** An earlier reading had it as "slug where the client addresses a project from the URL, UUID where it addresses one from a held project object". That is false: find-and-replace passes a slug (`client.ts:605,619`) from a panel holding the same loaded project object the image gallery and outtakes drawer hold. Chronology does not explain it either — search (2026-04-16, slug) landed one day _after_ images (2026-04-15, UUID).
+
+**Slugs are mutable and reclaimable.** `projects.slug` is rewritten on project rename (`projects.service.ts:155`) and on parent-project restore inside `restoreChapter` (`chapters.service.ts`, the `if (parentProject.deleted_at)` branch of its transaction callback). `resolveUniqueSlug` only avoids collisions with live projects (`projects.repository.ts:129,137`, matching migration 002's partial unique index `WHERE deleted_at IS NULL`), so renaming a project away from slug S **releases S** — and the next project whose title generates S takes it over. Verified by execution: an old `/projects/my-novel` URL then opens a _different_ project, silently, with no 404. The client updates every in-memory slug holder and the browser URL on both mutation paths (`useChapterMetadata.ts:103-118`, `useProjectTitleEditing.ts:29-33`, `useTrashManager.ts:194-207`), so this is unreachable through in-app state; it is reachable through a bookmark, a history entry, or a shared link.
+
+**Whether the API should move off the slug entirely is open — Phase 4b.19.** Until it is settled, a new project sub-resource takes the **slug**, because that is the decision on record. If you think it should take the UUID, that is the 4b.19 conversation and it needs a decision log, not a route.
+
 Key endpoints:
 
 - `PATCH /api/chapters/{id}` — auto-save target; recalculates word count server-side; rejects invalid JSON with 400 (preserves previous content)
@@ -533,6 +546,47 @@ Core tables, all using UUID primary keys (except `settings` and `chapter_statuse
   commentary. The stored JSON therefore holds notes, so any future code that
   renders outtake content to HTML/export **must** strip them there (§note-strip
   discipline); the forcing test in `outtakes.service.test.ts` pins the decision.
+
+## Documentation Discipline (Mandatory)
+
+Three hard rules. Each one exists because it was broken on the
+`ovid/architecture` branch and caught in review
+(`paad/code-reviews/ovid-architecture-2026-08-20-18-52-04-09aaba1e.md`).
+
+**1. Never run a formatter over markdown.** Prose in this repo is
+hand-formatted. `npm run format`'s globs exclude markdown, and `.prettierignore`
+now excludes `*.md` outright — do not remove that entry, do not add markdown to
+the `format` script's globs, and do not run `prettier --write` on a `.md` path
+by hand. The globs alone were not enough: an editor's format-on-save or an
+ad-hoc invocation bypasses them, and one such pass rewrote emphasis and inline
+code spans across three findings of an architecture report (`_false_` became
+`\_false*`; prose got glued into code spans). Reports and design docs are
+traceability artifacts — corrupting the prose of a finding degrades the evidence
+the next session starts from. If you believe markdown should be formatted, that
+is a decision to record, not a command to run.
+
+**2. Cite symbols, not line ranges — and verify every count against the
+source.** A citation in a steering file earns its keep only if a reader can
+follow it. `CLAUDE.md` cited `chapters.service.ts:255-263` for a block that a
+later commit **on the same branch** pushed to `:308-317`; the citation was
+stale before the branch even merged. Prefer `restoreChapter`'s parent-restore
+branch to a line range: a symbol name survives the next edit above it. Where a
+line range genuinely helps (a long file of similar-looking code), re-verify it
+against the tree before the branch lands. The same discipline covers numbers:
+`CLAUDE.md` said "Six routers mount on `/api/projects`" and then cited five
+mount lines, and that wrong count propagated into a roadmap phase as an
+actionable instruction. Run the grep; do not carry a count forward from another
+document.
+
+**3. Nothing goes between a function's doc comment and the function.** Adding a
+type, helper, or comment block in that gap silently orphans the doc: editors and
+TypeScript bind only the *last* comment preceding a declaration, so the original
+attaches to nothing and the function shows no documentation at all. This is not
+cosmetic here — §Accepted Architectural Trade-offs entry F-19 accepts the hidden
+side effects in `updateChapter` / `deleteChapter` / `restoreChapter` **on the
+condition** that each is enumerated in that function's doc comment. Detaching
+the enumeration removes the mitigation while leaving the trade-off accepted.
+Insert new declarations *above* the doc block, not between it and its function.
 
 ## Testing Philosophy
 

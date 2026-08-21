@@ -565,7 +565,7 @@ describe("images.service", () => {
     // could not tell "nothing references this image" from "one chapter was never
     // read". The image row AND its bytes then went permanently, while the
     // corrupt chapter is itself repairable (chapters.repository flags it
-    // content_corrupt and there is a designed CORRUPT_CONTENT route) — so the
+    // content_parse_failed and there is a designed CORRUPT_CONTENT route) — so the
     // repair yields a chapter with a permanently broken image. This is the one
     // place in the image lifecycle where a read failure produces an
     // irreversible write.

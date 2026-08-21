@@ -73,7 +73,26 @@ const t = setupTestDb();
 const FROZEN_NOW = new Date("2026-06-15T12:00:00Z");
 
 beforeAll(() => {
-  vi.useFakeTimers();
+  // F-38: `toFake: ["Date"]` deliberately, NOT a bare `vi.useFakeTimers()`.
+  // This file freezes the clock and never advances a timer, but the default
+  // fake set replaces every timer except `process.nextTick` and
+  // `queueMicrotask` — verified at runtime, not read off the docs: under a
+  // bare call both `setImmediate` and `setTimeout` are swapped, and under this
+  // one neither is, while `setSystemTime` still works.
+  //
+  // That matters because this file drives real HTTP through supertest. A body
+  // delivery landing on a faked `setImmediate` that nobody advances leaves
+  // `raw-body` finishing empty, body-parser handing Express an empty
+  // `req.body`, and Zod answering 400 "Title is required" — which is
+  // byte-for-byte the envelope the F-38 investigation reproduced with a forced
+  // empty title, and being a 4xx it emits no error-level log, matching the
+  // absence of any `"level":50` line in the captured failing run.
+  //
+  // Whether that IS the ~1-in-300 whole-file failure is NOT established; see
+  // F-38 in paad/architecture-reviews/2026-08-11-smudge-architecture-report.md.
+  // Faking timers this file never advances, around an HTTP stack, is a latent
+  // hazard on its own merits either way.
+  vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(FROZEN_NOW);
 });
 

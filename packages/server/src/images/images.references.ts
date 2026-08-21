@@ -222,7 +222,7 @@ export async function applyImageRefDiff(
  * delete on that answer, so a chapter whose row is unreadable but whose text
  * still holds `<img src="/api/images/X">` produced 204-and-unlinked instead of
  * 409. The chapter itself is repairable — chapters.repository flags it
- * `content_corrupt` and there is a designed CORRUPT_CONTENT route — so the
+ * `content_parse_failed` and there is a designed CORRUPT_CONTENT route — so the
  * repair then yields a chapter with a permanently broken image.
  *
  * Blocking on unreadable is the same conservative posture this file already
@@ -259,7 +259,7 @@ export function scanChapterContentForImage(
   // `make restore` still swaps in a whole database file with no validation.
   //
   // Converging on the read path's predicate is the point: a chapter this
-  // rejects is already surfaced as `content_corrupt` and routed to
+  // rejects is already surfaced as `content_parse_failed` and routed to
   // CORRUPT_CONTENT, so "readable enough to edit" and "readable enough to
   // defend its images" now mean one thing rather than two that can drift.
   // Cost is ~10ms on a worst-case 5MB chapter (MAX_CHAPTER_CONTENT_BYTES)

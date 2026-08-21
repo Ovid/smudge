@@ -18,7 +18,7 @@ function parseContent(row: Record<string, unknown>): ChapterRow {
       const parsed: unknown = JSON.parse(row.content);
       // I6 (dedup review 2026-07-26): "valid JSON, wrong shape" — "42", "[]",
       // "null", '"text"' — parses WITHOUT throwing, so guarding only the throw
-      // returned e.g. `{ ...row, content: 42 }` with no content_corrupt flag.
+      // returned e.g. `{ ...row, content: 42 }` with no content_parse_failed flag.
       // isCorruptChapter was then false, the row was served as healthy, and the
       // designed CORRUPT_CONTENT route (chapters.routes.ts) could not fire for
       // it. Both sibling parsers already guard this — snapshots.service.ts
@@ -59,7 +59,7 @@ function parseContent(row: Record<string, unknown>): ChapterRow {
         },
         "Corrupt JSON in chapter content",
       );
-      return { ...row, content: null, content_corrupt: true } as ChapterRow;
+      return { ...row, content: null, content_parse_failed: true } as ChapterRow;
     }
   }
   return { ...row, content: (row.content as Record<string, unknown>) ?? null } as ChapterRow;

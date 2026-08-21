@@ -459,6 +459,330 @@ describe("chapters.service", () => {
     });
   });
 
+  /**
+   * restoreChapter's confirming reads and its error routing.
+   *
+   * These pin behaviour the coverage report showed was unasserted: the
+   * positive shape of a successful restore (every existing happy-path test
+   * asserted only that the result was NOT one of the error sentinels), the
+   * two `read_failure` exits, the defensive slug-collision `conflict` exit,
+   * and the rethrow of anything else.
+   *
+   * The two read_failure cases deliberately do not care WHICH object the
+   * confirming read is made on — see the comment on those tests. The
+   * membership test added below is the one that does, and it is the only case
+   * here that fails if F-28's fix is reverted.
+   */
+  describe("restoreChapter() — confirming reads and error routing", () => {
+    it("returns the restored chapter enriched with status_label, project_slug, and a sort_order above the surviving chapters", async () => {
+      const { chapterId, projectId } = await createProjectAndChapter();
+      const now = new Date().toISOString();
+
+      // A surviving sibling at sort_order 7, so a restore that skipped
+      // getMaxChapterSortOrder would land the chapter at 0 or 1, not 8.
+      await t.db("chapters").insert({
+        id: uuid(),
+        project_id: projectId,
+        title: "Surviving Chapter",
+        content: JSON.stringify(DOC_JSON),
+        sort_order: 7,
+        word_count: 1,
+        status: "outline",
+        created_at: now,
+        updated_at: now,
+      });
+      await t.db("chapters").where({ id: chapterId }).update({ deleted_at: now });
+
+      const result = await restoreChapter(chapterId);
+
+      expect(result).toMatchObject({
+        id: chapterId,
+        project_id: projectId,
+        status: "outline",
+        status_label: "Outline",
+        sort_order: 8,
+        project_slug: `test-${projectId.slice(0, 8)}`,
+      });
+
+      const row = await t.db("chapters").where({ id: chapterId }).first();
+      expect(row.deleted_at).toBeNull();
+    });
+
+    // F-28 membership (finding I2 of
+    // `paad/code-reviews/ovid-architecture-2026-08-20-18-52-04-09aaba1e.md`).
+    // This is the tripwire the F-28 fix shipped without: every other case in
+    // this block passes whether the confirming reads run inside the transaction
+    // or after it, so reverting `confirmRestore(txStore, ...)` to the old
+    // post-commit pair on the outer store left all 22 cases green. Asserting
+    // the reads never touch the outer store is the only thing that tells the
+    // two implementations apart.
+    //
+    // This reverses a decision recorded in F-28's Status block, which rejected
+    // such a test as "pinning implementation rather than behaviour". The
+    // counter-argument, accepted 2026-08-21: WHICH object holds the read is the
+    // whole deliverable here. The invariant has no in-process symptom today
+    // (better-sqlite3 is synchronous, Smudge is single-writer), so there is no
+    // behaviour left for a test to observe — and roadmap Phase 7g.2 deletes the
+    // guard that keeps it symptomless, at which point a silent regression
+    // becomes a wrong-response bug rather than a test failure.
+    //
+    // The not-called assertions are the load-bearing half, matching the F-29
+    // membership tests in `snapshots.service.test.ts`: `transaction` hands the
+    // callback a distinct store built over the `trx` handle, so an outer-store
+    // call is observable — and it is precisely the starvation trap, since a
+    // non-scoped `store.*` call from inside a transaction queues on the `max: 1`
+    // pool the caller is already holding.
+    it("makes both confirming reads through the transaction-scoped store, never the outer one", async () => {
+      const { chapterId } = await createProjectAndChapter();
+      await t
+        .db("chapters")
+        .where({ id: chapterId })
+        .update({ deleted_at: new Date().toISOString() });
+
+      // The post-commit velocity snapshot opens a transaction of its own, so
+      // it is stubbed out to leave exactly one for the count below to mean
+      // something. `afterEach` calls `resetVelocityService()`.
+      setVelocityService({ updateDailySnapshot: async () => {} });
+
+      const store = getProjectStore();
+      const txSpy = vi.spyOn(store, "transaction");
+      const outerChapterRead = vi.spyOn(store, "findChapterById");
+      const outerProjectRead = vi.spyOn(store, "findProjectByIdIncludingDeleted");
+
+      try {
+        expect(await restoreChapter(chapterId)).toMatchObject({ id: chapterId });
+
+        expect(txSpy).toHaveBeenCalledTimes(1);
+        expect(outerChapterRead).not.toHaveBeenCalled();
+        expect(outerProjectRead).not.toHaveBeenCalled();
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
+    it("returns 'read_failure' and leaves the chapter restored when the confirming chapter read misses", async () => {
+      const { chapterId } = await createProjectAndChapter();
+      const now = new Date().toISOString();
+      await t.db("chapters").where({ id: chapterId }).update({ deleted_at: now });
+
+      const store = getProjectStore();
+      const origTransaction = store.transaction.bind(store);
+      // The confirming read is stubbed on BOTH the outer store and the
+      // transaction-scoped one, so this test asserts the behaviour rather
+      // than the location of the call: it stays valid whether the read runs
+      // after the commit or inside the transaction.
+      vi.spyOn(store, "findChapterById").mockResolvedValue(null);
+      vi.spyOn(store, "transaction").mockImplementation(async (fn) =>
+        origTransaction(async (txStore) => {
+          vi.spyOn(txStore, "findChapterById").mockResolvedValue(null);
+          return fn(txStore);
+        }),
+      );
+
+      try {
+        const result = await restoreChapter(chapterId);
+        expect(result).toBe("read_failure");
+
+        // A missed confirming read must not roll the restore back. The client
+        // maps read_failure through `committedCodes` to "this may have saved",
+        // which is only true if the row really is restored.
+        const row = await t.db("chapters").where({ id: chapterId }).first();
+        expect(row.deleted_at).toBeNull();
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
+    it("returns 'read_failure' when the parent project cannot be re-read after the restore", async () => {
+      const { chapterId } = await createProjectAndChapter();
+      const now = new Date().toISOString();
+      await t.db("chapters").where({ id: chapterId }).update({ deleted_at: now });
+
+      const store = getProjectStore();
+      const origTransaction = store.transaction.bind(store);
+      // The project is read TWICE: once at the top of the transaction as the
+      // parent-liveness check, once again to confirm the response. Only the
+      // second may miss — nulling the first throws ParentPurgedError and the
+      // test would assert the wrong branch. So the stub passes the first call
+      // through to the real store and misses every call after it.
+      //
+      // The outer store is stubbed too, so this stays a statement about the
+      // behaviour rather than about which object holds the confirming read.
+      vi.spyOn(store, "findProjectByIdIncludingDeleted").mockResolvedValue(null);
+      vi.spyOn(store, "transaction").mockImplementation(async (fn) =>
+        origTransaction(async (txStore) => {
+          const orig = txStore.findProjectByIdIncludingDeleted.bind(txStore);
+          let call = 0;
+          vi.spyOn(txStore, "findProjectByIdIncludingDeleted").mockImplementation(async (pid) =>
+            call++ === 0 ? orig(pid) : null,
+          );
+          return fn(txStore);
+        }),
+      );
+
+      try {
+        expect(await restoreChapter(chapterId)).toBe("read_failure");
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
+    // OOSI1 (2026-08-21 review, backlog 767fdc1e). enrichChapterWithLabel runs
+    // AFTER the transaction commits, and at this site it was unguarded while
+    // both siblings (updateChapter here, restoreSnapshot in snapshots.service)
+    // wrapped the identical call and degraded to status-as-label. A DB throw
+    // after commit — SQLITE_BUSY, a {max:1} pool acquire timeout, an I/O error —
+    // therefore turned a COMMITTED restore into a generic 500 INTERNAL_ERROR,
+    // which trash.restoreChapter's scope does not list in committedCodes. The
+    // writer was told a committed restore failed, and the retry then 404s
+    // because findDeletedChapterById no longer matches the now-active row.
+    //
+    // The guard now lives inside enrichChapterWithLabel itself, so this pins
+    // the shared behaviour from the site that had none.
+    it("degrades to status-as-label rather than failing a committed restore when the status lookup throws", async () => {
+      const { chapterId, projectId } = await createProjectAndChapter();
+      await t
+        .db("chapters")
+        .where({ id: chapterId })
+        .update({ deleted_at: new Date().toISOString() });
+
+      const store = getProjectStore();
+      const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+      vi.spyOn(store, "getStatusLabel").mockRejectedValue(new Error("SQLITE_BUSY"));
+
+      try {
+        const result = await restoreChapter(chapterId);
+
+        // The restore is reported as the success it is, with the raw status
+        // standing in for the label rather than a 500.
+        expect(result).toMatchObject({
+          id: chapterId,
+          status: "outline",
+          status_label: "outline",
+          project_slug: `test-${projectId.slice(0, 8)}`,
+        });
+
+        // Degraded, not swallowed.
+        expect(logSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ chapter_id: chapterId, project_id: projectId }),
+          expect.stringContaining("status as label"),
+        );
+
+        const row = await t.db("chapters").where({ id: chapterId }).first();
+        expect(row.deleted_at).toBeNull();
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
+    it("returns 'conflict' when restoring the parent project collides with an active slug", async () => {
+      const { chapterId, projectId } = await createProjectAndChapter();
+      const now = new Date().toISOString();
+      const occupied = `occupied-${uuid().slice(0, 8)}`;
+
+      await t.db("projects").insert({
+        id: uuid(),
+        title: `Occupier ${occupied}`,
+        slug: occupied,
+        mode: "fiction",
+        created_at: now,
+        updated_at: now,
+      });
+      await t.db("chapters").where({ id: chapterId }).update({ deleted_at: now });
+      await t.db("projects").where({ id: projectId }).update({ deleted_at: now });
+
+      const store = getProjectStore();
+      const origTransaction = store.transaction.bind(store);
+      // resolveUniqueSlug is what normally makes this unreachable; force it to
+      // hand back a slug that is already taken so the UNIQUE constraint fires.
+      vi.spyOn(store, "transaction").mockImplementation(async (fn) =>
+        origTransaction(async (txStore) => {
+          vi.spyOn(txStore, "resolveUniqueSlug").mockResolvedValue(occupied);
+          return fn(txStore);
+        }),
+      );
+
+      try {
+        expect(await restoreChapter(chapterId)).toBe("conflict");
+
+        // The transaction rolled back, so the chapter is still in the trash.
+        const row = await t.db("chapters").where({ id: chapterId }).first();
+        expect(row.deleted_at).not.toBeNull();
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
+    // S4 (2026-08-21 review). confirmRestore's doc comment used to claim that a
+    // throw from a confirming read would make chapter.restore's
+    // `committedCodes: ["RESTORE_READ_FAILURE"]` "actively wrong" by telling the
+    // writer a rolled-back restore might have saved. Both halves of that were
+    // false, and this pins the truth so the claim cannot drift back:
+    //
+    //   1. A throw never reaches RESTORE_READ_FAILURE. That code is emitted by
+    //      chapters.routes.ts only when the service RETURNS "read_failure";
+    //      restoreChapter's catch discriminates on ParentPurgedError,
+    //      ChapterPurgedError and a SQLITE_CONSTRAINT_UNIQUE slug collision, and
+    //      a SELECT failure is none of those, so it is rethrown.
+    //   2. Because F-28 moved both confirming reads inside the transaction, a
+    //      throw now rolls the restore BACK — so "it failed, retry" is accurate.
+    //      Before F-28 the read ran post-commit and a throw left the chapter
+    //      restored while reporting failure; that improvement was recorded as
+    //      "no observable delta" and is asserted here instead.
+    //
+    // Contrast the sibling case above, where the confirming read RETURNS null:
+    // there the transaction commits and the chapter stays restored.
+    it("rolls the restore back and rethrows when a confirming read throws, rather than returning 'read_failure'", async () => {
+      const { chapterId } = await createProjectAndChapter();
+      const now = new Date().toISOString();
+      await t.db("chapters").where({ id: chapterId }).update({ deleted_at: now });
+
+      const store = getProjectStore();
+      const origTransaction = store.transaction.bind(store);
+      vi.spyOn(store, "transaction").mockImplementation(async (fn) =>
+        origTransaction(async (txStore) => {
+          // Fail only the CONFIRMING read. findChapterById is not called
+          // anywhere else on this path, so the restore UPDATE and the parent
+          // bump both land before this fires.
+          vi.spyOn(txStore, "findChapterById").mockRejectedValue(new Error("io error"));
+          return fn(txStore);
+        }),
+      );
+
+      try {
+        await expect(restoreChapter(chapterId)).rejects.toThrow("io error");
+
+        // Rolled back: the chapter is still in the trash, so the generic 500
+        // the route renders for a rethrow is telling the writer the truth.
+        const row = await t.db("chapters").where({ id: chapterId }).first();
+        expect(row.deleted_at).not.toBeNull();
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
+    it("rethrows an error that is neither a purge nor a slug collision", async () => {
+      const { chapterId } = await createProjectAndChapter();
+      const now = new Date().toISOString();
+      await t.db("chapters").where({ id: chapterId }).update({ deleted_at: now });
+
+      const store = getProjectStore();
+      const origTransaction = store.transaction.bind(store);
+      vi.spyOn(store, "transaction").mockImplementation(async (fn) =>
+        origTransaction(async (txStore) => {
+          vi.spyOn(txStore, "getMaxChapterSortOrder").mockRejectedValue(new Error("disk on fire"));
+          return fn(txStore);
+        }),
+      );
+
+      try {
+        await expect(restoreChapter(chapterId)).rejects.toThrow("disk on fire");
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+  });
+
   describe("getChapter()", () => {
     it("returns null for a non-existent chapter", async () => {
       const result = await getChapter(uuid());
