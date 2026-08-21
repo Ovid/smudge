@@ -650,8 +650,20 @@ describe("search.service", () => {
       expect(spy).toHaveBeenCalledWith(projectId, expect.any(String));
     });
 
-    it("image reference counts adjusted via applyImageRefDiff", async () => {
+    // The assertion that carries this test is the SPY, not the reference count.
+    // `replaceInDoc` only rewrites text nodes, so an image node survives every
+    // replace intact and the ref diff on this path is always empty
+    // (`added=[]`, `removed=[]`) — meaning `reference_count` reads 1 whether or
+    // not `applyImageRefDiff` runs at all. That is what this test asserted
+    // before (review 1b96b3b4, OOSS1): it was named for a call it could not
+    // detect. `findImagesByIds` is reached from nowhere else on the replace
+    // path (only `applyImageRefDiff` calls it), so spying on it proves the
+    // call was made; the count assertion then says the empty diff changed
+    // nothing, which is the behaviour worth pinning.
+    it("runs applyImageRefDiff on the replace path, leaving an untouched image at the same count", async () => {
       const { replaceInProject } = await import("../search/search.service");
+      const { SqliteProjectStore } = await import("../stores/sqlite-project-store");
+      const refDiffSpy = vi.spyOn(SqliteProjectStore.prototype, "findImagesByIds");
       const projectId = await createProject();
       const imageId = uuid();
 
@@ -678,6 +690,11 @@ describe("search.service", () => {
 
       // Replace text — image refs should stay the same (no image change)
       await replaceInProject(projectId, "hello", "goodbye");
+
+      // applyImageRefDiff actually ran for the rewritten chapter...
+      expect(refDiffSpy).toHaveBeenCalledTimes(1);
+      // ...and found nothing to change, because the image node was untouched.
+      expect(refDiffSpy).toHaveBeenCalledWith([]);
 
       const image = await t.db("images").where({ id: imageId }).first();
       expect(image.reference_count).toBe(1); // unchanged — image still there
