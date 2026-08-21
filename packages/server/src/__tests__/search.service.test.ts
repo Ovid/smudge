@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { randomUUID as uuid } from "node:crypto";
 import { setupTestDb } from "./test-helpers";
-import type { SearchResult } from "@smudge/shared";
+import type { SearchResult, ReplaceResult } from "@smudge/shared";
 
 function assertSearchResult(
   result: SearchResult | null | { validationError: string },
@@ -14,7 +14,7 @@ function assertSearchResult(
 
 function assertSearchResultReplace(
   result: Awaited<ReturnType<typeof import("../search/search.service").replaceInProject>>,
-): { replaced_count: number; affected_chapter_ids: string[] } {
+): ReplaceResult {
   if (result === null) throw new Error("expected a replace result, got null");
   if (typeof result === "string") throw new Error(`expected a replace result, got ${result}`);
   if ("validationError" in result)
@@ -262,9 +262,7 @@ describe("search.service", () => {
 
       const result = await replaceInProject(projectId, "hello", "goodbye");
 
-      expect(result).not.toBeNull();
-      expect("validationError" in (result as object)).toBe(false);
-      const r = result as { replaced_count: number; affected_chapter_ids: string[] };
+      const r = assertSearchResultReplace(result);
       expect(r.replaced_count).toBe(2);
       expect(r.affected_chapter_ids).toContain(ch1);
       expect(r.affected_chapter_ids).toContain(ch2);
@@ -321,7 +319,7 @@ describe("search.service", () => {
         chapter_id: chId,
         match_index: 1,
       });
-      const r = result as { replaced_count: number; affected_chapter_ids: string[] };
+      const r = assertSearchResultReplace(result);
       expect(r.replaced_count).toBe(1);
       expect(r.affected_chapter_ids).toEqual([chId]);
 
@@ -371,7 +369,7 @@ describe("search.service", () => {
         chapter_id: ch1,
       });
 
-      const r = result as { replaced_count: number; affected_chapter_ids: string[] };
+      const r = assertSearchResultReplace(result);
       expect(r.replaced_count).toBe(1);
       expect(r.affected_chapter_ids).toEqual([ch1]);
 
@@ -428,7 +426,7 @@ describe("search.service", () => {
 
       const result = await replaceInProject(projectId, "xyz", "abc");
 
-      const r = result as { replaced_count: number; affected_chapter_ids: string[] };
+      const r = assertSearchResultReplace(result);
       expect(r.replaced_count).toBe(0);
       expect(r.affected_chapter_ids).toEqual([]);
     });
@@ -519,7 +517,7 @@ describe("search.service", () => {
 
       const result = await replaceInProject(projectId, "hello ", "");
 
-      const r = result as { replaced_count: number; affected_chapter_ids: string[] };
+      const r = assertSearchResultReplace(result);
       expect(r.replaced_count).toBe(1);
 
       const row = await t.db("chapters").where({ id: ch1 }).first();
@@ -562,11 +560,7 @@ describe("search.service", () => {
 
         const result = await replaceInProject(projectId, "hello", "goodbye");
 
-        const r = result as {
-          replaced_count: number;
-          affected_chapter_ids: string[];
-          skipped_chapter_ids?: string[];
-        };
+        const r = assertSearchResultReplace(result);
         expect(r.replaced_count).toBe(1);
         expect(r.affected_chapter_ids).toEqual([ch1]);
         expect(r.skipped_chapter_ids).toEqual([wrongShapeId]);
@@ -585,11 +579,7 @@ describe("search.service", () => {
 
       const result = await replaceInProject(projectId, "hello", "goodbye");
 
-      const r = result as {
-        replaced_count: number;
-        affected_chapter_ids: string[];
-        skipped_chapter_ids?: string[];
-      };
+      const r = assertSearchResultReplace(result);
       expect(r.replaced_count).toBe(1);
       expect(r.affected_chapter_ids).toEqual([ch1]);
       expect(r.skipped_chapter_ids).toEqual([corruptId]);
@@ -611,7 +601,7 @@ describe("search.service", () => {
 
       const result = await replaceInProject(projectId, "hello", "goodbye");
 
-      const r = result as { replaced_count: number };
+      const r = assertSearchResultReplace(result);
       expect(r.replaced_count).toBe(1);
       expect(errorSpy).toHaveBeenCalledWith(
         expect.objectContaining({ err: expect.any(Error) }),
@@ -806,7 +796,7 @@ describe("search.service", () => {
 
       const { replaceInProject } = await import("../search/search.service");
       const result = await replaceInProject(projectId, "hello", "goodbye");
-      expect((result as { replaced_count: number }).replaced_count).toBe(1);
+      expect(assertSearchResultReplace(result).replaced_count).toBe(1);
 
       // Dedup against the latest snapshot (matching the manual-snapshot path)
       // skips the redundant pre-replace auto-snapshot.
@@ -835,7 +825,7 @@ describe("search.service", () => {
 
       const { replaceInProject } = await import("../search/search.service");
       const result = await replaceInProject(projectId, "hello", "goodbye");
-      expect((result as { replaced_count: number }).replaced_count).toBe(1);
+      expect(assertSearchResultReplace(result).replaced_count).toBe(1);
 
       // Dedup against the latest snapshot of ANY kind skips the redundant
       // pre-replace auto-snapshot — only the seed remains.
@@ -881,8 +871,7 @@ describe("search.service", () => {
 
       const { replaceInProjectBySlug } = await import("../search/search.service");
       const result = await replaceInProjectBySlug(slug, "hello", "goodbye");
-      expect(result && typeof result === "object" && "replaced_count" in result).toBe(true);
-      expect((result as { replaced_count: number }).replaced_count).toBe(1);
+      expect(assertSearchResultReplace(result).replaced_count).toBe(1);
     });
   });
 });
