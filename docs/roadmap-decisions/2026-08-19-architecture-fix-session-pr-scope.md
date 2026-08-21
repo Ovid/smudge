@@ -86,6 +86,27 @@ one-feature rule, bounded as follows:
    violation of this rule: filing a report the session produced answers to no
    finding, which is exactly the round-4 amendment's case for a kind tag.
 
+   **Violated a third way and recorded rather than fixed (2026-08-21, review
+   `6c71314a`, finding S8).** The two recurrences above are SHA-filling
+   commits mis-tagged; this one is the gap the placeholder-then-fill clause
+   exists to close, left open. `97c5160e` ships the F-03 code fix **and** ten
+   lines of F-03's `Status:` block in one commit, using neither legal route —
+   no `PENDING` placeholder, and no separate afterwards commit — and its
+   `Status commit` SHA was inserted with `git commit --amend`. The consequence
+   is confirmed, not theoretical: the report as shipped in `97c5160e` reads
+   `**Status commit:** 29e40186`, a SHA that `git cat-file -t` resolves only
+   because it survives in this clone's reflog. `git merge-base --is-ancestor
+   29e40186 HEAD` fails, so that citation does not exist in a fresh clone. A
+   later commit (`f8773951`) corrected the SHA, which is why the branch tip is
+   sound; the amend is what made the correction necessary.
+
+   The code review that raised the amend (`1b96b3b4`, finding I2) had two
+   halves. The tag half was fixed by retagging; the bundling half was neither
+   fixed nor recorded, which is asymmetric with how this branch treated rule
+   5's violation. It is **not fixed now** for the reason given three times
+   above: `97c5160e` is cited three times in F-03's `Status:` block, so a
+   rebase to split it would stale every one of them.
+
    **Why it keeps happening, since correcting the rule twice has not stopped
    it:** both kinds of commit touch nothing but markdown under `paad/`, so
    "what did this commit touch" cannot tell them apart. Decide the tag from
