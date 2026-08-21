@@ -627,6 +627,54 @@ describe("chapters.service", () => {
       }
     });
 
+    // OOSI1 (2026-08-21 review, backlog 767fdc1e). enrichChapterWithLabel runs
+    // AFTER the transaction commits, and at this site it was unguarded while
+    // both siblings (updateChapter here, restoreSnapshot in snapshots.service)
+    // wrapped the identical call and degraded to status-as-label. A DB throw
+    // after commit — SQLITE_BUSY, a {max:1} pool acquire timeout, an I/O error —
+    // therefore turned a COMMITTED restore into a generic 500 INTERNAL_ERROR,
+    // which trash.restoreChapter's scope does not list in committedCodes. The
+    // writer was told a committed restore failed, and the retry then 404s
+    // because findDeletedChapterById no longer matches the now-active row.
+    //
+    // The guard now lives inside enrichChapterWithLabel itself, so this pins
+    // the shared behaviour from the site that had none.
+    it("degrades to status-as-label rather than failing a committed restore when the status lookup throws", async () => {
+      const { chapterId, projectId } = await createProjectAndChapter();
+      await t
+        .db("chapters")
+        .where({ id: chapterId })
+        .update({ deleted_at: new Date().toISOString() });
+
+      const store = getProjectStore();
+      const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+      vi.spyOn(store, "getStatusLabel").mockRejectedValue(new Error("SQLITE_BUSY"));
+
+      try {
+        const result = await restoreChapter(chapterId);
+
+        // The restore is reported as the success it is, with the raw status
+        // standing in for the label rather than a 500.
+        expect(result).toMatchObject({
+          id: chapterId,
+          status: "outline",
+          status_label: "outline",
+          project_slug: `test-${projectId.slice(0, 8)}`,
+        });
+
+        // Degraded, not swallowed.
+        expect(logSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ chapter_id: chapterId, project_id: projectId }),
+          expect.stringContaining("status as label"),
+        );
+
+        const row = await t.db("chapters").where({ id: chapterId }).first();
+        expect(row.deleted_at).toBeNull();
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
     it("returns 'conflict' when restoring the parent project collides with an active slug", async () => {
       const { chapterId, projectId } = await createProjectAndChapter();
       const now = new Date().toISOString();

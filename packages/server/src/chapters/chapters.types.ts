@@ -1,3 +1,5 @@
+import { logger } from "../logger";
+
 export interface ChapterRow {
   id: string;
   project_id: string;
@@ -95,13 +97,41 @@ export interface StatusLabelProvider {
   getStatusLabelMap(): Promise<Record<string, string>>;
 }
 
+/**
+ * Attach the human-readable status label to a chapter row.
+ *
+ * Degrades to the raw `status` as its own label when the lookup throws, and
+ * logs the failure (F-31 — a persistent `chapter_statuses` failure must not go
+ * dark). This guard lives HERE, not at the call sites, because every caller
+ * needs it and two of the four did not have it (OOSI1, 2026-08-21): three of
+ * these calls run AFTER their transaction has committed, so a throw turns a
+ * committed write into a generic 500 `INTERNAL_ERROR` — a code the client's
+ * `trash.restoreChapter` and `chapter.create` scopes do not list in
+ * `committedCodes`. The writer is then told a committed write failed, and for
+ * restore the retry 404s, because `findDeletedChapterById` no longer matches
+ * the row it just restored.
+ *
+ * `status_label` is cosmetic, so degrading is always preferable to failing:
+ * there is no caller for which a missing label is worse than a lost response.
+ *
+ * The plural {@link enrichChaptersWithLabels} needs no such guard — it already
+ * falls back per row (`map[ch.status] ?? ch.status`), and its one lookup runs
+ * on read paths where a throw is honestly a 500.
+ */
 export async function enrichChapterWithLabel(
   provider: StatusLabelProvider,
   chapter: ChapterRow,
 ): Promise<ChapterWithLabel> {
   const clean = stripParseFailedFlag(chapter);
-  const status_label = await provider.getStatusLabel(chapter.status);
-  return { ...clean, status_label };
+  try {
+    return { ...clean, status_label: await provider.getStatusLabel(chapter.status) };
+  } catch (err: unknown) {
+    logger.error(
+      { err, project_id: chapter.project_id, chapter_id: chapter.id },
+      "enrichChapterWithLabel failed; returning status as label",
+    );
+    return { ...clean, status_label: chapter.status };
+  }
 }
 
 export function enrichChaptersWithLabels(

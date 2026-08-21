@@ -12,11 +12,7 @@ import { getProjectStore } from "../stores/project-store.injectable";
 import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
 import { applyImageRefDiff, extractImageIds, imageIdFromNode } from "../images/images.references";
-import {
-  enrichChapterWithLabel,
-  stripParseFailedFlag,
-  type ChapterWithLabel,
-} from "../chapters/chapters.types";
+import { enrichChapterWithLabel, type ChapterWithLabel } from "../chapters/chapters.types";
 import { canonicalContentHash } from "./content-hash";
 import { MAX_CHAPTER_CONTENT_BYTES } from "../constants";
 import type { SnapshotRow, SnapshotListItem } from "./snapshots.types";
@@ -333,21 +329,10 @@ export async function restoreSnapshot(
   // has already committed, so a status-lookup failure doesn't unmake the
   // restore — fall back to `status` as the label so the client sees a
   // successful restore, matching the pattern in chapters.service.updateChapter.
-  try {
-    const enriched = await enrichChapterWithLabel(store, result.chapter);
-    return { chapter: enriched, dropped_image_count: result.dropped_image_count };
-  } catch (err: unknown) {
-    logger.error(
-      { err, project_id: result.project_id, chapter_id: result.chapter_id },
-      "enrichChapterWithLabel failed after restore; returning status as label",
-    );
-    // Route through the shared helper rather than destructuring inline so
-    // any future additions to the corrupt-flag surface (e.g.
-    // content_parse_failed_reason) stay in sync with the success path.
-    const clean = stripParseFailedFlag(result.chapter);
-    return {
-      chapter: { ...clean, status_label: result.chapter.status },
-      dropped_image_count: result.dropped_image_count,
-    };
-  }
+  // The degrade-to-status-as-label fallback that used to be wrapped here now
+  // lives inside enrichChapterWithLabel, so every caller gets it (OOSI1).
+  return {
+    chapter: await enrichChapterWithLabel(store, result.chapter),
+    dropped_image_count: result.dropped_image_count,
+  };
 }
