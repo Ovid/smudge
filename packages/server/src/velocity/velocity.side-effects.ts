@@ -78,9 +78,6 @@ export async function fireDailySnapshot(args: {
     const svc = getVelocityService();
     await svc.updateDailySnapshot(args.projectId);
   } catch (err: unknown) {
-    logger.error(
-      { err, project_id: args.projectId, ...(args.context ?? {}) },
-      args.failureMessage,
-    );
+    logger.error({ err, project_id: args.projectId, ...(args.context ?? {}) }, args.failureMessage);
   }
 }
