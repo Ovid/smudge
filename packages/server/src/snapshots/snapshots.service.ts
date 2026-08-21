@@ -321,11 +321,11 @@ export async function restoreSnapshot(
   if (!result) return null;
 
   // Fire velocity side-effects after the transaction commits
-  await fireDailySnapshot(
-    result.project_id,
-    "Velocity updateDailySnapshot failed after restore (best-effort)",
-    { chapter_id: result.chapter_id },
-  );
+  await fireDailySnapshot({
+    projectId: result.project_id,
+    failureMessage: "Velocity updateDailySnapshot failed after restore (best-effort)",
+    context: { chapter_id: result.chapter_id },
+  });
 
   // Enrich with status_label to match every other chapter-returning endpoint
   // (updateChapter, restoreChapter, etc). The client types the response as

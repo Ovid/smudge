@@ -378,10 +378,10 @@ export async function replaceInProject(
 
   // Fire velocity side-effects after the transaction commits
   if (txResult.affected_chapter_ids.length > 0) {
-    await fireDailySnapshot(
+    await fireDailySnapshot({
       projectId,
-      "Velocity updateDailySnapshot failed after replace (best-effort)",
-    );
+      failureMessage: "Velocity updateDailySnapshot failed after replace (best-effort)",
+    });
   }
 
   const final = {

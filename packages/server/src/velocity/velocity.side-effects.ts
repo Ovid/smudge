@@ -59,16 +59,28 @@ import { logger } from "../logger";
  * `context` supplies the site's extra log fields: `chapter_id` at four sites,
  * omitted at the fifth, since the project-wide replace has no single value
  * for it.
+ *
+ * **One options object rather than positional arguments (S3).** `projectId`
+ * and `failureMessage` are both `string`, so as adjacent positional parameters
+ * a swapped sixth call site would have type-checked. It would also have failed
+ * *silently*: no production path issues `PRAGMA foreign_keys = ON` and SQLite
+ * defaults it off, so `upsertDailySnapshot(<the log message>, today, 0)`
+ * succeeds, the real project's row is never written, and nothing throws or
+ * logs — a worse outcome than the failure the `catch` exists for. Named fields
+ * make that a compile error instead.
  */
-export async function fireDailySnapshot(
-  projectId: string,
-  failureMessage: string,
-  context: Record<string, unknown> = {},
-): Promise<void> {
+export async function fireDailySnapshot(args: {
+  projectId: string;
+  failureMessage: string;
+  context?: Record<string, unknown>;
+}): Promise<void> {
   try {
     const svc = getVelocityService();
-    await svc.updateDailySnapshot(projectId);
+    await svc.updateDailySnapshot(args.projectId);
   } catch (err: unknown) {
-    logger.error({ err, project_id: projectId, ...context }, failureMessage);
+    logger.error(
+      { err, project_id: args.projectId, ...(args.context ?? {}) },
+      args.failureMessage,
+    );
   }
 }

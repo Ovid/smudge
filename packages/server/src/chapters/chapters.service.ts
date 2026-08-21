@@ -126,13 +126,11 @@ export async function updateChapter(
 
   // Fire velocity side-effects (best-effort — must not break the save)
   if (parsed.data.content !== undefined) {
-    await fireDailySnapshot(
+    await fireDailySnapshot({
       projectId,
-      "Velocity updateDailySnapshot failed after save (best-effort)",
-      {
-        chapter_id: id,
-      },
-    );
+      failureMessage: "Velocity updateDailySnapshot failed after save (best-effort)",
+      context: { chapter_id: id },
+    });
   }
 
   // Only check corruption when content was part of the update
@@ -181,8 +179,10 @@ export async function deleteChapter(id: string): Promise<boolean> {
 
   if (!projectId) return false;
 
-  await fireDailySnapshot(projectId, "Velocity updateDailySnapshot failed (best-effort)", {
-    chapter_id: id,
+  await fireDailySnapshot({
+    projectId,
+    failureMessage: "Velocity updateDailySnapshot failed (best-effort)",
+    context: { chapter_id: id },
   });
   return true;
 }
@@ -353,8 +353,10 @@ export async function restoreChapter(
     throw err;
   }
 
-  await fireDailySnapshot(chapter.project_id, "Velocity updateDailySnapshot failed (best-effort)", {
-    chapter_id: id,
+  await fireDailySnapshot({
+    projectId: chapter.project_id,
+    failureMessage: "Velocity updateDailySnapshot failed (best-effort)",
+    context: { chapter_id: id },
   });
 
   if (txOutcome === "read_failure") return "read_failure";
