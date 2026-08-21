@@ -295,5 +295,5 @@
 - **Confidence:** Medium
 - **Found by:** Logic & Correctness, Error Handling & Edge Cases, Concurrency & State (`claude-opus-5[1m]`)
 - **First seen:** 2026-08-20 on branch `ovid/architecture` at `09aaba1e`
-- **Last seen:** 2026-08-20 on branch `ovid/architecture` at `09aaba1e`
+- **Last seen:** 2026-08-21 on branch `ovid/architecture` at `c7d5b3d4`
 - **Severity:** Important
