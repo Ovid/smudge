@@ -278,9 +278,16 @@ export async function restoreSnapshot(
     // word count, the persisted row, and the ref-count diff must all agree on
     // ONE content value, or the chapter would hold content whose images the
     // refcounter never saw.
-    // writeChapterContent is what enforces that agreement: it derives the word
-    // count from the same document it stores and runs the ref-count diff in the
-    // same call. `previousContent` is the coalesced `currentContent` used for
+    // writeChapterContent does NOT enforce that agreement, it only co-locates
+    // it: `nextContent` (the bytes it stores) and `nextDoc` (the document it
+    // counts) are two independent parameters with no assertion and no
+    // derivation linking them. Keeping them the same document is THIS caller's
+    // obligation, which is why the strip branch above assigns `restoreContent`
+    // and `newParsed` together. A new conditional transform of `restoreContent`
+    // must reassign `newParsed` alongside it, or the chapter stores one
+    // document while `word_count` describes another and the dashboard reports
+    // the wrong daily progress with no error anywhere.
+    // `previousContent` is the coalesced `currentContent` used for
     // the pre-restore auto-snapshot above, not `chapter.content`, so a
     // never-saved chapter (NULL content) is treated as the empty doc here too.
     const now = new Date().toISOString();

@@ -5,8 +5,18 @@ import type { ProjectStore } from "../stores/project-store.types";
 /**
  * Write new content to a chapter inside an open transaction, keeping the three
  * things that must move together in one call: the content itself, the word
- * count derived from it, and the image reference-count diff between the old and
- * new content.
+ * count for it, and the image reference-count diff between the old and new
+ * content.
+ *
+ * **Caller obligation, not a guarantee this helper makes.** `nextContent` (the
+ * bytes stored) and `nextDoc` (the document counted) are independent
+ * parameters; nothing here asserts they describe the same document or derives
+ * one from the other. Co-locating the two reads is all this helper does for
+ * that pairing. The two-parameter shape is deliberate — `replaceInProject`
+ * needs the serialized bytes *before* the call for its
+ * `MAX_CHAPTER_CONTENT_BYTES` check, and `restoreSnapshot` must store the
+ * snapshot's exact stored bytes rather than a re-serialization — so the
+ * agreement is enforced by each caller, at each caller.
  *
  * The coupling is the point (architecture finding F-03). Writing content
  * without re-running {@link applyImageRefDiff} leaves an image referenced by the
@@ -43,7 +53,11 @@ export async function writeChapterContent(
     previousContent: string | null;
     /** The new content, already serialized — the exact bytes to store. */
     nextContent: string;
-    /** The same document as `nextContent`, parsed. Word count is derived from it. */
+    /**
+     * The document `word_count` is computed from. The caller must ensure this
+     * is the same document `nextContent` serializes — see the caller-obligation
+     * note above. Unchecked here.
+     */
     nextDoc: Record<string, unknown>;
     now: string;
   },
