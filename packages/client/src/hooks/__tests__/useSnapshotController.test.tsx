@@ -4,7 +4,7 @@ import type { MutableRefObject } from "react";
 import type { Chapter } from "@smudge/shared";
 import { SNAPSHOT_ERROR_CODES } from "@smudge/shared";
 import { useSnapshotController, type SnapshotControllerDeps } from "../useSnapshotController";
-import type { useEditorMutation, MutationResult } from "../useEditorMutation";
+import type { useEditorMutation, MutationResult, MutationDirective } from "../useEditorMutation";
 import type { useFindReplaceState } from "../useFindReplaceState";
 import type { EditorHandle } from "../../components/Editor";
 import { ApiRequestError } from "../../api/client";
@@ -45,13 +45,18 @@ const mockSafeSetEditable = vi.mocked(safeSetEditable);
 const mockClearCachedContent = vi.mocked(clearCachedContent);
 
 type RestoreData = { staleChapterSwitch: boolean };
-/** The shape handleRestoreSnapshot's mutate callback returns to useEditorMutation. */
-type MutateSpec = {
-  clearCacheFor: string[];
-  reloadActiveChapter: boolean;
-  reloadChapterId?: string;
-  data: RestoreData;
-};
+/**
+ * What handleRestoreSnapshot's mutate callback returns to useEditorMutation.
+ *
+ * The production type itself (S7, agentic review 2026-08-21). A hand-written
+ * local copy stood here and had already fallen behind twice over: it omitted
+ * the now-required `committedLock`, and it flattened
+ * `reloadActiveChapter` from a discriminated union into a boolean plus an
+ * optional `reloadChapterId` — so a directive production REJECTS was
+ * constructible in this suite, and the next required field would compile green
+ * here exactly as `committedLock` did.
+ */
+type MutateSpec = MutationDirective<RestoreData>;
 
 function chapterWithId(id: string): Chapter {
   return {
@@ -156,6 +161,10 @@ function buildHarness(opts: HarnessOptions = {}) {
       }
     }),
     isBusy: vi.fn(() => false),
+    // The cast stays (S7): the real `run` is generic in T, and a stand-in can
+    // only be written for one T. What it no longer hides is the DIRECTIVE
+    // shape — MutateSpec is now the production type, so the callback's return
+    // is checked even though the function wrapper is not.
   } as unknown as ReturnType<typeof useEditorMutation>;
 
   const actionBusyRef: MutableRefObject<boolean> = { current: false };
