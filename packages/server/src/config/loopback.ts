@@ -1,3 +1,5 @@
+import { isIP } from "node:net";
+
 /**
  * F-02 (architecture report 2026-08-22): the loopback boundary.
  *
@@ -36,11 +38,32 @@ export function isLoopbackHost(hostHeader: string | undefined): boolean {
   if (!hostHeader) return false;
   const host = hostHeader.trim().toLowerCase();
 
-  // An IPv6 literal is bracketed, so a colon inside the brackets is part of the
-  // address rather than a port separator — split on ":" only outside them.
-  const bare = host.startsWith("[")
-    ? host.slice(0, host.indexOf("]") + 1)
-    : host.replace(/:.*$/, "");
+  // Anchored, so nothing may hide after the address. An IPv6 literal is
+  // bracketed and a colon inside those brackets is part of the address rather
+  // than a port separator, which is why the two shapes are separate arms.
+  //
+  // I6 (code review 2026-08-22): the bracketed arm used to take
+  // `slice(0, indexOf("]") + 1)` and DISCARD whatever followed, so `[::1]evil.com`
+  // read as `[::1]` and was accepted. Requiring end-of-string or `:port` is
+  // what closes that; the unbracketed sibling was already strict by
+  // construction. Latent rather than live — the WHATWG URL parser rejects the
+  // bypass spellings, so no browser can produce one — but this function is the
+  // only control left the moment Phase 7g.1 widens the bind, and a non-browser
+  // client can spell any Host it likes.
+  const parsed = /^(\[[0-9a-f:.]+\]|[^:[\]]+)(?::\d+)?$/.exec(host);
+  if (!parsed) return false;
+  const bare = parsed[1] as string;
 
-  return bare === "localhost" || bare === "[::1]" || /^127(?:\.\d{1,3}){3}$/.test(bare);
+  // `isIP` range-checks the octets, which the previous `/^127(?:\.\d{1,3}){3}$/`
+  // did not — it accepted `127.999.999.999`. Only the 127/8 block counts as
+  // loopback, so the prefix test stays.
+  //
+  // A trailing root dot is a valid spelling of the same name and a browser
+  // sends it verbatim for `http://localhost./`, where it used to 400.
+  return (
+    bare === "localhost" ||
+    bare === "localhost." ||
+    bare === "[::1]" ||
+    (isIP(bare) === 4 && bare.startsWith("127."))
+  );
 }

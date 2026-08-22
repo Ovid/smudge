@@ -53,6 +53,12 @@ describe("isLoopbackHost()", () => {
     ["bracketed IPv6 loopback", "[::1]:3456"],
     ["bracketed IPv6 loopback with no port", "[::1]"],
     ["mixed case", "LocalHost:3456"],
+    // I6 (code review 2026-08-22): a trailing root dot is a valid spelling of
+    // the same name, and a browser sends it verbatim for `http://localhost./`.
+    // It used to 400 — fail-closed, but a blackout of the whole app for a URL
+    // that names this machine correctly.
+    ["a trailing root dot", "localhost."],
+    ["a trailing root dot with a port", "localhost.:3456"],
     ["surrounding whitespace", "  localhost:3456  "],
   ])("accepts %s", (_label, host) => {
     expect(isLoopbackHost(host)).toBe(true);
@@ -67,6 +73,23 @@ describe("isLoopbackHost()", () => {
     ["a public address", "203.0.113.9"],
     ["an address that only looks like 127/8", "1270.0.0.1"],
     ["unbracketed IPv6 loopback", "::1"],
+    // I6 (code review 2026-08-22): the bracketed arm truncated at "]" and
+    // discarded whatever followed instead of requiring end-of-string or a
+    // port, so an attacker-chosen name prefixed with a loopback literal was
+    // accepted. Latent, not live — the WHATWG URL parser rejects these, so no
+    // browser can produce one — but this function is the ONLY control the
+    // moment Phase 7g.1 widens the bind, and a non-browser client can spell
+    // any Host it likes.
+    ["a name hidden behind a bracketed literal", "[::1]evil.com"],
+    ["a subdomain hidden behind a bracketed literal", "[::1].evil.com"],
+    ["trailing junk after a bracketed literal", "[::1]x"],
+    ["a bracketed literal with an empty port", "[::1]:"],
+    ["a bracketed literal with a non-numeric port", "[::1]:evil"],
+    ["an unterminated bracket", "[::1"],
+    // The IPv4 arm range-checked nothing: /^127(?:\.\d{1,3}){3}$/ matches any
+    // three trailing 1-3 digit runs, octet values included.
+    ["an out-of-range 127/8 address", "127.999.999.999"],
+    ["a 127/8 address with a non-numeric port", "127.0.0.1:evil"],
     ["an empty string", ""],
     ["whitespace only", "   "],
   ])("rejects %s", (_label, host) => {
