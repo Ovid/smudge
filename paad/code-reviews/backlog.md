@@ -285,3 +285,40 @@
 - **First seen:** 2026-08-20 on branch `ovid/architecture` at `67c00204`
 - **Last seen:** 2026-08-20 on branch `ovid/architecture` at `67c00204`
 - **Severity:** Suggestion
+
+## `f858e66a` — Double supersession re-enables the editor without checking `activeChapterIsAffected`
+- **File (at first sighting):** `packages/client/src/hooks/useEditorMutation.ts:592-598`
+- **Symbol:** `run`
+- **Bug class:** Concurrency
+- **Description:** When the second `reloadActiveChapter` also returns `"superseded"`, control falls through with `reloadSuperseded === true` and no `committedOutcome`, so `run()`'s `finally` dispatches `MUTATION_SETTLED_SUPERSEDED` → `{editable:true, lock:null}` without consulting the directive's `clearCacheFor` list. The sibling committed path applies `!activeChapterIsAffected` for exactly this reason. Interleaving: project replace affects A,B,C; user on A at click; cache wiped for A,B,C; active becomes B mid-flight; first reload superseded; second reload fires for B; active changes again during that GET; fall through; editor writable on B whose cache was wiped and whose on-screen text may predate the commit. Pre-existing: `main` carries the byte-identical arm. Needs two active-chapter changes in one mutation, which `isActionBusy()` gating makes very hard to reach through the UI. Verified by reading only; not reproduced.
+- **Suggested fix:** Guard the `reloadSuperseded` arm the same way the committed path is guarded — if the now-active chapter is in `directive.clearCacheFor`, route through `committed(directive)` instead of falling through to `MUTATION_SETTLED_SUPERSEDED`. The predicate (`activeChapterIsAffected`) already exists in the same closure, so this is a one-line change. Note the in-code comment at `:592-597` accepts the residual explicitly; that acceptance predates the predicate and should be updated or removed with the fix.
+- **Confidence:** Medium
+- **Found by:** Concurrency & State (`claude-opus-5[1m]`)
+- **First seen:** 2026-08-22 on branch `ovid/architecture` at `7b9e1c68`
+- **Last seen:** 2026-08-22 on branch `ovid/architecture` at `7b9e1c68`
+- **Severity:** Suggestion
+
+## `4485eebf` — Replace flow's safe-drift notice is not chapter-attributed, contradicting CLAUDE.md and strings.ts
+- **File (at first sighting):** `packages/client/src/hooks/useFindReplaceController.ts:170`
+- **Symbol:** `finalizeReplaceSuccess`
+- **Bug class:** Contract
+- **Description:** On the safe-drift arm the editor is re-enabled on a chapter the replace did not write to, but the dismissible notice uses the unattributed `STRINGS.findReplace.replaceSucceededReloadFailed` ("Replace succeeded, but reloading the chapter failed... editing now would overwrite the replacement"), which is false for the chapter on screen and names no chapter. There is no `replaceSucceededReloadFailedOnOtherChapter` in `strings.ts` — only the snapshot-restore side has `OnOtherChapter` variants. `strings.ts:498-499` claims the restore variant "Mirrors ... the find-replace stale-drift arm", and `CLAUDE.md:273` claims the notice is "chapter-attributed". Pre-existing; the drift arm used the same string before the branch.
+- **Suggested fix:** Add a `replaceSucceededReloadFailedOnOtherChapter(chapterTitle)` string mirroring `restoreSucceededReloadFailedOnOtherChapter`, and pass the target chapter's title into `finalizeReplaceSuccess`'s drift arm. In the same change, correct or scope CLAUDE.md's "chapter-attributed" sentence and `strings.ts:499`'s "Mirrors ... the find-replace stale-drift arm" comment, both of which currently assert a parity that does not exist.
+- **Confidence:** Medium
+- **Found by:** Contract & Integration (`claude-opus-5[1m]`)
+- **First seen:** 2026-08-22 on branch `ovid/architecture` at `7b9e1c68`
+- **Last seen:** 2026-08-22 on branch `ovid/architecture` at `7b9e1c68`
+- **Severity:** Suggestion
+
+## `8ff156ec` — Nothing at any level tests that a locked editor can become writable again
+- **File (at first sighting):** `e2e/editor-save.spec.ts:107`
+- **Symbol:** `PATCH 404 surfaces chapter-gone copy`
+- **Bug class:** Error Handling
+- **Description:** The editor's persistent read-only lock has zero tests, at any level, demonstrating a writer getting back to work after one. Five reducer unit tests assert the lock field becomes `null` (`useEditorMutationMachine.test.tsx:47,54,70,80,91`); two hook tests fold a dispatched-event list through the reducer by hand (`useEditorMutation.test.tsx:1687,1706`); nineteen component tests name the lock but only assert it appears, or that something is refused while it stands; the one e2e test intercepts a save with a 404, asserts `contenteditable === "false"`, and ends. Counterfactual verified by exhaustive grep: make `EDITOR_REMOUNTED` preserve the lock and exactly two reducer unit assertions go red — zero component tests, zero e2e tests. The lock is reachable in ordinary use (autosave PATCH 404 when a chapter is deleted under an open editor, via `chapter.save` `terminalStatuses` at `scopes.ts:237` + `useProjectEditor.ts:666-671`) and is an in-editor dead end: the three lock-clearing events all dispatch from inside `useEditorMutation.run()`, whose three callers all refuse at entry while locked, and `UNLOCK` has no production dispatcher. Recovery is the banner's `window.location.reload()` button (`EditorMainContent.tsx:231-241`) and an undocumented logo-navigation route (`EditorPage.tsx:1115` → `EditorHeader.tsx:77-82`, unmounting the page discards the reducer state). Both untested as exits. A regression in either strands a writer in a read-only editor.
+- **PARTIALLY ADDRESSED 2026-08-22** on branch `ovid/architecture`: two e2e tests added in `e2e/editor-save.spec.ts` covering both real exits (banner Refresh button; leave-project-and-return), each verified load-bearing by breaking its exit and watching the matching test fail. Note the original counterfactual in this entry was empirically confirmed but MISREAD: `EDITOR_REMOUNTED`'s `lock: null` is unreachable in production (neither effect dependency can move while a lock stands), so only two reducer assertions failing is correct coverage for a dead arm, not a gap — and neither real exit passes through the reducer at all. **Entry kept open** for the residual: a guard test pinning that the lock banner renders above every view branch (its universality is incidental — a future early return above `EditorMainContent` would hide the only documented escape and no test would notice).
+- **Suggested fix (residual):** Add the banner-placement guard test. Design note: that interception blocks only PATCH, so after the reload the chapter loads and the editor returns writable, but typing re-triggers the 404 and re-locks after the debounce — assert "editor writable and banner gone" rather than "typing then saves", or drop the interception before reloading. Add a second test for the logo-and-back route since it is load-bearing by accident. Consider a guard test pinning that the lock banner renders above every view branch (its universality is incidental — a future early return above `EditorMainContent` would hide the only documented escape and no test would notice).
+- **Confidence:** High
+- **Found by:** `/paad:rethink` premise verification (`claude-opus-5[1m]`)
+- **First seen:** 2026-08-22 on branch `ovid/architecture` at `7b9e1c68`
+- **Last seen:** 2026-08-22 on branch `ovid/architecture` at `7b9e1c68`
+- **Severity:** Important
