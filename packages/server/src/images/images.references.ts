@@ -189,29 +189,35 @@ export async function applyImageRefDiff(
   const rows = await txStore.findImagesByIds(needed);
   const byId = new Map(rows.map((r) => [r.id, r]));
 
-  for (const id of diff.added) {
+  // Does this id name an image this project owns? Warns on the negative branch.
+  //
+  // An image referenced in restored/replaced content may have been purged since
+  // the snapshot was taken, or the chapter may reference an image belonging to a
+  // different project (stale URL, manual paste). Warn but do not fail; skip the
+  // ref-count update so cross-project image state cannot be touched via a
+  // crafted content payload.
+  //
+  // F-34: both loops call this one closure. The remove loop used to restate the
+  // predicate and skip SILENTLY, under a comment asserting it was "the same
+  // cross-project guard as the add path" — which was true of the predicate and
+  // false of the handling. Sharing the guard is what stops that claim coming
+  // apart again; a comment could only ever describe today's copy.
+  const isOwned = (id: string): boolean => {
     const image = byId.get(id);
-    // An image referenced in restored/replaced content may have been purged
-    // since the snapshot was taken, or the chapter may reference an image
-    // that belongs to a different project (stale URL, manual paste). Warn
-    // but do not fail; skip the ref-count update so cross-project image
-    // state cannot be touched via a crafted content payload.
-    if (!image || image.project_id !== projectId) {
-      logger.warn(
-        { image_id: id, project_id: projectId, found_in_project: image?.project_id ?? null },
-        "Referenced image missing or in different project; skipping reference-count update",
-      );
-      continue;
-    }
+    if (image && image.project_id === projectId) return true;
+    logger.warn(
+      { image_id: id, project_id: projectId, found_in_project: image?.project_id ?? null },
+      "Referenced image missing or in different project; skipping reference-count update",
+    );
+    return false;
+  };
+
+  for (const id of diff.added) {
+    if (!isOwned(id)) continue;
     await txStore.incrementImageReferenceCount(id, 1);
   }
   for (const id of diff.removed) {
-    // Decrement only if the image actually belongs to this project — same
-    // cross-project guard as the add path.
-    const image = byId.get(id);
-    if (!image || image.project_id !== projectId) {
-      continue;
-    }
+    if (!isOwned(id)) continue;
     await txStore.incrementImageReferenceCount(id, -1);
   }
 }

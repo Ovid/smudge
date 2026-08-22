@@ -52,9 +52,7 @@ describe("GET /api/health", () => {
 // header-less request every existing Supertest case already sends.
 describe("request-origin shapes that must keep working", () => {
   it("accepts a request carrying the Vite dev client's Origin", async () => {
-    const res = await request(ctx.app)
-      .get("/api/health")
-      .set("Origin", "http://localhost:5173");
+    const res = await request(ctx.app).get("/api/health").set("Origin", "http://localhost:5173");
     expect(res.status).toBe(200);
   });
 
