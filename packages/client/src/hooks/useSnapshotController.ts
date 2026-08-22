@@ -10,6 +10,7 @@ import { sanitizeEditorHtml } from "../sanitizer";
 import { renderEditorHtml } from "@smudge/shared/editor-extensions";
 import { STRINGS } from "../strings";
 import type { EditorHandle } from "../components/Editor";
+import { isDriftedFrom } from "./useEditorMutation";
 import type { useEditorMutation } from "./useEditorMutation";
 import type { useFindReplaceState } from "./useFindReplaceState";
 import type { useSnapshotState } from "./useSnapshotState";
@@ -238,7 +239,7 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
       if (droppedImageCount > 0) {
         const currentId = getActiveChapter()?.id;
         setActionInfo(
-          currentId !== undefined && currentId !== activeChapter.id
+          isDriftedFrom(activeChapter.id, currentId)
             ? STRINGS.snapshots.restoreDroppedImagesOnOtherChapter(
                 droppedImageCount,
                 activeChapter.title,
@@ -360,7 +361,7 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
             // chapter the user didn't restore.
             clearCachedContent(activeChapter.id);
             const currentId = getActiveChapter()?.id;
-            if (currentId !== undefined && currentId !== activeChapter.id) {
+            if (isDriftedFrom(activeChapter.id, currentId)) {
               // I6 (review 2026-04-25): the user is no longer on the
               // chapter the restore targeted. The mapped message is
               // chapter-agnostic ("the restore was committed; refresh"),
