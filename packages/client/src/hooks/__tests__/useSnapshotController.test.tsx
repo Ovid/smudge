@@ -73,7 +73,14 @@ function chapterWithId(id: string): Chapter {
   };
 }
 
-const SNAP = { id: "snap-1", label: "Before the cut", created_at: "2026-01-02" };
+const SNAP = {
+  id: "snap-1",
+  label: "Before the cut",
+  // Required by ViewingSnapshot. The whole-object cast this file used to carry
+  // let it be absent (S8).
+  content: { type: "doc", content: [{ type: "paragraph" }] },
+  created_at: "2026-01-02",
+};
 
 function deferred() {
   let resolve!: () => void;
@@ -170,7 +177,12 @@ function buildHarness(opts: HarnessOptions = {}) {
   const actionBusyRef: MutableRefObject<boolean> = { current: false };
   const editorRef: MutableRefObject<EditorHandle | null> = { current: null };
 
-  const baseDeps = {
+  // S8 (agentic review 2026-08-22): typed to the REAL interface (minus the one
+  // field renderHook varies), so a newly-added required dep is a compile error
+  // rather than `undefined` at runtime. The remaining casts are per-FIELD and
+  // each stands in for a hook return too large to fake whole — same shape as
+  // the MutateSpec fix above.
+  const baseDeps: Omit<SnapshotControllerDeps, "viewingSnapshot"> = {
     activeChapter,
     restoreSnapshot,
     viewSnapshot,
@@ -202,7 +214,7 @@ function buildHarness(opts: HarnessOptions = {}) {
       useSnapshotController({
         ...baseDeps,
         viewingSnapshot,
-      } as unknown as SnapshotControllerDeps),
+      }),
     { initialProps: { viewingSnapshot: SNAP as typeof SNAP | null } },
   );
 

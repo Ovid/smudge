@@ -140,6 +140,12 @@ function useHarness(activeChapterId: string) {
     machine.dispatch({ type: "COMMITTED_UNRELOADED", message });
   };
 
+  // S8 (agentic review 2026-08-22): both deps objects are typed to the REAL
+  // interface, so a newly-added required dep is a compile error here rather
+  // than `undefined` arriving at runtime in the file that is now the primary
+  // guarantee for the relocated F-07 assertions. The remaining casts are
+  // per-FIELD and each stands in for a hook return too large to fake whole —
+  // the shape 754acbd1 established for MutateSpec.
   const shared = {
     mutation,
     getActiveChapter,
@@ -148,10 +154,10 @@ function useHarness(activeChapterId: string) {
     isEditorLocked: () => false,
     applyReloadFailedLock,
     ...spies,
-    snapshotPanelRef: { current: null },
+    snapshotPanelRef: { current: null } as SnapshotControllerDeps["snapshotPanelRef"],
   };
 
-  const findReplace = useFindReplaceController({
+  const findReplaceDeps: FindReplaceControllerDeps = {
     ...shared,
     project: { id: "p1", chapters: [] } as unknown as ProjectWithChapters,
     slug: "my-novel",
@@ -159,19 +165,32 @@ function useHarness(activeChapterId: string) {
       clearError: vi.fn(),
       search: vi.fn(async () => {}),
     } as unknown as FindReplaceControllerDeps["findReplace"],
-  } as unknown as FindReplaceControllerDeps);
+  };
+  const findReplace = useFindReplaceController(findReplaceDeps);
 
-  const snapshot = useSnapshotController({
+  const snapshotDeps: SnapshotControllerDeps = {
     ...shared,
     activeChapter: chapterWithId(TARGET),
-    viewingSnapshot: { id: "snap-1", label: "Before the cut", created_at: "2026-01-02" },
-    restoreSnapshot: vi.fn(async () => ({ ok: true as const })),
-    viewSnapshot: vi.fn(async () => ({ ok: true as const })),
+    viewingSnapshot: {
+      id: "snap-1",
+      label: "Before the cut",
+      // The typed deps object surfaced this: `content` is required on
+      // ViewingSnapshot and the old whole-object cast let it be absent.
+      content: { type: "doc", content: [{ type: "paragraph" }] },
+      created_at: "2026-01-02",
+    },
+    restoreSnapshot: vi.fn(async () => ({
+      ok: true as const,
+    })) as unknown as SnapshotControllerDeps["restoreSnapshot"],
+    viewSnapshot: vi.fn(async () => ({
+      ok: true as const,
+    })) as unknown as SnapshotControllerDeps["viewSnapshot"],
     exitSnapshotView: vi.fn(),
     cancelPendingSaves: () => {},
     editorRef,
-    findReplace: { clearError: vi.fn() },
-  } as unknown as SnapshotControllerDeps);
+    findReplace: { clearError: vi.fn() } as unknown as SnapshotControllerDeps["findReplace"],
+  };
+  const snapshot = useSnapshotController(snapshotDeps);
 
   return { state: machine.state, findReplace, snapshot };
 }
