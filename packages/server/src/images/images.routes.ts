@@ -37,17 +37,29 @@ const upload = multer({
 });
 
 /**
- * Translate a multer cap breach into the error taxonomy.
+ * Translate a multipart-parser failure into the error taxonomy.
  *
- * Multer signals every cap through an `err.code` string on a plain error. Only
- * LIMIT_FILE_SIZE was mapped, so the rest reached globalErrorHandler carrying
- * no status and were clamped to 500 — a client mistake recorded as a server
- * fault. Returns null for anything that is not a cap breach, so a genuine
- * parser failure still propagates unchanged.
+ * Every error that reaches multer's callback is the client's fault, so this
+ * asks that question rather than matching a code prefix. Keying on `LIMIT_`
+ * classified only the cap breaches and let two other client-error shapes fall
+ * through to globalErrorHandler unstatused, where they were clamped to 500 and
+ * written into the anomaly log as a server fault — the exact class the mapping
+ * exists to close (I1, code review 2026-08-22). The two that escaped:
+ *
+ *  - `MISSING_FIELD_NAME`, the one code in multer's own taxonomy that does not
+ *    begin `LIMIT_`. busboy emits a `file` event with an undefined fieldname
+ *    for a part whose `Content-Disposition` carries `filename` but no `name`.
+ *  - busboy's constructor rejections, which carry no `code` at all — a
+ *    `Content-Type` with no `boundary`, an empty `boundary`, or a multipart
+ *    subtype it does not support. multer hands those over as a bare `Error`.
+ *
+ * Size and count breaches are both 413 but take DIFFERENT codes. The client
+ * chooses its 413 copy by `error.code` (CLAUDE.md §Save-pipeline invariant 5),
+ * and "shrink the file" is wrong advice for a request whose byte count was
+ * never the problem (S2, same review).
  */
-function multerLimitError(err: unknown): AppError | null {
-  const code = (err as (Error & { code?: string }) | null)?.code;
-  if (!code?.startsWith("LIMIT_")) return null;
+function uploadRequestError(err: unknown): AppError {
+  const code = (err as { code?: unknown } | null)?.code;
 
   if (code === "LIMIT_FILE_SIZE") {
     return new PayloadTooLargeError(`File too large. Maximum: ${MAX_IMAGE_UPLOAD_LABEL}.`);
@@ -57,7 +69,10 @@ function multerLimitError(err: unknown): AppError | null {
   if (code === "LIMIT_UNEXPECTED_FILE") {
     return new BadRequestError("Unexpected file field in upload.");
   }
-  return new PayloadTooLargeError("Upload has too many parts or fields.");
+  if (typeof code === "string" && code.startsWith("LIMIT_")) {
+    return new PayloadTooLargeError("Upload has too many parts or fields.", "UPLOAD_TOO_MANY_PARTS");
+  }
+  return new BadRequestError("Malformed file upload.", "MALFORMED_UPLOAD");
 }
 
 const UUID_RE = new RegExp(`^${UUID_PATTERN}$`, "i");
@@ -87,7 +102,7 @@ export function imagesRouter(): Router {
       upload.single("file")(req, res, (err: unknown) => {
         // Async multer callback — forward via next() rather than throw
         // (a throw here would not be caught by Express).
-        if (err) return next(multerLimitError(err) ?? err);
+        if (err) return next(uploadRequestError(err));
         next();
       });
     },

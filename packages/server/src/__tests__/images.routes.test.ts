@@ -152,7 +152,7 @@ describe("POST /api/projects/:projectId/images", () => {
       .attach("file", TEST_PNG, { filename: "test.png", contentType: "image/png" });
 
     expect(res.status).toBe(413);
-    expect(res.body.error.code).toBe("PAYLOAD_TOO_LARGE");
+    expect(res.body.error.code).toBe("UPLOAD_TOO_MANY_PARTS");
   });
 
   // Before the fix every multer LIMIT_* other than LIMIT_FILE_SIZE fell through
@@ -171,7 +171,7 @@ describe("POST /api/projects/:projectId/images", () => {
       .attach("file", TEST_PNG, { filename: "b.png", contentType: "image/png" });
 
     expect(res.status).toBe(413);
-    expect(res.body.error.code).toBe("PAYLOAD_TOO_LARGE");
+    expect(res.body.error.code).toBe("UPLOAD_TOO_MANY_PARTS");
   });
 
   // A single file under the wrong field name is within every count cap, so it
@@ -186,6 +186,90 @@ describe("POST /api/projects/:projectId/images", () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("VALIDATION_ERROR");
+  });
+
+  // S2 (code review 2026-08-22): a count breach and a size breach are different
+  // client mistakes, and the 413 copy the client shows is chosen by `error.code`
+  // (CLAUDE.md §Save-pipeline invariant 5). Sharing PAYLOAD_TOO_LARGE told the
+  // user to shrink a file whose size is irrelevant.
+  it("distinguishes a count breach from a size breach by error code", async () => {
+    const projectId = await createTestProject();
+
+    const tooMany = await request(t.app)
+      .post(`/api/projects/${projectId}/images`)
+      .field("caption", "unexpected")
+      .attach("file", TEST_PNG, { filename: "test.png", contentType: "image/png" });
+
+    const tooBig = await request(t.app)
+      .post(`/api/projects/${projectId}/images`)
+      .attach("file", Buffer.alloc(11 * 1024 * 1024), {
+        filename: "big.png",
+        contentType: "image/png",
+      });
+
+    expect(tooMany.status).toBe(413);
+    expect(tooBig.status).toBe(413);
+    expect(tooMany.body.error.code).toBe("UPLOAD_TOO_MANY_PARTS");
+    expect(tooBig.body.error.code).toBe("PAYLOAD_TOO_LARGE");
+  });
+
+  // I1 (code review 2026-08-22): the mapping was keyed on a "LIMIT_" prefix
+  // rather than on "is this the client's fault?", so two client-error shapes
+  // reached globalErrorHandler unstatused and were clamped to 500 — the exact
+  // class the mapping exists to close, under a doc comment that read as if it
+  // were closed. Both write an error-level line into the anomaly-log channel
+  // CLAUDE.md §F-2 rests on.
+  //
+  // Shape 1: busboy's constructor rejections, which carry no `code` at all.
+  it.each([
+    ["no boundary parameter", "multipart/form-data"],
+    ["an unsupported multipart subtype", "multipart/mixed; boundary=xyz"],
+  ])("returns 400 when the Content-Type has %s", async (_label, contentType) => {
+    const projectId = await createTestProject();
+
+    const res = await request(t.app)
+      .post(`/api/projects/${projectId}/images`)
+      .set("Content-Type", contentType)
+      .send("--xyz\r\n--xyz--\r\n");
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("MALFORMED_UPLOAD");
+  });
+
+  // An empty `boundary=` is a third busboy constructor rejection on paper, but
+  // it never reaches busboy: multer gates on `type-is`, which cannot parse that
+  // Content-Type at all and so returns false, and multer calls next() with no
+  // error. The request then fails the ordinary no-file check. Pinned because it
+  // looks like a sibling of the two above and is not one.
+  it("returns 400 for an empty boundary parameter, before the parser is built", async () => {
+    const projectId = await createTestProject();
+
+    const res = await request(t.app)
+      .post(`/api/projects/${projectId}/images`)
+      .set("Content-Type", "multipart/form-data; boundary=")
+      .send("--xyz\r\n--xyz--\r\n");
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+  });
+
+  // Shape 2: multer's own MISSING_FIELD_NAME — the one code in its taxonomy
+  // that does not begin "LIMIT_". busboy emits `file` with an undefined
+  // fieldname for a part whose Content-Disposition carries `filename` but no
+  // `name`, and multer aborts with that code.
+  it("returns 400 when a file part carries no field name", async () => {
+    const projectId = await createTestProject();
+    const body =
+      '--xyz\r\nContent-Disposition: form-data; filename="a.png"\r\n' +
+      "Content-Type: image/png\r\n\r\nhello\r\n--xyz--\r\n";
+
+    const res = await request(t.app)
+      .post(`/api/projects/${projectId}/images`)
+      .set("Content-Type", "multipart/form-data; boundary=xyz")
+      .send(body);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("MALFORMED_UPLOAD");
   });
 });
 

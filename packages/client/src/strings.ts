@@ -453,6 +453,12 @@ export const STRINGS = {
     uploadInvalidFile:
       "We couldn't upload that file. Check that it's a supported image type (PNG, JPG, GIF, or WebP) and that the file isn't empty.",
     uploadProjectGone: "This project has been deleted. Uploads aren't available.",
+    // S2 (code review 2026-08-22): the server distinguishes a byte-count
+    // breach from a part-count breach, and both are 413. Without its own copy
+    // a part-count breach told the user to shrink a file whose size was never
+    // the problem. Also covers MALFORMED_UPLOAD, whose cause is the same from
+    // the user's side: the request body was not a form the server could read.
+    uploadMalformed: "We couldn't read that upload. Try selecting the image again.",
     uploadCommittedRefresh:
       "The upload may have completed but the server response was unreadable. Check the image gallery — refresh if needed — before trying again.",
     deleteFailedGeneric: "Delete failed. Try again.",

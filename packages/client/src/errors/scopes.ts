@@ -346,6 +346,13 @@ export const SCOPES = {
       // non-idempotent, CLAUDE.md §F-8). Both entries are required.
       READ_AFTER_INSERT_FAILURE: STRINGS.imageGallery.uploadCommittedRefresh,
       PAYLOAD_TOO_LARGE: STRINGS.imageGallery.fileTooLarge,
+      // S2 (code review 2026-08-22): the 413 byStatus arm above says "file too
+      // large", which is the wrong advice for a request rejected on part count
+      // rather than byte count. The server now discriminates the two.
+      // Unreachable from this client today — it posts exactly one part — and
+      // live the day a form field is added to the upload.
+      UPLOAD_TOO_MANY_PARTS: STRINGS.imageGallery.uploadMalformed,
+      MALFORMED_UPLOAD: STRINGS.imageGallery.uploadMalformed,
       // I1 (2026-04-24 review): server 400 for missing file, unsupported
       // MIME, MIME/content mismatch, and empty file. Without a byCode
       // entry the user sees "Check your connection" — which has nothing
