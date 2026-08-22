@@ -475,7 +475,34 @@ had just repaired.
 The helper was itself found incomplete by the same review (finding I1) and is
 rewritten in `cf79db33`; F-38's Status reason records that amendment per rule 6.
 
-**What this does not license.** Same bound as the two sections above. Three
+**A fourth, committed by the response itself.** `cf79db33` — the `[I1]` code
+fix — also carries the 186-line code-review report it answers to, because the
+staging command that added its source files added the untracked report with
+them. That is the `3ac13bca` shape recorded above: a review report filed inside
+a commit whose subject names something else, so `git log --oneline main..HEAD`
+does not say the report was filed at all.
+
+**Not rebased**, but the reasoning differs from every other instance in this
+file and the difference is worth stating, because it is the first time the
+usual argument does not apply. Everywhere above, the rebase was declined
+because it would have staled a `Status commit` SHA recorded in the report. Here
+it would not: all four recorded SHAs — `81a87fd9`, `3d6a5bbc`, `3b97f72c`,
+`ee186275` — sit **before** `cf79db33`, and the review report's own filename
+cites `b66c3f77`, also before it. A rebase splitting the report into its own
+`[report]` commit would cost no traceability at all.
+
+It is declined on the letter of rule 6's deciding test instead — "retag when the
+commit is the branch tip and no `Status commit` line names it or anything after
+it; otherwise record and move on" — and `cf79db33` is not the tip. That is a
+weaker reason than the ones above, and a reader should treat it as one. The
+honest reading is that rule 6's test was written from a rationale (rebase cost)
+and then stated as a mechanical condition (tip-or-not), and this is the first
+case where the two come apart. If the next session wants to resolve that, the
+question is whether the test should read "when the rebase would stale no
+recorded SHA" — which is what every declined instance here was actually
+arguing.
+
+**What this does not license.** Same bound as the two sections above. Four
 recorded violations in one session is not evidence that the bound has moved;
 it is evidence for the reading the Amendments section already offers — that
 these rules describe a tidier practice than the one being run, and that the
