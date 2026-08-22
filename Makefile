@@ -129,7 +129,7 @@ e2e-clean: ## Wipe the isolated e2e data dir (next `make e2e` starts fresh)
 	@#
 	@# I4 (review 2026-04-27): the probe closes the steady-state race
 	@# (e2e is mid-run) but does NOT close a startup race: the server's
-	@# `app.listen(PORT)` only fires after Knex migrations (1-3s after
+	@# `app.listen(PORT, host)` only fires after Knex migrations (1-3s after
 	@# `npm run dev`). If you run `make e2e-clean` in a second terminal
 	@# during that window, the probe sees ECONNREFUSED (correct: no
 	@# listener YET), proceeds to rm, and the about-to-start server
@@ -175,8 +175,15 @@ e2e-clean: ## Wipe the isolated e2e data dir (next `make e2e` starts fresh)
 	@# don't print a Node stack trace before our curated message.
 	@#
 	@# S13 (review 2026-04-27): probe BOTH 127.0.0.1 AND ::1. The
-	@# server's `app.listen(PORT)` defaults to `::` on dual-stack Linux.
+	@# server's `app.listen(PORT)` defaulted to `::` on dual-stack Linux.
 	@# IPv4-only probes mis-conclude "no listener" on IPv6-only hosts.
+	@#
+	@# S9 (review 2026-08-22): no longer true since architecture finding
+	@# F-02 — `index.ts` now passes `getBindHost()` (`127.0.0.1`) to
+	@# `app.listen`, so the ::1 probe can never see a live e2e server.
+	@# The IPv4 probe still can, so the guard is intact; the second
+	@# probe is dead weight, kept because Phase 7g.1 may widen the bind
+	@# back to dual-stack and removing it would have to be undone.
 	@#
 	@# S1 + S13 (review 2026-04-27, third pass): a "refused" verdict
 	@# also covers EADDRNOTAVAIL (IPv6 disabled), EAFNOSUPPORT (IPv6

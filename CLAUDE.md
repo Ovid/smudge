@@ -107,7 +107,7 @@ Smudge is a web-based writing application for long-form fiction and non-fiction,
 - **Backend:** Node.js 22 LTS (Jod; see CONTRIBUTING.md for the DEP0040 workaround), Express 4.x, better-sqlite3 (synchronous), Knex.js (migrations/queries), Zod (validation)
 - **Frontend:** React 19, Vite, TipTap v2 (rich text editor, stores content as JSON not HTML), Tailwind CSS, @dnd-kit/sortable v10
 - **Testing:** Vitest (unit + integration with Supertest), Playwright (e2e + aXe-core a11y)
-- **Deployment (target — not yet implemented):** Single Docker container, Express serving the API + static frontend on port 3456, SQLite persisted via Docker volume. Today `createApp()` mounts `/api/*` (+ `/api/health`) only — no `express.static`/SPA catch-all and no `Dockerfile` yet. When static serving lands it introduces a new path-traversal/unsafe-serving surface that must ship with guardrails + tests (see architecture report F-19).
+- **Deployment (target — not yet implemented):** Single Docker container, Express serving the API + static frontend on port 3456, SQLite persisted via Docker volume. Today `createApp()` mounts `/api/*` (+ `/api/health`) only — no `express.static`/SPA catch-all and no `Dockerfile` yet. **That target does not work against today's server and must not be built without changing both halves of the loopback boundary** (architecture finding F-02, `packages/server/src/config/loopback.ts`): the server binds `127.0.0.1`, which `docker run -p` cannot reach because it DNATs to the container's `eth0`, and even if it could the request would arrive with `Host: <host-ip>:3456` and be rejected by the `Host` allowlist. Both the bind and the allowlist are owned by roadmap Phase 7g.1 and must widen together — that is a decision to record in 7g.1, not a default to inherit. When static serving lands it introduces a new path-traversal/unsafe-serving surface that must ship with guardrails + tests (see architecture report F-19).
 
 ## Target Project Structure
 
@@ -176,6 +176,10 @@ make help                            # Show all available make targets
 against a fresh SQLite DB and image store. The recipe refuses to wipe
 while a live `make e2e` is running (it probes 127.0.0.1:3457 and
 ::1:3457 for the e2e server), so it's safe to run in a stray terminal.
+Since F-02 the server binds `127.0.0.1` explicitly, so the `::1` probe
+can no longer see a live e2e server; the IPv4 probe still can, so the
+guard holds and the second probe is now dead weight rather than a
+second line of defence.
 **Do not** run `make e2e-clean` concurrently with the start-up phase of
 `make e2e` (the first 1–3s while Knex migrations are running and
 `app.listen` has not yet bound) — the probe sees ECONNREFUSED, proceeds
@@ -521,7 +525,7 @@ REST endpoints under `/api/`. Error envelope: `{ "error": { "code": "MACHINE_REA
 
 **Do not retro-fit a rule to this split.** An earlier reading had it as "slug where the client addresses a project from the URL, UUID where it addresses one from a held project object". That is false: find-and-replace passes a slug (`client.ts:605,619`) from a panel holding the same loaded project object the image gallery and outtakes drawer hold. Chronology does not explain it either — search (2026-04-16, slug) landed one day _after_ images (2026-04-15, UUID).
 
-**Slugs are mutable and reclaimable.** `projects.slug` is rewritten on project rename (`projects.service.ts:155`) and on parent-project restore inside `restoreChapter` (`chapters.service.ts`, the `if (parentProject.deleted_at)` branch of its transaction callback). `resolveUniqueSlug` only avoids collisions with live projects (`projects.repository.ts:129,137`, matching migration 002's partial unique index `WHERE deleted_at IS NULL`), so renaming a project away from slug S **releases S** — and the next project whose title generates S takes it over. Verified by execution: an old `/projects/my-novel` URL then opens a _different_ project, silently, with no 404. The client updates every in-memory slug holder and the browser URL on both mutation paths (`useChapterMetadata.ts:103-118`, `useProjectTitleEditing.ts:29-33`, `useTrashManager.ts:194-207`), so this is unreachable through in-app state; it is reachable through a bookmark, a history entry, or a shared link.
+**Slugs are mutable and reclaimable.** `projects.slug` is rewritten on project rename (`projects.service.ts:155`) and on parent-project restore inside `restoreChapter` (`chapters.service.ts`, the `if (parentProject.deleted_at)` branch of its transaction callback). `resolveUniqueSlug` only avoids collisions with live projects (both of its collision probes in `projects.repository.ts` add `.whereNull("deleted_at")`, matching migration 002's partial unique index `WHERE deleted_at IS NULL`), so renaming a project away from slug S **releases S** — and the next project whose title generates S takes it over. Verified by execution: an old `/projects/my-novel` URL then opens a _different_ project, silently, with no 404. The client updates every in-memory slug holder and the browser URL on both mutation paths (`useChapterMetadata.ts:103-118`, `useProjectTitleEditing.ts:29-33`, `useTrashManager.ts:194-207`), so this is unreachable through in-app state; it is reachable through a bookmark, a history entry, or a shared link.
 
 **Whether the API should move off the slug entirely is open — Phase 4b.19.** Until it is settled, a new project sub-resource takes the **slug**, because that is the decision on record. If you think it should take the UUID, that is the 4b.19 conversation and it needs a decision log, not a route.
 
