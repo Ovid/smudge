@@ -70,9 +70,17 @@ export function EditorPage() {
   // I6 (review 2026-04-24): invariant-pair helper. CLAUDE.md save-
   // pipeline invariant #2 requires setEditable(false) around any
   // mutation that can fail mid-typing; the persistent lock banner is the
-  // only user-visible signal of that read-only state. Three call sites
-  // pair them today (restore stage:"committed_but_unreloaded", restore stage:"mutate"
-  // possiblyCommitted, and finalizeReplaceSuccess non-stale reloadFailed).
+  // only user-visible signal of that read-only state.
+  //
+  // Two call sites pair them today, and both are 2xx-BAD_JSON /
+  // possiblyCommitted paths: useSnapshotController's restore stage:"mutate"
+  // arm, and finalizeReplaceSuccess's non-stale reloadFailed arm behind its
+  // `if (!seamOutcome)` guard. The committed_but_unreloaded path used to be a
+  // third; F-07 moved that lock into useEditorMutation, which raises it from
+  // the directive's committedLock before returning. (Count re-grepped
+  // 2026-08-21 per CLAUDE.md §Documentation Discipline rule 2 — do not carry it
+  // forward.)
+  //
   // Callers keep their surrounding refreshes / cache-clear / stale-chapter
   // branching inline because those diverge between the restore and replace
   // flows in non-mechanical ways.
@@ -237,11 +245,15 @@ export function EditorPage() {
       reloadActiveChapter,
       getActiveChapter,
     },
-    // The hook emits MUTATION_STARTED at entry and one terminal event on
-    // settle; on the committed-but-unreloaded path it dispatches nothing and
-    // the consumer raises COMMITTED_UNRELOADED with its own banner copy. The
-    // machine's MUTATION_SETTLED_OK transition preserves the old "do not
-    // re-enable under a persistent lock" guard (I1) by construction.
+    // The hook emits MUTATION_STARTED at entry and exactly one terminal event
+    // on settle, on EVERY path — including committed-but-unreloaded, where it
+    // raises COMMITTED_UNRELOADED with the copy the caller put in the
+    // directive's committedLock, or MUTATION_SETTLED_SUPERSEDED when the user
+    // has drifted onto a chapter the mutation left alone (F-07). A consumer's
+    // residual duty on that path is copy and refreshes; a second dispatch would
+    // land on an already-settled machine. The machine's MUTATION_SETTLED_OK
+    // transition preserves the old "do not re-enable under a persistent lock"
+    // guard (I1) by construction.
     dispatch: editorMachine.dispatch,
   });
 
@@ -343,21 +355,6 @@ export function EditorPage() {
     isEditorLocked,
   ]);
 
-  // OOSI1 (agentic-review 2026-05-30): re-assert editor editability after a
-  // committed_but_unreloaded replace that settled on a now-unrelated chapter.
-  // Dispatches MUTATION_SETTLED_SUPERSEDED ({editable:true, lock:null})
-  // — the same terminal state the mutation hook emits when IT
-  // detects supersession — so finalizeReplaceSuccess's stale branch can
-  // re-enable the displayed editor instead of leaving it read-only with only a
-  // dismissible action error. Deps mirror applyReloadFailedLock (the sibling
-  // helper threaded into the same controller): depending on the whole
-  // editorMachine churns this callback's identity per render, which is harmless
-  // for a useCallback (unlike the EDITOR_REMOUNTED effect below, which must key
-  // on the stable dispatch to avoid spuriously re-firing on every transition).
-  const reassertEditorEditable = useCallback(() => {
-    editorMachine.dispatch({ type: "MUTATION_SETTLED_SUPERSEDED" });
-  }, [editorMachine]);
-
   // F-1 decomposition (2026-05-29): the snapshot-restore / onView /
   // onBeforeCreate orchestration. The single mutation instance,
   // actionBusyRef, editor-lock refs, and action banners stay owned here
@@ -379,7 +376,6 @@ export function EditorPage() {
     isActionBusy,
     actionBusyRef,
     applyReloadFailedLock,
-    reassertEditorEditable,
     setActionError,
     setActionInfo,
   });
@@ -406,7 +402,6 @@ export function EditorPage() {
     actionBusyRef,
     isEditorLocked,
     applyReloadFailedLock,
-    reassertEditorEditable,
     setActionError,
     setActionInfo,
     snapshotPanelRef,
@@ -733,9 +728,18 @@ export function EditorPage() {
       // not let an editor->preview->editor round trip remount the Editor
       // with editable=true while the banner persists, since the remount
       // alone restores writability and the next keystroke schedules an
-      // auto-save that overwrites the server-committed mutation. The
-      // banner is already on screen; no second banner needed.
+      // auto-save that overwrites the server-committed mutation.
+      //
+      // Answer the click (S7, agentic review 2026-08-22). This branch used
+      // to return false silently, reasoning that the lock banner was already
+      // on screen. But that banner is ambient — it does not change when the
+      // user acts, so a chapter click that produces nothing reads as a
+      // dropped click or a frozen app, and the writer clicks again instead
+      // of refreshing. Same refusal as the six guarded destructive handlers,
+      // so it gets the same copy they already use. Mirrors the busy branch
+      // directly above, whose comment states the identical rationale.
       if (editorMachine.isLocked()) {
+        setActionInfo(STRINGS.editor.lockedRefusal);
         return false;
       }
       // flushSave returns false when the save pipeline gave up (4xx or

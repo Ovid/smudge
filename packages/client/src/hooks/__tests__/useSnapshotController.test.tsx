@@ -4,7 +4,7 @@ import type { MutableRefObject } from "react";
 import type { Chapter } from "@smudge/shared";
 import { SNAPSHOT_ERROR_CODES } from "@smudge/shared";
 import { useSnapshotController, type SnapshotControllerDeps } from "../useSnapshotController";
-import type { useEditorMutation, MutationResult } from "../useEditorMutation";
+import type { useEditorMutation, MutationResult, MutationDirective } from "../useEditorMutation";
 import type { useFindReplaceState } from "../useFindReplaceState";
 import type { EditorHandle } from "../../components/Editor";
 import { ApiRequestError } from "../../api/client";
@@ -45,13 +45,18 @@ const mockSafeSetEditable = vi.mocked(safeSetEditable);
 const mockClearCachedContent = vi.mocked(clearCachedContent);
 
 type RestoreData = { staleChapterSwitch: boolean };
-/** The shape handleRestoreSnapshot's mutate callback returns to useEditorMutation. */
-type MutateSpec = {
-  clearCacheFor: string[];
-  reloadActiveChapter: boolean;
-  reloadChapterId?: string;
-  data: RestoreData;
-};
+/**
+ * What handleRestoreSnapshot's mutate callback returns to useEditorMutation.
+ *
+ * The production type itself (S7, agentic review 2026-08-21). A hand-written
+ * local copy stood here and had already fallen behind twice over: it omitted
+ * the now-required `committedLock`, and it flattened
+ * `reloadActiveChapter` from a discriminated union into a boolean plus an
+ * optional `reloadChapterId` — so a directive production REJECTS was
+ * constructible in this suite, and the next required field would compile green
+ * here exactly as `committedLock` did.
+ */
+type MutateSpec = MutationDirective<RestoreData>;
 
 function chapterWithId(id: string): Chapter {
   return {
@@ -68,7 +73,14 @@ function chapterWithId(id: string): Chapter {
   };
 }
 
-const SNAP = { id: "snap-1", label: "Before the cut", created_at: "2026-01-02" };
+const SNAP = {
+  id: "snap-1",
+  label: "Before the cut",
+  // Required by ViewingSnapshot. The whole-object cast this file used to carry
+  // let it be absent (S8).
+  content: { type: "doc", content: [{ type: "paragraph" }] },
+  created_at: "2026-01-02",
+};
 
 function deferred() {
   let resolve!: () => void;
@@ -104,7 +116,6 @@ function buildHarness(opts: HarnessOptions = {}) {
   const setActionError = vi.fn();
   const setActionInfo = vi.fn();
   const applyReloadFailedLock = vi.fn();
-  const reassertEditorEditable = vi.fn();
   const refreshSnapshotCount = vi.fn();
   const refreshSnapshots = vi.fn();
   const exitSnapshotView = vi.fn();
@@ -157,12 +168,21 @@ function buildHarness(opts: HarnessOptions = {}) {
       }
     }),
     isBusy: vi.fn(() => false),
+    // The cast stays (S7): the real `run` is generic in T, and a stand-in can
+    // only be written for one T. What it no longer hides is the DIRECTIVE
+    // shape — MutateSpec is now the production type, so the callback's return
+    // is checked even though the function wrapper is not.
   } as unknown as ReturnType<typeof useEditorMutation>;
 
   const actionBusyRef: MutableRefObject<boolean> = { current: false };
   const editorRef: MutableRefObject<EditorHandle | null> = { current: null };
 
-  const baseDeps = {
+  // S8 (agentic review 2026-08-22): typed to the REAL interface (minus the one
+  // field renderHook varies), so a newly-added required dep is a compile error
+  // rather than `undefined` at runtime. The remaining casts are per-FIELD and
+  // each stands in for a hook return too large to fake whole — same shape as
+  // the MutateSpec fix above.
+  const baseDeps: Omit<SnapshotControllerDeps, "viewingSnapshot"> = {
     activeChapter,
     restoreSnapshot,
     viewSnapshot,
@@ -185,7 +205,6 @@ function buildHarness(opts: HarnessOptions = {}) {
     isActionBusy: () => opts.busy ?? false,
     actionBusyRef,
     applyReloadFailedLock,
-    reassertEditorEditable,
     setActionError,
     setActionInfo,
   };
@@ -195,7 +214,7 @@ function buildHarness(opts: HarnessOptions = {}) {
       useSnapshotController({
         ...baseDeps,
         viewingSnapshot,
-      } as unknown as SnapshotControllerDeps),
+      }),
     { initialProps: { viewingSnapshot: SNAP as typeof SNAP | null } },
   );
 
@@ -210,7 +229,6 @@ function buildHarness(opts: HarnessOptions = {}) {
     setActionError,
     setActionInfo,
     applyReloadFailedLock,
-    reassertEditorEditable,
     refreshSnapshotCount,
     refreshSnapshots,
     exitSnapshotView,
@@ -317,6 +335,14 @@ describe("useSnapshotController — handleRestoreSnapshot mutate callback", () =
 
     expect(h.mutateSpecs[0]).toEqual({
       clearCacheFor: ["ch-1"],
+      // F-07: the copy and drift reference point the seam needs to settle the
+      // committed path itself. targetChapterId is the RESTORE target, matching
+      // reloadChapterId below and for the same reason — the restore was about a
+      // specific chapter's snapshot, not whichever chapter is active on return.
+      committedLock: {
+        message: STRINGS.snapshots.restoreSucceededReloadFailed,
+        targetChapterId: "ch-1",
+      },
       reloadActiveChapter: true,
       reloadChapterId: "ch-1",
       data: { staleChapterSwitch: false },
@@ -391,6 +417,7 @@ describe("useSnapshotController — handleRestoreSnapshot mutate callback", () =
         ok: false,
         stage: "committed_but_unreloaded",
         data: { staleChapterSwitch: false },
+        drifted: false,
       },
     });
 
@@ -399,10 +426,10 @@ describe("useSnapshotController — handleRestoreSnapshot mutate callback", () =
     });
 
     expect(h.setActionInfo).toHaveBeenCalledWith(STRINGS.snapshots.restoreDroppedImages(2));
-    // ...and the lock banner still goes up; the two occupy separate slots.
-    expect(h.applyReloadFailedLock).toHaveBeenCalledWith(
-      STRINGS.snapshots.restoreSucceededReloadFailed,
-    );
+    // ...and the lock banner still goes up alongside it — since F-07 raised by
+    // the seam rather than from here, so what this arm must not do is dispatch
+    // a competing transition of its own. The two still occupy separate slots.
+    expect(h.applyReloadFailedLock).not.toHaveBeenCalled();
   });
 
   it("does not pin the lock banner to an unrelated chapter when the target drifted (OOSS1)", async () => {
@@ -411,16 +438,22 @@ describe("useSnapshotController — handleRestoreSnapshot mutate callback", () =
     // computes `stale`, and this file's 2xx-BAD_JSON arm compares
     // getActiveChapter()?.id. On drift the persistent, NON-dismissible banner
     // pinned to and disabled a chapter the restore never touched. Simply
-    // skipping the lock is not enough: committed_but_unreloaded leaves the
-    // machine at editable:false (the hook dispatches no terminal event there),
-    // so the re-assert is what keeps the unrelated editor from being stranded
-    // read-only with no banner explaining why.
+    // skipping the lock was not enough at the time: committed_but_unreloaded
+    // left the machine at editable:false because the hook dispatched no
+    // terminal event there, so this arm had to re-assert editability itself or
+    // strand the unrelated editor read-only with no banner explaining why.
+    //
+    // F-07 then moved that terminal dispatch into the seam. run()'s finally now
+    // settles every path — MUTATION_SETTLED_SUPERSEDED on safe drift — so the
+    // re-assert is gone and a second transition from here would be the OOSS1
+    // defect again. What this arm still owns is the copy and the refreshes.
     const h = buildHarness({
       currentChapterId: "ch-2",
       runResult: {
         ok: false,
         stage: "committed_but_unreloaded",
         data: { staleChapterSwitch: false },
+        drifted: true,
       },
     });
 
@@ -428,33 +461,16 @@ describe("useSnapshotController — handleRestoreSnapshot mutate callback", () =
       await h.result.current.handleRestoreSnapshot();
     });
 
+    // F-07: the seam already re-enabled the unrelated editor, so this arm must
+    // dispatch nothing. What it still owns is the chapter-attributed notice —
+    // without it the user is never told which chapter changed under them.
     expect(h.applyReloadFailedLock).not.toHaveBeenCalled();
-    expect(h.reassertEditorEditable).toHaveBeenCalled();
     expect(h.setActionError).toHaveBeenLastCalledWith(
       STRINGS.snapshots.restoreSucceededReloadFailedOnOtherChapter(h.activeChapter.title),
     );
     // The restore target's cache is still stale — clear it regardless of drift.
     expect(mockClearCachedContent).toHaveBeenCalledWith("ch-1");
     expect(h.refreshSnapshotCount).toHaveBeenCalled();
-  });
-
-  it("still locks when the user is on the chapter the restore targeted", async () => {
-    const h = buildHarness({
-      runResult: {
-        ok: false,
-        stage: "committed_but_unreloaded",
-        data: { staleChapterSwitch: false },
-      },
-    });
-
-    await act(async () => {
-      await h.result.current.handleRestoreSnapshot();
-    });
-
-    expect(h.applyReloadFailedLock).toHaveBeenCalledWith(
-      STRINGS.snapshots.restoreSucceededReloadFailed,
-    );
-    expect(h.reassertEditorEditable).not.toHaveBeenCalled();
   });
 
   it("skips the cache clear and the active-chapter reload on a stale chapter switch", async () => {
@@ -468,6 +484,10 @@ describe("useSnapshotController — handleRestoreSnapshot mutate callback", () =
 
     expect(h.mutateSpecs[0]).toEqual({
       clearCacheFor: [],
+      committedLock: {
+        message: STRINGS.snapshots.restoreSucceededReloadFailed,
+        targetChapterId: "ch-1",
+      },
       reloadActiveChapter: false,
       data: { staleChapterSwitch: true },
     });
@@ -498,12 +518,13 @@ describe("useSnapshotController — handleRestoreSnapshot result stages", () => 
     expect(h.setActionError).toHaveBeenLastCalledWith(STRINGS.snapshots.restoreFailedSaveFirst);
   });
 
-  it("raises the persistent lock banner and clears the cache when the reload cannot confirm the restore", async () => {
+  it("leaves the persistent lock to the seam and clears the cache when the reload cannot confirm the restore", async () => {
     const h = buildHarness({
       runResult: {
         ok: false,
         stage: "committed_but_unreloaded",
         data: { staleChapterSwitch: false },
+        drifted: false,
       },
     });
 
@@ -511,9 +532,9 @@ describe("useSnapshotController — handleRestoreSnapshot result stages", () => 
       await h.result.current.handleRestoreSnapshot();
     });
 
-    expect(h.applyReloadFailedLock).toHaveBeenCalledWith(
-      STRINGS.snapshots.restoreSucceededReloadFailed,
-    );
+    // F-07: the banner is the seam's; the cache clear and the panel refreshes
+    // below are what this arm still owns.
+    expect(h.applyReloadFailedLock).not.toHaveBeenCalled();
     expect(mockClearCachedContent).toHaveBeenCalledWith("ch-1");
     expect(h.refreshSnapshots).toHaveBeenCalled();
     // The server wrote a pre-restore auto-snapshot; the badge is stale by one.

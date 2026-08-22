@@ -6,7 +6,8 @@ import { mapApiError, isNotFound } from "../errors";
 import { clearCachedContent, clearAllCachedContent } from "./useContentCache";
 import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
 import { STRINGS } from "../strings";
-import type { useEditorMutation } from "./useEditorMutation";
+import { isDriftedFrom } from "./useEditorMutation";
+import type { MutationDirective, useEditorMutation } from "./useEditorMutation";
 import type { useFindReplaceState } from "./useFindReplaceState";
 import type { useSnapshotState } from "./useSnapshotState";
 
@@ -32,12 +33,6 @@ export interface FindReplaceControllerDeps {
   actionBusyRef: MutableRefObject<boolean>;
   isEditorLocked: () => boolean;
   applyReloadFailedLock: (bannerMessage: string) => void;
-  // OOSI1 (agentic-review 2026-05-30): re-assert editor editability when a
-  // committed_but_unreloaded replace settles on a now-unrelated chapter
-  // (active chapter drifted from the replace target). Dispatches
-  // MUTATION_SETTLED_SUPERSEDED so the displayed editor is re-enabled instead
-  // of being stranded read-only with only a dismissible action error.
-  reassertEditorEditable: () => void;
   setActionError: Dispatch<SetStateAction<string | null>>;
   setActionInfo: Dispatch<SetStateAction<string | null>>;
   snapshotPanelRef: ReturnType<typeof useSnapshotState>["snapshotPanelRef"];
@@ -54,6 +49,66 @@ export interface ReplaceConfirmation {
   perChapterCount: number;
 }
 
+/**
+ * Copy for the safe-drift arm: the server committed, the confirming GET could
+ * not vouch for the screen, and the user is now on a chapter this replace did
+ * not write to.
+ *
+ * OOSS2 (agentic review 2026-08-22). Three cases, not two. `lockMessage` is
+ * passed only by the 2xx-BAD_JSON path, so its presence discriminates that
+ * path from the committed one; `chapterTitle` is present only when the replace
+ * had a single target chapter to name.
+ */
+function driftNotice(lockMessage: string | undefined, chapterTitle: string | undefined): string {
+  if (lockMessage !== undefined) {
+    return chapterTitle === undefined
+      ? lockMessage
+      : STRINGS.findReplace.replaceResponseUnreadableOnOtherChapter(chapterTitle);
+  }
+  return chapterTitle === undefined
+    ? STRINGS.findReplace.replaceSucceededReloadFailedOnOtherChapters
+    : STRINGS.findReplace.replaceSucceededReloadFailedOnOtherChapter(chapterTitle);
+}
+
+/**
+ * Build the directive both replace flows hand to `useEditorMutation.run()`.
+ *
+ * S10 (agentic review 2026-08-22): `executeReplace` and `handleReplaceOne` each
+ * carried a structurally identical block differing only in `targetChapterId`
+ * and how `clearCacheFor` was derived. The coupling that matters is the shared
+ * `committedLock.message`: both flows describe the same failure — the server
+ * committed and the confirming GET could not vouch for the screen — and must
+ * say the same thing. Nothing enforced that while the copy was spelled out
+ * twice. `settleAfterFailedRelock` was extracted on this same branch on exactly
+ * this evidence.
+ *
+ * The reload predicate unifies too, and that is not a coincidence:
+ * `handleReplaceOne`'s extra `replaced_count > 0` conjunct is already folded
+ * into its `clearCacheFor`, which is `[]` on a zero-count replace. Asking
+ * whether the on-screen chapter is one we are about to clear answers both.
+ */
+function buildReplaceDirective<T>(
+  data: T,
+  clearCacheFor: string[],
+  targetChapterId: string | undefined,
+  current: Chapter | null,
+): MutationDirective<T> {
+  const committedLock = {
+    message: STRINGS.findReplace.replaceSucceededReloadFailed,
+    targetChapterId,
+  };
+  if (current && clearCacheFor.includes(current.id)) {
+    return {
+      clearCacheFor,
+      reloadActiveChapter: true,
+      reloadChapterId: current.id,
+      data,
+      committedLock,
+    };
+  }
+  return { clearCacheFor, reloadActiveChapter: false, data, committedLock };
+}
+
 export function useFindReplaceController(deps: FindReplaceControllerDeps) {
   const {
     project,
@@ -65,7 +120,6 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
     actionBusyRef,
     isEditorLocked,
     applyReloadFailedLock,
-    reassertEditorEditable,
     setActionError,
     setActionInfo,
     snapshotPanelRef,
@@ -92,6 +146,8 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       reloadFailed,
       lockMessage,
       targetChapterId,
+      targetChapterTitle,
+      seamOutcome,
     }: {
       replacedCount: number | null;
       reloadFailed: boolean;
@@ -107,6 +163,23 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       // possibly_committed stale-chapter-switch branch. Omit to preserve legacy
       // unconditional-lock behavior (e.g. paths where no target can be inferred).
       targetChapterId?: string;
+      // OOSS2 (agentic review 2026-08-22): title of that same chapter, for the
+      // drift arm's copy. Supplied only when the replace had ONE target — a
+      // chapter-scope replace or a replace-one. A manuscript-wide replace omits
+      // it: its targetChapterId is merely the click-time chapter, which may not
+      // even have been among the ones written, so naming it would misattribute
+      // in the other direction.
+      targetChapterTitle?: string;
+      /** F-07: present only when the committed_but_unreloaded path ran. There,
+       * useEditorMutation has ALREADY settled the machine — lock on target,
+       * re-enable on drift — so this function must not dispatch again; it owns
+       * the copy and nothing else, and it takes the seam's drift verdict rather
+       * than recomputing one that could disagree with the state on screen.
+       *
+       * Absent for the 2xx-BAD_JSON path, which surfaces as stage:"mutate" and
+       * never reaches the seam's committed branch, so the machine there is
+       * still this function's to settle. */
+      seamOutcome?: { drifted: boolean };
     }) => {
       // I6 (review 2026-04-21): read the LIVE slug from the ref instead of
       // the closure-captured value. A project rename that lands mid-replace
@@ -126,19 +199,25 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       // the [activeChapter?.id] effect would silently dismiss it on the next
       // chapter switch anyway. Fall through to the dismissible action-error
       // branch below in that case.
-      const currentId = targetChapterId !== undefined ? getActiveChapter()?.id : undefined;
-      const stale = targetChapterId !== undefined && currentId !== targetChapterId;
+      // S2: one predicate for both arms. The seam already applied it (plus the
+      // affected-chapter conjunct it alone can evaluate) to produce
+      // seamOutcome.drifted; the fallback arm serves the 2xx-BAD_JSON path,
+      // where there is no affected-chapter list to consult.
+      const currentId = getActiveChapter()?.id;
+      const stale = seamOutcome ? seamOutcome.drifted : isDriftedFrom(targetChapterId, currentId);
       if (reloadFailed && !stale) {
-        // I6: applyReloadFailedLock sets banner + safeSetEditable as an
-        // invariant pair. In the stage:"committed_but_unreloaded" path the hook kept the
-        // editor setEditable(false) (reloadFailed branch skips the
-        // finally's re-enable). In the stage:"mutate" 2xx BAD_JSON path
-        // the hook's finally already re-enabled it. The helper call
-        // converges both call sites on the same read-only invariant —
-        // the banner and the editor state never disagree (C1). The
-        // embedded safeSetEditable (I2) prevents a TipTap mid-remount
-        // throw from skipping the awaited search refresh below.
-        applyReloadFailedLock(lockMessage ?? STRINGS.findReplace.replaceSucceededReloadFailed);
+        // I6: applyReloadFailedLock sets banner + editable:false as one
+        // machine transition, so the two cannot disagree (C1).
+        //
+        // Only the 2xx-BAD_JSON path reaches the dispatch now. There the mutate
+        // callback threw, so run()'s finally already settled with
+        // MUTATION_SETTLED_OK and the editor is writable over content the
+        // server may have replaced — this is what re-locks it. On the committed
+        // path `seamOutcome` is present and the seam raised the identical lock
+        // itself, with this flow's copy, before returning (F-07).
+        if (!seamOutcome) {
+          applyReloadFailedLock(lockMessage ?? STRINGS.findReplace.replaceSucceededReloadFailed);
+        }
       } else if (reloadFailed && stale) {
         // I1: the target chapter is no longer active. A persistent lock
         // banner here would be misattributed — the user is looking at a
@@ -146,21 +225,25 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
         // same copy as a dismissible action error so the signal reaches the
         // user without disabling an unrelated chapter's editor.
         //
-        // OOSI1 (agentic-review 2026-05-30): re-assert editor editability
-        // BEFORE the dismissible error. The committed_but_unreloaded path
-        // left the machine at editable:false (the hook's reloadFailed branch
-        // dispatches no terminal event), so without this the now-unrelated
-        // editor is stranded read-only while the only signal is a dismissible
-        // action error — recoverable only by another chapter switch or
-        // refresh. reassertEditorEditable dispatches MUTATION_SETTLED_SUPERSEDED
-        // ({editable:true, lock:null}), the same terminal state the
-        // hook itself dispatches when IT detects supersession, and the same
-        // editable:true that EDITOR_REMOUNTED will (eventually) apply on the
-        // chapter switch — this just closes the timing gap deterministically.
-        // The drifted chapter was loaded by handleSelectChapter's GET after the
-        // server commit, so its on-screen content is fresh and safe to edit.
-        reassertEditorEditable();
-        setActionError(lockMessage ?? STRINGS.findReplace.replaceSucceededReloadFailed);
+        // This arm dispatches nothing, on either path into it. On the
+        // committed path the seam has already settled the machine to
+        // {editable:true, lock:null} (F-07). On the 2xx-BAD_JSON path the
+        // mutate callback threw, so run()'s finally settled with
+        // MUTATION_SETTLED_OK against the null lock this handler's entry
+        // guard (`if (isEditorLocked()) return`) guarantees — the same
+        // {editable:true, lock:null}. A re-assert used to sit here for the
+        // second case; it was removed once the first stopped needing one,
+        // because it could only ever re-derive the state the machine was
+        // already in (S4, agentic review 2026-08-21).
+        //
+        // OOSS2: attribute the notice to the chapter the replace actually
+        // wrote to. Unattributed, "editing now would overwrite the
+        // replacement" reads as a claim about the chapter on screen — the one
+        // chapter this arm has just established is safe to edit — while the
+        // chapter genuinely at risk is never named. `lockMessage` present means
+        // the 2xx-BAD_JSON path (it is the only caller that passes one), which
+        // has its own attributed twin.
+        setActionError(driftNotice(lockMessage, targetChapterTitle));
       }
       // findReplace.search catches network/5xx/4xx internally and resolves
       // void — see useFindReplaceState's search(). No external try/catch
@@ -186,7 +269,6 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       setActionError,
       setActionInfo,
       applyReloadFailedLock,
-      reassertEditorEditable,
     ],
   );
 
@@ -233,8 +315,16 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       // but the user's mental model pins the lock banner to whatever they
       // were looking at). finalizeReplaceSuccess uses this to skip the
       // persistent lock when the user has since switched chapters.
-      const targetChapterId =
-        frozen.scope.type === "chapter" ? frozen.scope.chapter_id : getActiveChapter()?.id;
+      const scopeChapterId = frozen.scope.type === "chapter" ? frozen.scope.chapter_id : undefined;
+      const targetChapterId = scopeChapterId ?? getActiveChapter()?.id;
+      // OOSS2: only a single-target replace can name its chapter in the
+      // drift notice. A manuscript-wide replace leaves this undefined —
+      // targetChapterId there is the click-time chapter, which the replace
+      // may not even have written to.
+      const targetChapterTitle =
+        scopeChapterId === undefined
+          ? undefined
+          : project.chapters.find((c) => c.id === scopeChapterId)?.title;
       try {
         // Clear any stale banners so a prior op's error/success cannot
         // co-display with this op's outcome — including the panel-local
@@ -262,21 +352,19 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
           // Read the CURRENT active chapter (not the closure value) so a
           // chapter switch between click and response still reloads when the
           // now-active chapter was affected.
-          const current = getActiveChapter();
-          const reload = !!current && resp.affected_chapter_ids.includes(current.id);
-          if (reload && current) {
-            return {
-              clearCacheFor: resp.affected_chapter_ids,
-              reloadActiveChapter: true,
-              reloadChapterId: current.id,
-              data: resp,
-            };
-          }
-          return {
-            clearCacheFor: resp.affected_chapter_ids,
-            reloadActiveChapter: false,
-            data: resp,
-          };
+          //
+          // F-07: the seam owns the committed-path transition, so it needs the
+          // banner copy and the chapter the user started from. targetChapterId
+          // is the CLICK-time chapter, not the live one — a project-scope
+          // replace can reload a chapter the user drifted onto mid-flight, and
+          // pinning a non-dismissible banner there would name a chapter they
+          // never started on.
+          return buildReplaceDirective(
+            resp,
+            resp.affected_chapter_ids,
+            targetChapterId,
+            getActiveChapter(),
+          );
         });
 
         if (result.ok) {
@@ -317,6 +405,8 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
             replacedCount: result.data.replaced_count,
             reloadFailed: true,
             targetChapterId,
+            targetChapterTitle,
+            seamOutcome: { drifted: result.drifted },
           });
           return;
         }
@@ -378,6 +468,7 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
               reloadFailed: true,
               lockMessage: mapped.message as string,
               targetChapterId,
+              targetChapterTitle,
             });
             return;
           }
@@ -477,6 +568,9 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       const frozenOptions = findReplace.resultsOptions;
       const frozenReplacement = findReplace.replacement;
       if (!frozenQuery || !frozenOptions) return;
+      // OOSS2: replace-one always writes exactly one chapter, so the drift
+      // notice can always name it.
+      const targetChapterTitle = project.chapters.find((c) => c.id === chapterId)?.title;
 
       // C1: Same lock-banner guard as executeReplace/handleRestoreSnapshot.
       // Per-match Replace must not issue a server write while the lock
@@ -523,26 +617,15 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
             ),
           );
           const resp = await promise;
-          const current = getActiveChapter();
           // Replace-one with 0 count means the match was gone on the server —
-          // emit no cache clear / no reload; the ok branch will surface the
-          // matchNotFound banner and re-run the search.
-          const reload =
-            resp.replaced_count > 0 && !!current && resp.affected_chapter_ids.includes(current.id);
+          // emit no cache clear, which is also what makes buildReplaceDirective
+          // skip the reload (the ok branch surfaces matchNotFound and re-runs
+          // the search instead).
           const clearCacheFor = resp.replaced_count > 0 ? resp.affected_chapter_ids : [];
-          if (reload && current) {
-            return {
-              clearCacheFor,
-              reloadActiveChapter: true,
-              reloadChapterId: current.id,
-              data: resp,
-            };
-          }
-          return {
-            clearCacheFor,
-            reloadActiveChapter: false,
-            data: resp,
-          };
+          // F-07: replace-one always targets chapterId, so that is the drift
+          // reference point regardless of which chapter is active when the
+          // response lands.
+          return buildReplaceDirective(resp, clearCacheFor, chapterId, getActiveChapter());
         });
 
         if (result.ok) {
@@ -583,6 +666,8 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
             // I1 (this review): replace-one always targets chapterId. If the
             // user switched chapters mid-flight, route to dismissible error.
             targetChapterId: chapterId,
+            targetChapterTitle,
+            seamOutcome: { drifted: result.drifted },
           });
           return;
         }
@@ -608,6 +693,7 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
               reloadFailed: true,
               lockMessage: mapped.message as string,
               targetChapterId: chapterId,
+              targetChapterTitle,
             });
             return;
           }

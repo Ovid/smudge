@@ -1,10 +1,12 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 When you have finished reading this file, announce "CLAUDE.md loaded"
 
-Always address me as "Ovid" in your responses. This lets me know that you have read this file, even if I don't see the previous announcement.
+Always address me as "Ovid" in your responses. This lets me know that you have
+read this file, even if I don't see the previous announcement.
+
+When you have information for me, please state the information plainly because
+I often have trouble understanding what you have said.
 
 ## Asking Me Questions (Mandatory)
 
@@ -269,14 +271,57 @@ facts dispatched from distinct sites, so do not merge them.
 `MutationResult` carries `committed_but_unreloaded` as the canonical "server
 committed, display unconfirmed" outcome (2xx `BAD_JSON` on replace/restore,
 reload-GET failure, race-only supersession); it routes to the persistent lock
-banner — except the stale-chapter-drift sub-case, which re-enables the
-now-unrelated editor with a dismissible, chapter-attributed notice. Both
-controllers implement it (`useFindReplaceController`, `useSnapshotController`);
-a third consumer of `committed_but_unreloaded` must too, because that outcome
-leaves the machine at `editable:false` and the hook dispatches no terminal
-event — skipping the lock without re-asserting strands the editor read-only
-with nothing on screen to explain it. Invariant 2's `setEditable(false)` is now expressed as
-machine intent.
+banner — except the safe-drift sub-case, which re-enables the now-unrelated
+editor with a dismissible notice. That notice **names the chapter at risk
+whenever the mutation had exactly one** — every restore, a chapter-scope
+replace, a replace-one. A manuscript-wide replace has no single target
+(`targetChapterId` there is only the click-time chapter, which the replace may
+not even have written to), so its notice says what is true instead: the chapter
+on screen was not changed, and the ones that were need a refresh. The
+per-scope copy lives in `strings.ts` beside its unattributed sibling; the
+selection is `driftNotice` in `useFindReplaceController.ts`.
+
+**The seam settles that transition itself, and a consumer must not settle it
+again (F-07).** `MutationDirective.committedLock` is a **required** field
+(`{ message, targetChapterId? }`), so the mutate callback hands
+`useEditorMutation` the banner copy and the drift reference point before the
+mutation runs, and the compiler — not a comment — is what forces a new caller to
+supply them. `run()`'s `finally` then dispatches exactly one terminal event on
+every path: `COMMITTED_UNRELOADED` with that copy when the user is still on the
+affected chapter, `MUTATION_SETTLED_SUPERSEDED` when they have drifted somewhere
+safe. A consumer's residual duty on this path is **copy and refreshes only** —
+its own dismissible notice, cache clears, panel refreshes. Do **not** call
+`applyReloadFailedLock` or any other machine dispatch after `run()` returns
+`committed_but_unreloaded`: the machine is already settled, and a second
+transition lands a non-dismissible banner on a read-only editor pinned to a
+chapter the mutation never touched. That pairing is the OOSI1/OOSS1 defects.
+
+**"Drifted" means drifted somewhere the mutation did not write.** The seam's
+verdict is `isDriftedFrom(targetChapterId, currentId) && !activeChapterIsAffected`,
+and both conjuncts are load-bearing *there*. Drift alone is not safety: a
+project-scope replace touching A and B, with the user on B when B's confirming
+GET fails, has wiped B's draft cache and never fetched B's post-replace text, so
+re-enabling there lets the next auto-save revert the commit. "No chapter open"
+reads as **not** drifted — there is no unrelated editor to strand, so the banner
+is the honest signal that a refresh is needed. Invariant 2's `setEditable(false)`
+is expressed as machine intent.
+
+**Only the first conjunct is shared, and that is deliberate.** `isDriftedFrom` is
+exported so both possibly-committed paths read _drift_ the same way.
+`activeChapterIsAffected` is a closure inside `run()` and the 2xx-`BAD_JSON` path
+cannot call it: an unreadable response body is precisely why that path has no
+affected-chapter list to consult. `useFindReplaceController`'s fallback arm
+therefore applies one conjunct where the seam applies two — an asymmetry, not an
+oversight. No other document records this: F-07's S2 note says only that both
+arms now share `isDriftedFrom`, which is true and is not the whole story, so
+this paragraph is the sole statement of it. It is currently unreachable: the
+mid-flight chapter switch it would need is refused by `switchToView`'s
+`isActionBusy()` gate, and for chapter-scope replace and
+replace-one the target _is_ the only chapter written, so "drifted" and "on an
+affected chapter" cannot both hold. **If that gate is ever relaxed** — to let a
+writer keep working during a long project-wide replace — the asymmetry goes live
+the same day, and the fallback must then fail closed, treating unknown
+affectedness as unsafe rather than reading drift as proof of safety.
 
 **Machine intent reaches TipTap by two routes, and both must stay wired.**
 Post-mount transitions go through the imperative `setEditable` handle;

@@ -259,6 +259,149 @@ tolerated shape is a real call it used to report as a dead binding — fewer fal
 positives), and `importPatternFor` now matches `import type`, which for a future
 type-only import would produce a loud offender rather than a silent pass.
 
+## Recorded exception: two commits from the 2026-08-22 code-review response
+
+Two commits on this branch sit outside the rules above. Both were flagged
+before they landed, the maintainer was told which rule each strained, and both
+were **granted on explicit request** after the concern was raised. Recorded
+here so the next reader finds the decision rather than re-deriving the
+violation — and, deliberately, recorded as a **bounded one-off rather than an
+amendment**. Neither rule is being rewritten. That distinction is the whole
+point: the Amendments section above already warns that rule 1 is the hard bound
+and the one to be most suspicious of amending, and this file has now amended
+its own rules five times under pressure from the branches they govern. A sixth
+would be worse than an exception that admits what it is.
+
+**`2920fa68` — `test(e2e): [backlog 8ff156ec] prove the editor lock can be
+escaped`.** Strains **rule 1's round-4 backlog carve-out**, which permits a
+backlog fix only in a file the session already has open. `e2e/` appears nowhere
+in this branch's diff, so the file was not open by any reading. The tag form is
+correct; the location is not.
+
+Why it was granted: the backlog entry it answers records that **nothing at any
+level demonstrated a locked editor becoming writable again.** The lock is
+reachable in ordinary use — an auto-save PATCH 404 after a chapter is deleted
+under an open editor — and from inside the editor it is a dead end. The
+deliverable is two end-to-end tests, each validated by breaking its exit and
+watching the matching test fail. It adds no production code and cannot regress
+behaviour. Weighed against a fix session's real risk — an untested change
+landing late with one review round, which is what round 4's own precedent warns
+about — a test-only commit is the mild end of that spectrum.
+
+**`3d7aaa42` — `fix(client): [7b9e1c68 S7] answer a chapter click refused by the
+editor lock`.** Tag form is legal under rule 6 (a report-qualified code-review
+follow-up). The strain is **rule 4**: no finding whose fix is itself a feature.
+Adding user-facing feedback where there was none is arguably a small feature,
+and this is a behaviour change on a branch that exists to close an architecture
+finding.
+
+Why it was granted: it is one line of behaviour reusing an existing string
+(`STRINGS.editor.lockedRefusal`) to make one refusal path say what its six
+siblings already say. Nothing was designed; an inconsistency was removed. The
+accessibility asymmetry is what tipped it — keyboard navigation already
+announced the refusal into a live region while a sighted mouse user got no
+response at all, which is the inverse of the usual gap in a project where WCAG
+2.1 AA is a first-class constraint.
+
+**What this does not license.** It is not a general permission to fix backlog
+entries anywhere in the tree, and not a finding that rule 4 tolerates features
+when they are small. The next session wanting either should read this entry as
+evidence that the ask must be made explicitly and answered explicitly — not as
+evidence that the bound has moved. Both commits state their own scope tension
+in their commit bodies rather than letting a correct-looking tag imply a
+compliance they do not have; that is the form a future exception should take,
+and it is the specific failure recorded against `d4002d6d` below.
+
+**The honest cost.** Counted rather than estimated, because a first draft of
+this paragraph asserted an ordinal nobody had checked — the failure this file's
+own governing steering doc (`CLAUDE.md` §Documentation Discipline rule 2) exists
+to catch, committed inside a paragraph about honesty. It then got the count
+wrong anyway: it said four and the real figure was six, because two untagged
+commits had landed that nobody enumerated, and a third landed after the
+paragraph was written. **On this branch, ten commits now sit outside these
+rules:**
+
+- `d4002d6d` — rule 5. A correctly-placed safety-net commit carrying an
+  `[F-07]` tag while its body invokes the untagged allowance, the same shape as
+  `af2a7161` below.
+- `3ac13bca` — rule 6. A 200-line code-review report filed inside a commit
+  whose subject names only a backlog fix.
+- `2920fa68` and `3d7aaa42` — the two granted exceptions recorded above.
+- `7b9e1c68` — *"Add MathJax to the TODO list in docs/TODO.md"*. Untagged, no
+  body, touches no code, answers to no finding and no roadmap phase. The
+  2026-08-22 review filed it as `[OOSA1]` with the remedy "if kept, retag
+  `[chore]`". **Kept** — it is a one-line product idea in the maintainer's own
+  TODO list and reverting it would be absurd — and recorded here instead of
+  retagged, because it is now eleven commits deep and the rules file's own
+  retag test permits amending only the tip.
+- `eb9ffee8` — *"formatted"*. Untagged Prettier reflow; the correct form is
+  `c10fd5e2`'s `style(client): [lint] … plus prettier reflow` on this same
+  branch. The 2026-08-22 review's `[S4]` proposed amending it, which was
+  available then (it was the tip) and is not now.
+- `7250904e` — *"Add note to CLAUDE instructing Claude to speak plainly."*
+  Untagged, unrelated to any finding, and it landed **after** `8d15fdda` wrote
+  the count this paragraph is correcting.
+- `63307187`, `9232702e`, `b0393d22` — the three out-of-scope fixes recorded
+  in the next section.
+
+The distribution is the point. Six of the ten are documentation, formatting or
+process commits that nobody thought of as commits at all while making them,
+which is exactly how an untagged commit gets past a rule its author agrees
+with.
+
+The five instances recorded elsewhere in this file — `af2a7161`, `97c5160e`,
+`d7595686`, `09aaba1e`, `6eae2ee8` — are on **earlier** branches, already merged
+(`git merge-base --is-ancestor <sha> main` succeeds for each). Do not read them
+as this branch's history.
+
+That distribution is the signal worth carrying forward: every branch this file
+has governed has produced commits it did not authorise, which is better evidence
+that the rules describe a tidier practice than the one being run than it is
+evidence of undisciplined sessions. A future session should treat that as a
+question about the rules, not only about the commits. The load-bearing bound
+remains reviewer capacity, per the argument below — and by that measure this
+branch is now large enough that the next finding should go to a fresh branch
+rather than be argued into this one.
+
+## Recorded exception: three out-of-scope fixes from the 2026-08-22 (14:21) code-review response
+
+The 2026-08-22 14:21 agentic review carried three out-of-scope suggestions
+(`OOSS1`, `OOSS2`, `OOSS3`). The trade-offs of each were put to the maintainer
+in prose — what fixing bought, what it cost, and the strongest argument for
+leaving all three alone — and the answer was **fix all three**. Recorded here as
+a bounded one-off, on the same terms as the two granted above: no rule is being
+rewritten.
+
+**`63307187` — `fix(client): [OOSS3 6b01b73b] one try per key in
+clearAllCachedContent`.** Strains **rule 1's round-4 backlog carve-out**, which
+permits a backlog fix only in a file the session already has open.
+`useContentCache.ts` is not touched anywhere else on this branch.
+
+**`9232702e` — `fix(client): [OOSS1 f858e66a] double supersession onto an
+affected chapter escalates`.** Inside the carve-out: `useEditorMutation.ts` is
+the branch's central file, and the fix sits in the same closure as the in-scope
+`[S9]` change immediately before it.
+
+**`b0393d22` — `fix(client): [OOSS2 4485eebf, S6] name the chapter the replace
+actually wrote to`.** Inside the carve-out for its file, but it carries **two
+tags** — an out-of-scope fix and the in-scope `[S6]` documentation finding —
+against rule 1's one-finding-per-commit shape. They are one change: `[S6]` is
+the CLAUDE.md sentence that `[OOSS2]` makes true, and splitting them would land
+a commit whose only content is a doc edit describing code that does not exist
+yet.
+
+Why they were granted: all three are latent (none is reachable through the
+current UI, each needing a mid-flight chapter switch that `switchToView`'s
+`isActionBusy()` gate refuses), and all three sit on the save pipeline's
+data-loss paths — the draft cache that CLAUDE.md save-pipeline invariant 3 calls
+the last line of defence, and the two re-enable decisions that decide whether an
+auto-save can revert a server-committed write. Deferring a known data-loss
+guard to a branch that may not be written is the more expensive choice.
+
+**What this does not license.** Same bound as the section above: this is not
+evidence that out-of-scope findings may be swept up by default. The ask was made
+explicitly, per tier, with the case against stated, and answered explicitly.
+
 ## Honest argument against
 
 This is a carve-out written from inside the practice it legitimises, which is

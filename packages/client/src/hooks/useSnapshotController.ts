@@ -10,6 +10,7 @@ import { sanitizeEditorHtml } from "../sanitizer";
 import { renderEditorHtml } from "@smudge/shared/editor-extensions";
 import { STRINGS } from "../strings";
 import type { EditorHandle } from "../components/Editor";
+import { isDriftedFrom } from "./useEditorMutation";
 import type { useEditorMutation } from "./useEditorMutation";
 import type { useFindReplaceState } from "./useFindReplaceState";
 import type { useSnapshotState } from "./useSnapshotState";
@@ -77,8 +78,6 @@ export interface SnapshotControllerDeps {
   isActionBusy: () => boolean;
   actionBusyRef: MutableRefObject<boolean>;
   applyReloadFailedLock: (bannerMessage: string) => void;
-  /** Dispatches MUTATION_SETTLED_SUPERSEDED — see the OOSS1 drift arm. */
-  reassertEditorEditable: () => void;
   setActionError: Dispatch<SetStateAction<string | null>>;
   setActionInfo: Dispatch<SetStateAction<string | null>>;
 }
@@ -101,7 +100,6 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
     isActionBusy,
     actionBusyRef,
     applyReloadFailedLock,
-    reassertEditorEditable,
     setActionError,
     setActionInfo,
   } = deps;
@@ -191,11 +189,22 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
         // server response lands. useSnapshotState's stale-detection at
         // useSnapshotState.ts only clears the cache for the chapter the
         // restore targeted; mirroring that here keeps the contract aligned.
+        // F-07: the seam settles the committed path itself, so it needs the
+        // banner copy and the chapter the restore was about. That is the
+        // CLOSURE activeChapter for the same reason reloadChapterId is (see
+        // the note above) — the restore targeted a specific chapter's
+        // snapshot, not whichever chapter happens to be active when the
+        // response lands.
+        const committedLock = {
+          message: STRINGS.snapshots.restoreSucceededReloadFailed,
+          targetChapterId: activeChapter.id,
+        };
         if (stale) {
           return {
             clearCacheFor: [],
             reloadActiveChapter: false,
             data: { staleChapterSwitch: true },
+            committedLock,
           };
         }
         return {
@@ -206,6 +215,7 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
           // skips the reload and preserves the now-active chapter's draft.
           reloadChapterId: activeChapter.id,
           data: { staleChapterSwitch: false },
+          committedLock,
         };
       });
 
@@ -229,7 +239,7 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
       if (droppedImageCount > 0) {
         const currentId = getActiveChapter()?.id;
         setActionInfo(
-          currentId !== undefined && currentId !== activeChapter.id
+          isDriftedFrom(activeChapter.id, currentId)
             ? STRINGS.snapshots.restoreDroppedImagesOnOtherChapter(
                 droppedImageCount,
                 activeChapter.title,
@@ -267,24 +277,23 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
       // follow-up GET could not confirm what is on screen. Raise the persistent
       // lock banner, clear the now-stale cache, and refresh the snapshot list.
       if (result.stage === "committed_but_unreloaded") {
-        // OOSS1 (agentic review 2026-08-18): guard on chapter drift before
-        // locking, as both siblings already do (useFindReplaceController's
-        // `stale`, and the 2xx-BAD_JSON arm below). The lock banner is
-        // persistent and non-dismissible, so pinning it after the user
-        // navigated away disables a chapter the restore never touched.
+        // OOSS1 (agentic review 2026-08-18) is why drift is consulted at all:
+        // the lock banner is persistent and non-dismissible, so pinning it
+        // after the user navigated away disables a chapter the restore never
+        // touched.
         //
-        // The re-assert is not optional cosmetics: committed_but_unreloaded
-        // leaves the machine at editable:false (useEditorMutation's finally
-        // dispatches no terminal event on that path), so skipping the lock
-        // without it would strand the unrelated editor read-only with only a
-        // dismissible notice to explain it — recoverable solely by another
-        // chapter switch or a refresh. MUTATION_SETTLED_SUPERSEDED is the same
-        // terminal state the hook dispatches when it detects supersession
-        // itself; the drifted chapter was re-fetched by handleSelectChapter
-        // after the server commit, so its on-screen content is safe to edit.
-        const currentId = getActiveChapter()?.id;
-        if (currentId !== undefined && currentId !== activeChapter.id) {
-          reassertEditorEditable();
+        // F-07 moved the decision. This arm no longer MAKES the drift call and
+        // no longer dispatches on either outcome — useEditorMutation settles
+        // the machine before returning (COMMITTED_UNRELOADED on target,
+        // MUTATION_SETTLED_SUPERSEDED on drift, carrying the copy it took from
+        // the directive's committedLock). Reading `result.drifted` rather than
+        // recomputing the comparison is what keeps the copy chosen below from
+        // contradicting the state the editor is actually in. A dispatch here
+        // would be a second transition on an already-settled machine.
+        //
+        // What this arm still owns: the copy, the cache clear, and the panel
+        // refreshes.
+        if (result.drifted) {
           setActionError(
             STRINGS.snapshots.restoreSucceededReloadFailedOnOtherChapter(activeChapter.title),
           );
@@ -295,9 +304,9 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
         }
         // Surface a persistent, non-dismissible lock banner so the
         // user-visible signal of the read-only state cannot be hidden (I1).
-        // applyReloadFailedLock (I6) sets the banner AND safeSetEditable
-        // in one call so the two can't drift apart in a future refactor.
-        applyReloadFailedLock(STRINGS.snapshots.restoreSucceededReloadFailed);
+        // No dispatch here: the seam raised COMMITTED_UNRELOADED with this
+        // flow's copy (banner + editable:false as one transition) before this
+        // arm ran.
         // Defense-in-depth cache-clear mirroring the possibly_committed
         // branch below. The hook's committed_but_unreloaded path normally
         // handles cache-clear (including the C1 fix for the mid-remount
@@ -352,7 +361,7 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
             // chapter the user didn't restore.
             clearCachedContent(activeChapter.id);
             const currentId = getActiveChapter()?.id;
-            if (currentId !== undefined && currentId !== activeChapter.id) {
+            if (isDriftedFrom(activeChapter.id, currentId)) {
               // I6 (review 2026-04-25): the user is no longer on the
               // chapter the restore targeted. The mapped message is
               // chapter-agnostic ("the restore was committed; refresh"),
@@ -455,7 +464,6 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
     refreshSnapshotCount,
     getActiveChapter,
     applyReloadFailedLock,
-    reassertEditorEditable,
     actionBusyRef,
     isEditorLocked,
   ]);

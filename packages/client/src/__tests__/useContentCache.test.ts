@@ -151,7 +151,36 @@ describe("useContentCache", () => {
       expect(() => {
         clearAllCachedContent(["ch-a"]);
       }).not.toThrow();
-      warn.calledWith("[useContentCache] clearAllCachedContent failed:", expect.any(Error));
+      warn.calledWith("[useContentCache] clearCachedContent failed:", expect.any(Error));
+    });
+
+    it("keeps clearing after one key throws (OOSS3)", () => {
+      // OOSS3 (agentic review 2026-08-22): the whole loop sat inside a single
+      // try, so a removeItem that throws on the n-th of m ids left ids n+1..m
+      // holding their pre-mutation drafts. The caller cannot tell a full clear
+      // from a partial one, and the committed path then raises a banner whose
+      // whole instruction is "refresh the page" — on refresh a surviving draft
+      // re-hydrates and the first keystroke PATCHes pre-mutation content over
+      // the server-committed change, arriving via the recovery step the UI
+      // itself recommended. This is the last line of defence named in
+      // CLAUDE.md save-pipeline invariant 3.
+      const warn = expectConsole("warn");
+      store.set("smudge:draft:ch-a", "{}");
+      store.set("smudge:draft:ch-b", "{}");
+      store.set("smudge:draft:ch-c", "{}");
+      mockLocalStorage.removeItem.mockImplementation((key: string) => {
+        if (key === "smudge:draft:ch-b") throw new Error("SecurityError");
+        return store.delete(key);
+      });
+
+      clearAllCachedContent(["ch-a", "ch-b", "ch-c"]);
+
+      expect(store.has("smudge:draft:ch-a")).toBe(false);
+      // The thrower keeps its draft — nothing can be done about that one.
+      expect(store.has("smudge:draft:ch-b")).toBe(true);
+      // The one AFTER the thrower is the regression this pins.
+      expect(store.has("smudge:draft:ch-c")).toBe(false);
+      warn.calledTimes(1);
     });
   });
 
