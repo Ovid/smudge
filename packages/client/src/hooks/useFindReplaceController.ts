@@ -32,12 +32,6 @@ export interface FindReplaceControllerDeps {
   actionBusyRef: MutableRefObject<boolean>;
   isEditorLocked: () => boolean;
   applyReloadFailedLock: (bannerMessage: string) => void;
-  // OOSI1 (agentic-review 2026-05-30): re-assert editor editability when a
-  // committed_but_unreloaded replace settles on a now-unrelated chapter
-  // (active chapter drifted from the replace target). Dispatches
-  // MUTATION_SETTLED_SUPERSEDED so the displayed editor is re-enabled instead
-  // of being stranded read-only with only a dismissible action error.
-  reassertEditorEditable: () => void;
   setActionError: Dispatch<SetStateAction<string | null>>;
   setActionInfo: Dispatch<SetStateAction<string | null>>;
   snapshotPanelRef: ReturnType<typeof useSnapshotState>["snapshotPanelRef"];
@@ -65,7 +59,6 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
     actionBusyRef,
     isEditorLocked,
     applyReloadFailedLock,
-    reassertEditorEditable,
     setActionError,
     setActionInfo,
     snapshotPanelRef,
@@ -161,20 +154,16 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
         // same copy as a dismissible action error so the signal reaches the
         // user without disabling an unrelated chapter's editor.
         //
-        // OOSI1 (agentic-review 2026-05-30): re-assert editor editability
-        // BEFORE the dismissible error. The committed_but_unreloaded path
-        // left the machine at editable:false (the hook's reloadFailed branch
-        // dispatches no terminal event), so without this the now-unrelated
-        // editor is stranded read-only while the only signal is a dismissible
-        // action error — recoverable only by another chapter switch or
-        // refresh. reassertEditorEditable dispatches MUTATION_SETTLED_SUPERSEDED
-        // ({editable:true, lock:null}), the same terminal state the
-        // hook itself dispatches when IT detects supersession, and the same
-        // editable:true that EDITOR_REMOUNTED will (eventually) apply on the
-        // chapter switch — this just closes the timing gap deterministically.
-        // The drifted chapter was loaded by handleSelectChapter's GET after the
-        // server commit, so its on-screen content is fresh and safe to edit.
-        if (!seamOutcome) reassertEditorEditable();
+        // This arm dispatches nothing, on either path into it. On the
+        // committed path the seam has already settled the machine to
+        // {editable:true, lock:null} (F-07). On the 2xx-BAD_JSON path the
+        // mutate callback threw, so run()'s finally settled with
+        // MUTATION_SETTLED_OK against the null lock this handler's entry
+        // guard (`if (isEditorLocked()) return`) guarantees — the same
+        // {editable:true, lock:null}. A re-assert used to sit here for the
+        // second case; it was removed once the first stopped needing one,
+        // because it could only ever re-derive the state the machine was
+        // already in (S4, agentic review 2026-08-21).
         setActionError(lockMessage ?? STRINGS.findReplace.replaceSucceededReloadFailed);
       }
       // findReplace.search catches network/5xx/4xx internally and resolves
@@ -201,7 +190,6 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       setActionError,
       setActionInfo,
       applyReloadFailedLock,
-      reassertEditorEditable,
     ],
   );
 

@@ -73,7 +73,6 @@ function buildDeps(overrides: {
   projectChapterIds?: string[];
 }) {
   const applyReloadFailedLock = vi.fn();
-  const reassertEditorEditable = vi.fn();
   const setActionError = vi.fn();
   const setActionInfo = vi.fn();
   const refreshSnapshotCount = vi.fn();
@@ -125,7 +124,6 @@ function buildDeps(overrides: {
     actionBusyRef,
     isEditorLocked: () => false,
     applyReloadFailedLock,
-    reassertEditorEditable,
     setActionError,
     setActionInfo,
     snapshotPanelRef,
@@ -138,7 +136,6 @@ function buildDeps(overrides: {
     directives,
     run,
     applyReloadFailedLock,
-    reassertEditorEditable,
     setActionError,
     setActionInfo,
   };
@@ -184,7 +181,7 @@ describe("useFindReplaceController — finalizeReplaceSuccess reloadFailed branc
   });
 
   // F-07 (2026-08-21): these used to assert that the controller CALLED
-  // applyReloadFailedLock / reassertEditorEditable, and a pair below them
+  // applyReloadFailedLock (and a re-assert helper since deleted), and a pair
   // reduced those callbacks through the real reducer to pin the end state.
   // Both rested on the controller owning the machine transition on this path.
   // It no longer does — useEditorMutation settles the machine itself and hands
@@ -205,7 +202,7 @@ describe("useFindReplaceController — finalizeReplaceSuccess reloadFailed branc
     // The seam already re-enabled the now-unrelated editor. A second dispatch
     // from here would be a redundant transition on a machine that is already
     // settled; the notice is the only signal this arm still owns.
-    const { deps, applyReloadFailedLock, reassertEditorEditable, setActionError } = buildDeps({
+    const { deps, applyReloadFailedLock, setActionError } = buildDeps({
       runResult: committedUnreloaded(true),
       activeChapterId: "ch-2",
     });
@@ -217,7 +214,6 @@ describe("useFindReplaceController — finalizeReplaceSuccess reloadFailed branc
     });
 
     expect(setActionError).toHaveBeenCalledWith(STRINGS.findReplace.replaceSucceededReloadFailed);
-    expect(reassertEditorEditable).not.toHaveBeenCalled();
     expect(applyReloadFailedLock).not.toHaveBeenCalled();
   });
 
@@ -226,7 +222,7 @@ describe("useFindReplaceController — finalizeReplaceSuccess reloadFailed branc
     // is already on screen as machine state. Setting a dismissible error here
     // too would double-report it, in a dismissible form that contradicts the
     // non-dismissible one.
-    const { deps, applyReloadFailedLock, reassertEditorEditable, setActionError } = buildDeps({
+    const { deps, applyReloadFailedLock, setActionError } = buildDeps({
       runResult: committedUnreloaded(false),
       activeChapterId: "ch-1",
     });
@@ -238,7 +234,6 @@ describe("useFindReplaceController — finalizeReplaceSuccess reloadFailed branc
     });
 
     expect(applyReloadFailedLock).not.toHaveBeenCalled();
-    expect(reassertEditorEditable).not.toHaveBeenCalled();
     expect(setActionError).not.toHaveBeenCalledWith(
       STRINGS.findReplace.replaceSucceededReloadFailed,
     );
@@ -488,7 +483,7 @@ describe("useFindReplaceController — handleReplaceOne", () => {
     // Same committed-but-unconfirmed outcome, but the user is now looking at
     // ch-2 which the replace never touched. Locking that editor would strand
     // an unrelated chapter read-only.
-    const { deps, applyReloadFailedLock, reassertEditorEditable, setActionError } = buildDeps({
+    const { deps, applyReloadFailedLock, setActionError } = buildDeps({
       runResult: committedUnreloaded(true),
       activeChapterId: "ch-2",
     });
@@ -501,7 +496,6 @@ describe("useFindReplaceController — handleReplaceOne", () => {
 
     // F-07: the seam re-enabled the unrelated editor already. The dismissible
     // notice is what this arm still owns.
-    expect(reassertEditorEditable).not.toHaveBeenCalled();
     expect(applyReloadFailedLock).not.toHaveBeenCalled();
     expect(setActionError).toHaveBeenCalledWith(STRINGS.findReplace.replaceSucceededReloadFailed);
   });

@@ -104,7 +104,6 @@ function buildHarness(opts: HarnessOptions = {}) {
   const setActionError = vi.fn();
   const setActionInfo = vi.fn();
   const applyReloadFailedLock = vi.fn();
-  const reassertEditorEditable = vi.fn();
   const refreshSnapshotCount = vi.fn();
   const refreshSnapshots = vi.fn();
   const exitSnapshotView = vi.fn();
@@ -185,7 +184,6 @@ function buildHarness(opts: HarnessOptions = {}) {
     isActionBusy: () => opts.busy ?? false,
     actionBusyRef,
     applyReloadFailedLock,
-    reassertEditorEditable,
     setActionError,
     setActionInfo,
   };
@@ -210,7 +208,6 @@ function buildHarness(opts: HarnessOptions = {}) {
     setActionError,
     setActionInfo,
     applyReloadFailedLock,
-    reassertEditorEditable,
     refreshSnapshotCount,
     refreshSnapshots,
     exitSnapshotView,
@@ -442,7 +439,6 @@ describe("useSnapshotController — handleRestoreSnapshot mutate callback", () =
     // dispatch nothing. What it still owns is the chapter-attributed notice —
     // without it the user is never told which chapter changed under them.
     expect(h.applyReloadFailedLock).not.toHaveBeenCalled();
-    expect(h.reassertEditorEditable).not.toHaveBeenCalled();
     expect(h.setActionError).toHaveBeenLastCalledWith(
       STRINGS.snapshots.restoreSucceededReloadFailedOnOtherChapter(h.activeChapter.title),
     );
@@ -469,7 +465,6 @@ describe("useSnapshotController — handleRestoreSnapshot mutate callback", () =
     // the directive's committedLock. Dispatching here too would be a second
     // transition on an already-settled machine.
     expect(h.applyReloadFailedLock).not.toHaveBeenCalled();
-    expect(h.reassertEditorEditable).not.toHaveBeenCalled();
   });
 
   it("skips the cache clear and the active-chapter reload on a stale chapter switch", async () => {

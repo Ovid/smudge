@@ -9,7 +9,7 @@
 //
 // Why the existing coverage is not enough. Both controller suites already pin
 // this behaviour, but both do it by asserting on the injected
-// applyReloadFailedLock / reassertEditorEditable callbacks — either as spies,
+// applyReloadFailedLock callback (and a re-assert sibling since deleted) —
 // or (in useFindReplaceController.test.tsx's `withRealMachine`) by patching
 // those two deps to drive a real reducer. That file says so in its own words:
 // "this is NOT dispatcher-agnostic … a seam-level fix that moved the dispatch
@@ -46,7 +46,7 @@ import {
 } from "../useFindReplaceController";
 import { useSnapshotController, type SnapshotControllerDeps } from "../useSnapshotController";
 import type { EditorHandle } from "../../components/Editor";
-import { api } from "../../api/client";
+import { api, ApiRequestError } from "../../api/client";
 import { STRINGS } from "../../strings";
 
 vi.mock("../useContentCache", () => ({
@@ -127,9 +127,6 @@ function useHarness(activeChapterId: string) {
   const applyReloadFailedLock = (message: string) => {
     machine.dispatch({ type: "COMMITTED_UNRELOADED", message });
   };
-  const reassertEditorEditable = () => {
-    machine.dispatch({ type: "MUTATION_SETTLED_SUPERSEDED" });
-  };
 
   const shared = {
     mutation,
@@ -138,7 +135,6 @@ function useHarness(activeChapterId: string) {
     actionBusyRef,
     isEditorLocked: () => false,
     applyReloadFailedLock,
-    reassertEditorEditable,
     setActionError: vi.fn(),
     setActionInfo: vi.fn(),
     snapshotPanelRef: { current: null },
@@ -229,6 +225,36 @@ describe("F-07 safety net — committed_but_unreloaded end state (find and repla
       editable: false,
       lock: { message: STRINGS.findReplace.replaceSucceededReloadFailed },
     });
+  });
+});
+
+describe("2xx BAD_JSON replace — the OTHER possibly-committed path", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // S4 (agentic review 2026-08-21). This path never reaches the seam's
+  // committed branch: the mutate callback throws, so run() settles with
+  // MUTATION_SETTLED_OK and the controller finishes the transition itself.
+  //
+  // The controller's drift arm used to re-assert editability here, and this
+  // assertion is what proved that call was dead weight rather than merely
+  // looking like it. Entry is gated on !isEditorLocked(), so lock is null on the
+  // way in; MUTATION_SETTLED_OK re-enables against that null lock; and the
+  // MUTATION_SETTLED_SUPERSEDED the arm dispatched could only re-derive the same
+  // {editable:true, lock:null}. The call is gone (S4); this pins the end state
+  // it was supposedly producing, so its removal is verified, not assumed.
+  it("leaves the editor typeable with a dismissible notice when the user drifted", async () => {
+    vi.mocked(api.search.replace).mockRejectedValue(
+      new ApiRequestError("[dev] unreadable body", 200, "BAD_JSON"),
+    );
+
+    const { result } = renderHook(() => useHarness(DRIFTED));
+    await act(async () => {
+      await result.current.findReplace.executeReplace(FROZEN_REPLACE);
+    });
+
+    expect(result.current.state).toEqual<EditorMutationState>({ editable: true, lock: null });
   });
 });
 

@@ -14,16 +14,19 @@ import { safeSetEditable } from "../utils/editorSafeOps";
  *
  * Keyed on the state OBJECT, not on `state.editable` (S2, agentic review
  * 2026-08-18). Three reducer arms — MUTATION_SETTLED_SUPERSEDED, RELOADED,
- * EDITOR_REMOUNTED — all produce `editable: true`, so a re-assert dispatched
- * while the machine ALREADY reads `editable: true` moves no primitive and an
- * effect keyed on the boolean would not re-run. That is exactly the state
- * `reassertEditorEditable()` is called in: `useEditorMutation` calls
+ * EDITOR_REMOUNTED — all produce `editable: true`, so a dispatch that lands
+ * while the machine ALREADY reads `editable: true` moves no primitive, and an
+ * effect keyed on the boolean would not re-run.
+ *
+ * That combination is reachable, not hypothetical. `useEditorMutation` calls
  * `safeSetEditable(editorRef, false)` against a mid-mutation-remounted editor
- * *without* dispatching, so TipTap reads read-only while the machine reads
- * editable — and the re-assert would never reach TipTap, stranding a chapter
- * the mutation never touched. Every reducer arm returns a fresh object, so
- * keying on the object re-runs this once per dispatch; `safeSetEditable` is
- * idempotent, so the extra applications are free.
+ * *without* dispatching, so TipTap reads read-only while the machine still
+ * reads editable; its `finally` then dispatches MUTATION_SETTLED_SUPERSEDED,
+ * which changes no boolean. Keyed on the boolean, that dispatch would never
+ * reach TipTap and would strand a chapter the mutation never touched. Every
+ * reducer arm returns a fresh object, so keying on the object re-runs this once
+ * per dispatch; `safeSetEditable` is idempotent, so the extra applications are
+ * free.
  */
 export function useReconcileEditable(
   editorRef: MutableRefObject<EditorHandle | null>,

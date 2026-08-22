@@ -32,15 +32,15 @@ function renderReconcile() {
 
 describe("useReconcileEditable", () => {
   it("re-applies editable intent on a dispatch that does not change the boolean", () => {
-    // S2 (agentic review 2026-08-18). The drift case reassertEditorEditable()
-    // exists for: useEditorMutation calls safeSetEditable(false) against a
-    // freshly-remounted editor WITHOUT dispatching, so TipTap reads read-only
-    // while the machine still reads editable:true. The consumer then dispatches
+    // S2 (agentic review 2026-08-18). The drift case this exists for:
+    // useEditorMutation calls safeSetEditable(false) against a freshly-remounted
+    // editor WITHOUT dispatching, so TipTap reads read-only while the machine
+    // still reads editable:true. Its `finally` then dispatches
     // MUTATION_SETTLED_SUPERSEDED to re-enable — but that event's reducer arm
     // returns the SAME editable:true, so an effect keyed on the boolean never
     // re-runs and TipTap is never re-enabled. Keying on the state OBJECT (a new
     // object per dispatch, by construction of every reducer arm) is what makes
-    // the re-assert reach TipTap.
+    // that dispatch reach TipTap.
     const { setEditable, dispatch } = renderReconcile();
 
     // Mount reconcile: initial state is editable:true.
