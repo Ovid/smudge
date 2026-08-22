@@ -197,10 +197,34 @@ test.describe("Editor save pipeline E2e Tests", () => {
     // whether the lock is gone, not whether saving works — the underlying
     // fault is still present, exactly as it would be for a user who navigates
     // away rather than refreshing. Typing here would legitimately re-lock.
+    // I2 (agentic review 2026-08-22): both legs must stay inside the SPA. The
+    // return used to be gotoProjectEditor, which calls page.goto — a full
+    // document navigation that tears down the whole JS context. That satisfies
+    // the two assertions below on its own, so the test passed whether or not
+    // the SPA unmount cleared the lock, and the sibling test above already
+    // proves a hard reload works. This marker fails the test if a page load
+    // ever creeps back in between leaving and re-entering.
+    await page.evaluate(() => {
+      (window as Window & { __smudgeNoReload?: boolean }).__smudgeNoReload = true;
+    });
+
     await page.getByRole("button", { name: "Smudge" }).click();
     await expect(page).toHaveURL(/\/$/, { timeout: 10000 });
 
-    await gotoProjectEditor(page, project.slug);
+    // Back in through the app — the dashboard's project card — rather than the
+    // address bar. Anchored, because the card's per-row Delete button carries
+    // the same title in its aria-label ("Delete project <title>") and an
+    // unanchored name matches both.
+    const titlePattern = project.title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    await page.getByRole("button", { name: new RegExp(`^${titlePattern}\\b`) }).click();
+    await expect(page).toHaveURL(new RegExp(`/projects/${project.slug}$`), { timeout: 10000 });
+    await expectEditorReady(page);
+
+    expect(
+      await page.evaluate(
+        () => (window as Window & { __smudgeNoReload?: boolean }).__smudgeNoReload === true,
+      ),
+    ).toBe(true);
     await expect(page.getByRole("textbox")).toHaveAttribute("contenteditable", "true");
     await expect(page.getByRole("alert").filter({ hasText: /no longer available/i })).toHaveCount(
       0,
