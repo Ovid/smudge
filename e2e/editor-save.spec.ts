@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { gotoProjectEditor, expectEditorReady } from "./helpers/gotoProjectEditor";
 import { createTestProject, deleteProject, type TestProject } from "./helpers/project";
 
@@ -105,6 +105,102 @@ test.describe("Editor save pipeline E2e Tests", () => {
     const lockBanner = page.getByRole("alert").filter({ hasText: /no longer available/i });
     await expect(lockBanner).toBeVisible({ timeout: 5000 });
     await expect(editor).toHaveAttribute("contenteditable", "false");
+  });
+
+  // The lock has to be ESCAPABLE, and until these two tests nothing at any
+  // level proved it was (agentic review 2026-08-22, OOSI1). The suite had five
+  // reducer assertions that `lock` becomes null, two hook tests folding an
+  // event list through the reducer by hand, and nineteen component tests that
+  // only ever assert the lock APPEARS or that something is REFUSED while it
+  // stands. Not one showed a writer getting back to work.
+  //
+  // That gap matters because the lock is a genuine dead end from inside the
+  // editor: every event that clears it dispatches from inside
+  // useEditorMutation.run(), and all three run() callers refuse at entry while
+  // locked, so no in-editor gesture can reach one. Exactly two exits exist, and
+  // one test below pins each. A regression in either strands the writer in a
+  // read-only editor — the lock exists to prevent data loss, and losing its
+  // exits converts it into the worse failure.
+  //
+  // Both tests raise the lock the way a real user meets it: an auto-save PATCH
+  // returning 404 because the chapter was deleted out from under an open
+  // editor. That is the most reachable of the four lock sites and the one the
+  // test above already exercises.
+  const raiseLockVia404 = async (page: Page) => {
+    await page.route("**/api/chapters/*", async (route) => {
+      if (route.request().method() === "PATCH") {
+        await route.fulfill({
+          status: 404,
+          contentType: "application/json",
+          body: JSON.stringify({ error: { code: "NOT_FOUND", message: "chapter not found" } }),
+        });
+      } else {
+        await route.continue();
+      }
+    });
+    const editor = page.getByRole("textbox");
+    await editor.click();
+    await editor.pressSequentially(`Trigger lock ${Date.now()}`, { delay: 20 });
+    // Same budget as the sibling test above: 4xx short-circuits the retry
+    // loop, so this is debounce (1.5s) + one round-trip, not four backoffs.
+    await expect(page.getByRole("alert").filter({ hasText: /no longer available/i })).toBeVisible({
+      timeout: 30000,
+    });
+    await expect(editor).toHaveAttribute("contenteditable", "false");
+  };
+
+  test("locked editor recovers via the banner's Refresh button", async ({ page }) => {
+    await gotoProjectEditor(page, project.slug);
+    await raiseLockVia404(page);
+
+    // Drop the interception BEFORE refreshing, so this models the realistic
+    // recovery — a server-side problem that has since cleared — and lets the
+    // test prove the writer is genuinely back at work rather than merely
+    // looking at a writable box. Note the lock is client state: unrouting does
+    // not clear it, which is why the banner is still up when we click.
+    await page.unroute("**/api/chapters/*");
+
+    await page.getByRole("button", { name: "Refresh page" }).click();
+
+    // window.location.reload() — a real navigation, so wait for the editor to
+    // remount with the cold-compile budget rather than assuming it is instant.
+    await expectEditorReady(page);
+    const editorAfterRefresh = page.getByRole("textbox");
+    await expect(editorAfterRefresh).toHaveAttribute("contenteditable", "true");
+    await expect(page.getByRole("alert").filter({ hasText: /no longer available/i })).toHaveCount(0);
+
+    // The assertion that makes this a recovery test rather than a rendering
+    // test: typing reaches the server again.
+    await editorAfterRefresh.click();
+    await editorAfterRefresh.pressSequentially(`Back to work ${Date.now()}`, { delay: 20 });
+    await expect(page.locator("[role='status'][aria-live='polite']")).toContainText("Saved", {
+      timeout: 10000,
+    });
+  });
+
+  test("locked editor recovers by leaving the project and returning", async ({ page }) => {
+    await gotoProjectEditor(page, project.slug);
+    await raiseLockVia404(page);
+
+    // The second exit, and the one that is load-bearing by accident: the logo
+    // button is NOT gated on the lock, and `/` and `/projects/:slug` are
+    // separate routes, so navigating home unmounts EditorPage and discards the
+    // reducer holding the lock. Re-entering mounts a fresh machine at its
+    // initial state. Nobody designed this as the escape hatch; it works, users
+    // will find it, and without this test a future route restructure (or a
+    // lock guard added to the logo button, which would look like a
+    // consistency fix) removes it silently.
+    //
+    // The interception stays ACTIVE here on purpose. This test asks only
+    // whether the lock is gone, not whether saving works — the underlying
+    // fault is still present, exactly as it would be for a user who navigates
+    // away rather than refreshing. Typing here would legitimately re-lock.
+    await page.getByRole("button", { name: "Smudge" }).click();
+    await expect(page).toHaveURL(/\/$/, { timeout: 10000 });
+
+    await gotoProjectEditor(page, project.slug);
+    await expect(page.getByRole("textbox")).toHaveAttribute("contenteditable", "true");
+    await expect(page.getByRole("alert").filter({ hasText: /no longer available/i })).toHaveCount(0);
   });
 
   test("shows error on save failure and recovers when network returns", async ({ page }) => {
