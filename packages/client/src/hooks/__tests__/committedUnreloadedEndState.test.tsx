@@ -128,6 +128,16 @@ function useHarness(activeChapterId: string) {
     machine.dispatch({ type: "COMMITTED_UNRELOADED", message });
   };
 
+  // Stable across renders (S3): the controllers capture these in callbacks at
+  // the render that built them, so a fresh vi.fn() per render would leave the
+  // spy this harness returns disconnected from the one that was actually
+  // called. Only matters once a test asserts on one — which is the point.
+  const spies = useRef({
+    setActionError: vi.fn(),
+    setActionInfo: vi.fn(),
+    refreshSnapshotCount: vi.fn(),
+  }).current;
+
   const shared = {
     mutation,
     getActiveChapter,
@@ -135,10 +145,8 @@ function useHarness(activeChapterId: string) {
     actionBusyRef,
     isEditorLocked: () => false,
     applyReloadFailedLock,
-    setActionError: vi.fn(),
-    setActionInfo: vi.fn(),
+    ...spies,
     snapshotPanelRef: { current: null },
-    refreshSnapshotCount: vi.fn(),
   };
 
   const findReplace = useFindReplaceController({
@@ -163,7 +171,7 @@ function useHarness(activeChapterId: string) {
     findReplace: { clearError: vi.fn() },
   } as unknown as SnapshotControllerDeps);
 
-  return { state: machine.state, findReplace, snapshot };
+  return { state: machine.state, findReplace, snapshot, setActionError: spies.setActionError };
 }
 
 /** Chapter-scoped replace on TARGET. `affected` decides whether the chapter
@@ -255,6 +263,12 @@ describe("2xx BAD_JSON replace — the OTHER possibly-committed path", () => {
     });
 
     expect(result.current.state).toEqual<EditorMutationState>({ editable: true, lock: null });
+    // S3: the same copy obligation as the restore sibling, for the replace flow.
+    // A typeable editor with no notice is indistinguishable from nothing having
+    // happened, and something did — the server committed.
+    expect(result.current.setActionError).toHaveBeenCalledWith(
+      STRINGS.findReplace.replaceResponseUnreadable,
+    );
   });
 });
 
@@ -270,6 +284,15 @@ describe("F-07 safety net — committed_but_unreloaded end state (snapshot resto
     });
 
     expect(result.current.state).toEqual<EditorMutationState>({ editable: true, lock: null });
+    // S3 (agentic review 2026-08-21): machine state alone cannot distinguish
+    // "correctly re-enabled after a drift" from "told the user nothing about a
+    // committed server write". The deleted forcing test weakly pinned that each
+    // consumer surfaces copy on this path; `committedLock` being required does
+    // not, because a caller can supply it and ignore the returned result. This
+    // is the surviving statement of that obligation for the restore flow.
+    expect(result.current.setActionError).toHaveBeenCalledWith(
+      STRINGS.snapshots.restoreSucceededReloadFailedOnOtherChapter(`Chapter ${TARGET}`),
+    );
   });
 
   it("leaves the editor read-only under the restore banner when the restored chapter is still active", async () => {
