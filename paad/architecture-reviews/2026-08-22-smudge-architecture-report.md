@@ -514,6 +514,8 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Found by:** Integration & Data
 - **Note:** For a single writer the observable outcome is a 200 carrying a stale or empty child list rather than a 404, so severity is genuinely low. The finding is the unmarked inconsistency: an invariant recorded four times as a rule is unapplied five times with nothing indicating the omission was a decision.
 
+- **Citation drift (2026-08-22):** the `getTrash` site cited above as `projects.service.ts:320-326` moved to `:332` when F-01 was fixed in commit 81a87fd9. F-28 itself is **untouched** by that fix — `getTrash` still reads without a transaction-wrapped liveness check, it now just resolves the live project instead of an arbitrary one. The other four skipped sites are unverified against the current tree; re-derive every line number here before acting on them.
+
 ### [F-29] The backup archive is not a consistent cross-store snapshot, and the documentation reads as though it is
 - **Category:** 26 (poor transactional boundaries, spanning two stores), secondarily 17
 - **Impact:** Low
