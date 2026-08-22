@@ -1265,8 +1265,11 @@ describe("EditorPage find-and-replace confirmation", () => {
 
     // Critical #1 (2026-04-20), integration proof of the committed_but_unreloaded
     // → machine lock → reconciled read-only chain. The hook returns
-    // stage:"committed_but_unreloaded"; the controller calls applyReloadFailedLock,
-    // which dispatches COMMITTED_UNRELOADED (lock !== null AND editable:false);
+    // stage:"committed_but_unreloaded" AND dispatches COMMITTED_UNRELOADED
+    // itself, from run()'s finally, with the copy the directive supplied
+    // (lock !== null AND editable:false) — since F-07 the controller must NOT
+    // call applyReloadFailedLock here, and finalizeReplaceSuccess gates it
+    // behind `if (!seamOutcome)` precisely so it does not.
     // EditorPage's reconcile effect pushes editable:false into TipTap. Assert
     // the live editor is read-only and is never re-enabled while the lock
     // stands — the race-only second-reload-fails branch funnels into this exact
@@ -2646,18 +2649,18 @@ describe("EditorPage snapshot panel", () => {
   it("locks editor when a restore committed but the confirming reload failed (F-07 safety net)", async () => {
     // F-07 safety net. Sibling of the C2 BAD_JSON test above, but via the
     // OTHER route into stage:"committed_but_unreloaded": the restore POST
-    // succeeds and it is reloadActiveChapter's GET that fails. That route is
-    // the one useEditorMutation's `finally` deliberately leaves without a
-    // terminal dispatch (`if (reloadFailed) { /* no-op */ }`), handing the
-    // completion to useSnapshotController.
+    // succeeds and it is reloadActiveChapter's GET that fails.
     //
-    // Until now that hand-off was pinned only by a SPY on the injected
-    // applyReloadFailedLock dep (useSnapshotController.test.tsx). A change that
-    // moves the dispatch to the seam would legitimately rewrite that spy
-    // assertion — and nothing would notice if the editor were left read-only
-    // with NO banner, which is exactly the stranded state F-07 describes. This
-    // test asserts the USER-VISIBLE end state instead, so it holds regardless
-    // of which layer raises COMMITTED_UNRELOADED.
+    // That route used to be the one useEditorMutation's `finally` left without
+    // a terminal dispatch, handing the completion to useSnapshotController;
+    // F-07 moved the dispatch into the seam, and the controller now owns only
+    // the copy and its refreshes. The hand-off was pinned only by a SPY on the
+    // injected applyReloadFailedLock dep (useSnapshotController.test.tsx),
+    // which is exactly why that move rewrote those spy assertions — and
+    // nothing would have noticed if the editor were left read-only with NO
+    // banner, the stranded state F-07 describes. This test asserts the
+    // USER-VISIBLE end state instead, so it held across the move and holds
+    // regardless of which layer raises COMMITTED_UNRELOADED.
     const warn = expectConsole("warn");
     vi.mocked(api.snapshots.list).mockResolvedValue([
       {

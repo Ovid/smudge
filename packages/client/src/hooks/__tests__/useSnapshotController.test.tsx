@@ -438,10 +438,15 @@ describe("useSnapshotController — handleRestoreSnapshot mutate callback", () =
     // computes `stale`, and this file's 2xx-BAD_JSON arm compares
     // getActiveChapter()?.id. On drift the persistent, NON-dismissible banner
     // pinned to and disabled a chapter the restore never touched. Simply
-    // skipping the lock is not enough: committed_but_unreloaded leaves the
-    // machine at editable:false (the hook dispatches no terminal event there),
-    // so the re-assert is what keeps the unrelated editor from being stranded
-    // read-only with no banner explaining why.
+    // skipping the lock was not enough at the time: committed_but_unreloaded
+    // left the machine at editable:false because the hook dispatched no
+    // terminal event there, so this arm had to re-assert editability itself or
+    // strand the unrelated editor read-only with no banner explaining why.
+    //
+    // F-07 then moved that terminal dispatch into the seam. run()'s finally now
+    // settles every path — MUTATION_SETTLED_SUPERSEDED on safe drift — so the
+    // re-assert is gone and a second transition from here would be the OOSS1
+    // defect again. What this arm still owns is the copy and the refreshes.
     const h = buildHarness({
       currentChapterId: "ch-2",
       runResult: {
@@ -513,7 +518,7 @@ describe("useSnapshotController — handleRestoreSnapshot result stages", () => 
     expect(h.setActionError).toHaveBeenLastCalledWith(STRINGS.snapshots.restoreFailedSaveFirst);
   });
 
-  it("raises the persistent lock banner and clears the cache when the reload cannot confirm the restore", async () => {
+  it("leaves the persistent lock to the seam and clears the cache when the reload cannot confirm the restore", async () => {
     const h = buildHarness({
       runResult: {
         ok: false,

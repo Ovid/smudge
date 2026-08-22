@@ -172,8 +172,9 @@ describe("client source-tree migration structural check", () => {
       }
       for (const name of bindings) {
         // The `<binding>.run(` shape is owned by `runCallPattern`
-        // (tsSourceScan.ts), shared with mutationCommittedSurface.test.ts so
-        // the two detectors cannot answer differently for the same text. It
+        // (tsSourceScan.ts). It was extracted there so this detector and the
+        // since-deleted mutationCommittedSurface.test.ts could not answer
+        // differently for the same text; this file is now its only consumer. It
         // keeps the word boundary on the LEFT (so `xOp.run(` does not satisfy a
         // search for `p.run(`) and tolerates a generic argument list — NESTED
         // included, as of S4/round 2; the earlier `[^>]*` stopped at the inner
@@ -351,15 +352,16 @@ describe("client source-tree migration structural check", () => {
     expect(runCallPattern(liveBindings[0]!).test(liveFixture)).toBe(true);
   });
 
-  it("runCallPattern answers identically for both detectors (S4, review 2026-08-19)", () => {
-    // S4: the `<binding>.run(` matcher was duplicated here and in
-    // mutationCommittedSurface.test.ts, and the copies had diverged — the
-    // newer one tolerated a Prettier line-wrap and optional chaining, this
-    // one tolerated neither. The same source text got two different answers
-    // from two detectors scanning the same tree for the same construct, and
-    // here the wrapped shape produced a false RED (a cosmetic reflow of a
-    // real `.run(` call would report the binding as dead). One shared
-    // parameterised pattern in tsSourceScan.ts owns the shape now.
+  it("runCallPattern tolerates the shapes a divergent copy once missed (S4, review 2026-08-19)", () => {
+    // S4: the `<binding>.run(` matcher was duplicated here and in the
+    // since-deleted mutationCommittedSurface.test.ts, and the copies had
+    // diverged — the newer one tolerated a Prettier line-wrap and optional
+    // chaining, this one tolerated neither. The same source text got two
+    // different answers from two detectors scanning the same tree for the same
+    // construct, and here the wrapped shape produced a false RED (a cosmetic
+    // reflow of a real `.run(` call would report the binding as dead). The
+    // shared parameterised pattern in tsSourceScan.ts owns the shape, and
+    // these cases pin the tolerance the merge gained.
     const pattern = runCallPattern("saveOp");
     expect(pattern.test("saveOp.run(f);")).toBe(true);
     expect(pattern.test("saveOp.run<SaveLoopOutcome>(f);")).toBe(true);
@@ -375,9 +377,12 @@ describe("client source-tree migration structural check", () => {
   it("stripCommentsFromTsSource does not treat a comment token inside a string as a comment (S6)", () => {
     // S6 (review 2026-08-19): the stripper moved out of this file verbatim,
     // where every consumer was a PRESENCE check. mutationCommittedSurface.ts
-    // now derives equality-of-COUNTS decisions from its output, so
-    // over-stripping flips a numeric assertion instead of a boolean — and a
-    // dropped binding silently removes a file from caller discovery.
+    // then derived equality-of-COUNTS decisions from its output, so
+    // over-stripping flipped a numeric assertion instead of a boolean — and a
+    // dropped binding silently removed a file from caller discovery. That
+    // consumer is gone; the self-test stays because the stripper is still
+    // shared and the failure it pins is a property of the stripper, not of any
+    // one caller.
     //
     // The concrete latent failure: a glob string containing `/*` opened a
     // block comment that ran to the next `*/` anywhere below, erasing every
@@ -413,8 +418,10 @@ describe("client source-tree migration structural check", () => {
     // the NEXT quote, and the scanner then resumes mid-expression — where a
     // `/*` inside a glob string can open a block comment that runs to the next
     // real `*/` anywhere below, DELETING every line in between. Counts go DOWN,
-    // so a file silently drops out of mutationCommittedSurface's caller
-    // discovery: the silent green that ceiling promised was impossible.
+    // so a file silently dropped out of the (now-deleted)
+    // mutationCommittedSurface's caller discovery: the silent green that
+    // ceiling promised was impossible. The erasure itself is what this pins,
+    // and it would break this file's own detectors the same way.
     const erasure = [
       'const re = /"/;',
       'const files = glob("**/*.ts");',
@@ -435,9 +442,11 @@ describe("client source-tree migration structural check", () => {
     // common regex positions in TypeScript — never entered the regex branch.
     // They fell through to the STRING alternative, which has no newline
     // exclusion, so a fake literal ran to the next quote anywhere below and
-    // everything in between was deleted. Counts go DOWN: a file silently drops
-    // out of mutationCommittedSurface's caller discovery and the F-07 forcing
-    // pause ships green on an unguarded caller.
+    // everything in between was deleted. Counts go DOWN: at the time, a file
+    // silently dropped out of the (now-deleted) mutationCommittedSurface's
+    // caller discovery and the F-07 forcing pause shipped green on an
+    // unguarded caller. The same erasure hides a binding from this file's
+    // detectors, which is why the fixture stays.
     //
     // Round 3's fixture (`const re = /"/;`) sits in a position the class DID
     // admit, which is why the round-3 fix looked complete.

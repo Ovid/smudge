@@ -516,8 +516,8 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
           // an unhandled rejection — bypassing the MutationResult
           // contract (callers `await mutation.run(...)` without
           // try/catch). Treat a throw the same as the "failed" outcome:
-          // set reloadFailed and return stage:"committed_but_unreloaded" so the caller
-          // raises the persistent lock banner.
+          // route through committed(), which records the outcome so the
+          // `finally` raises the persistent lock banner itself (F-07).
           let outcome: Awaited<ReturnType<typeof projectEditorRef.current.reloadActiveChapter>>;
           try {
             outcome = await projectEditorRef.current.reloadActiveChapter(
@@ -565,11 +565,11 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
             if (currentId && directive.clearCacheFor.includes(currentId)) {
               // I3 (review 2026-04-21): pass currentId as expectedChapterId.
               // Without it, a further chapter switch during this second reload
-              // lets a failed fetch land against a third chapter — the hook
-              // then sets reloadFailed=true and raises a persistent lock
-              // banner on a chapter the mutation never targeted, wiping
-              // unrelated local draft state on refresh. With the guard, a
-              // further switch returns "superseded" (benign) instead.
+              // lets a failed fetch land against a third chapter — which
+              // reaches committed() and raises a persistent lock banner on a
+              // chapter the mutation never targeted, wiping unrelated local
+              // draft state on refresh. With the guard, a further switch
+              // returns "superseded" (benign) instead.
               //
               // S4 (review 2026-04-21): wrapped in try/catch for the same
               // reason as the first reload call above — a future refactor
