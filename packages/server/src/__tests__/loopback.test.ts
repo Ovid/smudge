@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { DEFAULT_BIND_HOST, getBindHost, isLoopbackHost } from "../config/loopback";
+import { getBindHost, isLoopbackHost } from "../config/loopback";
 
 // F-02 (architecture report 2026-08-22): `app.listen(PORT, cb)` bound the
 // unspecified address, so any host that could reach the port had full
@@ -9,7 +9,6 @@ import { DEFAULT_BIND_HOST, getBindHost, isLoopbackHost } from "../config/loopba
 describe("getBindHost()", () => {
   it("resolves to loopback", () => {
     expect(getBindHost()).toBe("127.0.0.1");
-    expect(getBindHost()).toBe(DEFAULT_BIND_HOST);
   });
 
   // Node treats "" and undefined alike as the unspecified address (verified:
@@ -27,6 +26,17 @@ describe("getBindHost()", () => {
   // (docs/roadmap.md), and its planned 0.0.0.0 default is the state this
   // finding exists to remove — so the unsafe value must not be reachable by
   // configuration until that phase decides otherwise deliberately.
+  // S6 (code review 2026-08-22): the two halves of this module are asserted
+  // only against literals, so the relation between them was asserted nowhere.
+  // Both the module doc block and roadmap Phase 7g.1 state that widening the
+  // bind and widening the Host allowlist must happen in step; nothing
+  // mechanical enforced that. Widening the bind alone would 400 every request
+  // — /api/health included — with a green test suite.
+  it("binds a host its own Host allowlist accepts", () => {
+    expect(isLoopbackHost(getBindHost())).toBe(true);
+    expect(isLoopbackHost(`${getBindHost()}:3456`)).toBe(true);
+  });
+
   it("ignores the environment", () => {
     const prev = process.env.SMUDGE_BIND_ADDRESS;
     process.env.SMUDGE_BIND_ADDRESS = "0.0.0.0";

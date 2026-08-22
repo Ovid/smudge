@@ -21,7 +21,7 @@ import { isIP } from "node:net";
  * same 7g.1 conversation, and it is a decision to record, not a default to
  * inherit.
  */
-export const DEFAULT_BIND_HOST = "127.0.0.1";
+const DEFAULT_BIND_HOST = "127.0.0.1";
 
 /** The interface the HTTP server binds. */
 export function getBindHost(): string {
