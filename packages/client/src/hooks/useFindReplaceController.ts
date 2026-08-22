@@ -6,6 +6,7 @@ import { mapApiError, isNotFound } from "../errors";
 import { clearCachedContent, clearAllCachedContent } from "./useContentCache";
 import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
 import { STRINGS } from "../strings";
+import { isDriftedFrom } from "./useEditorMutation";
 import type { useEditorMutation } from "./useEditorMutation";
 import type { useFindReplaceState } from "./useFindReplaceState";
 import type { useSnapshotState } from "./useSnapshotState";
@@ -130,10 +131,14 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       // the [activeChapter?.id] effect would silently dismiss it on the next
       // chapter switch anyway. Fall through to the dismissible action-error
       // branch below in that case.
-      const currentId = targetChapterId !== undefined ? getActiveChapter()?.id : undefined;
+      // S2: one predicate for both arms. The seam already applied it (plus the
+      // affected-chapter conjunct it alone can evaluate) to produce
+      // seamOutcome.drifted; the fallback arm serves the 2xx-BAD_JSON path,
+      // where there is no affected-chapter list to consult.
+      const currentId = getActiveChapter()?.id;
       const stale = seamOutcome
         ? seamOutcome.drifted
-        : targetChapterId !== undefined && currentId !== targetChapterId;
+        : isDriftedFrom(targetChapterId, currentId);
       if (reloadFailed && !stale) {
         // I6: applyReloadFailedLock sets banner + safeSetEditable as an
         // invariant pair. In the stage:"committed_but_unreloaded" path the hook kept the

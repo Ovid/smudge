@@ -41,6 +41,36 @@ export type CommittedLockSpec = {
 // between directive-return and the hook's reload call (I2). Making
 // the shape discriminated moves the constraint from caller discipline
 // to construction.
+/**
+ * Has the user drifted off the chapter a mutation was about?
+ *
+ * The canonical reading, shared by every possibly-committed path (S2, agentic
+ * review 2026-08-21). Two absences both read as NOT drifted, for the same
+ * reason: with no target chapter, or no chapter open at all, there is no
+ * unrelated editor for a persistent banner to strand, so the banner is the
+ * honest signal that a refresh is needed.
+ *
+ * The two paths had drifted apart on the second of those. The committed path
+ * adopted restore's reading during F-07; the 2xx-BAD_JSON path kept
+ * find-and-replace's older one, where an absent `currentId` simply compared
+ * unequal to the target and came out drifted — so identical user state produced
+ * a non-dismissible lock on one failure mode and a dismissible notice on the
+ * other.
+ *
+ * Drift is necessary but not sufficient to re-enable an editor: see
+ * `activeChapterIsAffected` inside `run`, which the committed path additionally
+ * requires and the BAD_JSON path cannot evaluate (the unreadable body is why it
+ * has no affected-chapter list).
+ */
+export function isDriftedFrom(
+  targetChapterId: string | undefined,
+  currentId: string | undefined,
+): boolean {
+  return (
+    targetChapterId !== undefined && currentId !== undefined && currentId !== targetChapterId
+  );
+}
+
 export type MutationDirective<T = void> = {
   clearCacheFor: string[];
   data: T;
@@ -207,10 +237,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
       const committed = (d: MutationDirective<T>): MutationResult<T> => {
         const currentId = projectEditorRef.current.getActiveChapter()?.id;
         const drifted =
-          d.committedLock.targetChapterId !== undefined &&
-          currentId !== undefined &&
-          currentId !== d.committedLock.targetChapterId &&
-          !activeChapterIsAffected(d);
+          isDriftedFrom(d.committedLock.targetChapterId, currentId) && !activeChapterIsAffected(d);
         committedOutcome.value = { drifted, message: d.committedLock.message };
         return { ok: false, stage: "committed_but_unreloaded", data: d.data, drifted };
       };

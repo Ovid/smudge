@@ -365,6 +365,39 @@ describe("useFindReplaceController — executeReplace failure stages", () => {
   });
 });
 
+describe("useFindReplaceController — drift reading on the 2xx BAD_JSON path", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("locks rather than notifying when a chapter-scope replace lands with no chapter open (S2)", async () => {
+    // S2 (agentic review 2026-08-21). "No chapter open" must read as NOT
+    // drifted, on both possibly-committed paths. The seam decided that for the
+    // committed_but_unreloaded path (there is no unrelated editor to strand, so
+    // the persistent banner is the honest signal a refresh is needed); this
+    // path kept find-and-replace's older reading, where an absent currentId
+    // simply compared unequal to the target and came out "drifted". Identical
+    // user state, opposite UX: dismissible notice on one failure mode,
+    // non-dismissible lock on the other.
+    const { deps, applyReloadFailedLock, setActionError } = buildDeps({
+      runResult: { ok: false, stage: "mutate", error: badJsonError() },
+      activeChapterId: null,
+      projectChapterIds: ["ch-1", "ch-2", "ch-3"],
+    });
+
+    const { result } = renderHook(() => useFindReplaceController(deps));
+
+    await act(async () => {
+      await result.current.executeReplace(FROZEN_CHAPTER_REPLACE);
+    });
+
+    expect(applyReloadFailedLock).toHaveBeenCalledWith(
+      STRINGS.findReplace.replaceResponseUnreadable,
+    );
+    expect(setActionError).not.toHaveBeenCalledWith(STRINGS.findReplace.replaceResponseUnreadable);
+  });
+});
+
 describe("useFindReplaceController — handleReplaceOne", () => {
   beforeEach(() => {
     vi.clearAllMocks();
