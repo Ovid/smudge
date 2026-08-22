@@ -269,14 +269,34 @@ facts dispatched from distinct sites, so do not merge them.
 `MutationResult` carries `committed_but_unreloaded` as the canonical "server
 committed, display unconfirmed" outcome (2xx `BAD_JSON` on replace/restore,
 reload-GET failure, race-only supersession); it routes to the persistent lock
-banner — except the stale-chapter-drift sub-case, which re-enables the
-now-unrelated editor with a dismissible, chapter-attributed notice. Both
-controllers implement it (`useFindReplaceController`, `useSnapshotController`);
-a third consumer of `committed_but_unreloaded` must too, because that outcome
-leaves the machine at `editable:false` and the hook dispatches no terminal
-event — skipping the lock without re-asserting strands the editor read-only
-with nothing on screen to explain it. Invariant 2's `setEditable(false)` is now expressed as
-machine intent.
+banner — except the safe-drift sub-case, which re-enables the now-unrelated
+editor with a dismissible, chapter-attributed notice.
+
+**The seam settles that transition itself, and a consumer must not settle it
+again (F-07).** `MutationDirective.committedLock` is a **required** field
+(`{ message, targetChapterId? }`), so the mutate callback hands
+`useEditorMutation` the banner copy and the drift reference point before the
+mutation runs, and the compiler — not a comment — is what forces a new caller to
+supply them. `run()`'s `finally` then dispatches exactly one terminal event on
+every path: `COMMITTED_UNRELOADED` with that copy when the user is still on the
+affected chapter, `MUTATION_SETTLED_SUPERSEDED` when they have drifted somewhere
+safe. A consumer's residual duty on this path is **copy and refreshes only** —
+its own dismissible notice, cache clears, panel refreshes. Do **not** call
+`applyReloadFailedLock` or any other machine dispatch after `run()` returns
+`committed_but_unreloaded`: the machine is already settled, and a second
+transition lands a non-dismissible banner on a read-only editor pinned to a
+chapter the mutation never touched. That pairing is the OOSI1/OOSS1 defects.
+
+**"Drifted" means drifted somewhere the mutation did not write.** The seam's
+verdict is `isDriftedFrom(targetChapterId, currentId) && !activeChapterIsAffected`
+— exported and shared so the 2xx-`BAD_JSON` path reads it the same way. Both
+conjuncts are load-bearing. Drift alone is not safety: a project-scope replace
+touching A and B, with the user on B when B's confirming GET fails, has wiped
+B's draft cache and never fetched B's post-replace text, so re-enabling there
+lets the next auto-save revert the commit. "No chapter open" reads as **not**
+drifted — there is no unrelated editor to strand, so the banner is the honest
+signal that a refresh is needed. Invariant 2's `setEditable(false)` is expressed
+as machine intent.
 
 **Machine intent reaches TipTap by two routes, and both must stay wired.**
 Post-mount transitions go through the imperative `setEditable` handle;
