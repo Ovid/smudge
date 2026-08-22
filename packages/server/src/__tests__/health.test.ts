@@ -74,14 +74,34 @@ describe("request-origin shapes that must keep working", () => {
 // therefore the load-bearing defence; validating Origin would inspect a header
 // the attack does not send.
 describe("Host validation (F-02)", () => {
+  // I7 (code review 2026-08-22): the rejection used to be completely silent,
+  // and the warning is asserted here rather than merely suppressed because the
+  // log line IS part of the contract this test describes. It is a 400
+  // AppError, and globalErrorHandler logs AppErrors only at status >= 500 —
+  // 4xx are expected outcomes, deliberately quiet — while requestContext's own
+  // access log is `debug`, suppressed at the default `info` level. So
+  // `app.ts`'s "Runs after requestContext so a rejection is traceable" was
+  // false at default configuration: a rebinding attempt wrote NOTHING to the
+  // server log, and the response carried an X-Request-Id matching no log line.
+  // This branch's own F-34 fix converts a silent skip into an observable
+  // warning on exactly that argument.
   it.each([
     ["a rebinding domain", "evil.com"],
     ["a rebinding domain with the server port", "evil.com:3456"],
     ["a LAN address", "192.168.1.50:3456"],
-  ])("rejects %s with 400 INVALID_HOST", async (_label, host) => {
+  ])("rejects %s with 400 INVALID_HOST and logs it", async (_label, host) => {
+    const child = logger.child({});
+    const warnSpy = vi.spyOn(child, "warn").mockImplementation(() => {});
+    const childSpy = vi.spyOn(logger, "child").mockReturnValue(child);
+
     const res = await request(ctx.app).get("/api/health").set("Host", host);
+
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("INVALID_HOST");
+    expect(warnSpy).toHaveBeenCalledWith({ host }, expect.stringContaining("Host"));
+
+    childSpy.mockRestore();
+    warnSpy.mockRestore();
   });
 
   it.each([
@@ -92,6 +112,25 @@ describe("Host validation (F-02)", () => {
   ])("accepts %s", async (_label, host) => {
     const res = await request(ctx.app).get("/api/health").set("Host", host);
     expect(res.status).toBe(200);
+  });
+
+  // The Host is attacker-controlled, so it is truncated before it reaches the
+  // log. An unbounded value is a log-flooding lever on the one field this
+  // rejection exists to record.
+  it("truncates an overlong Host before logging it", async () => {
+    const child = logger.child({});
+    const warnSpy = vi.spyOn(child, "warn").mockImplementation(() => {});
+    const childSpy = vi.spyOn(logger, "child").mockReturnValue(child);
+
+    await request(ctx.app)
+      .get("/api/health")
+      .set("Host", `${"a".repeat(500)}.evil.com`);
+
+    const logged = (warnSpy.mock.calls[0]?.[0] as { host: string }).host;
+    expect(logged).toHaveLength(128);
+
+    childSpy.mockRestore();
+    warnSpy.mockRestore();
   });
 });
 

@@ -55,10 +55,21 @@ export function createApp(): express.Express {
   // condition takes an existing status plus a discriminating code
   // (CLAUDE.md §API Design).
   //
+  // I7 (code review 2026-08-22): "traceable" was false until the warn below
+  // existed. This is a 400 AppError, and the handler above logs AppErrors only
+  // at status >= 500 — 4xx are expected outcomes, deliberately quiet — while
+  // requestContext's access log is `debug`, suppressed at the default `info`
+  // level. So the ordering bought a req_id on a response and no log line to
+  // match it against, and the rejected Host, the single most diagnostic field,
+  // was never recorded anywhere. The Host is attacker-controlled, hence the
+  // truncation: an unbounded value turns the one line this check exists to
+  // write into a log-flooding lever.
+  //
   // `make dev` and `make e2e` are unaffected: Vite proxies /api with
   // `changeOrigin: true`, so the server sees the proxy target's host.
   app.use((req, _res, next) => {
     if (!isLoopbackHost(req.headers.host)) {
+      req.log.warn({ host: String(req.headers.host).slice(0, 128) }, "Rejected non-loopback Host");
       throw new BadRequestError("Request Host is not recognized.", "INVALID_HOST");
     }
     next();
