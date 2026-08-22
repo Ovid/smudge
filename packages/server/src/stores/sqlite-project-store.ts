@@ -60,10 +60,6 @@ export class SqliteProjectStore implements ProjectStore {
     return projectsRepo.findBySlug(this.db, slug);
   }
 
-  findProjectBySlugIncludingDeleted(slug: string): Promise<ProjectRow | null> {
-    return projectsRepo.findBySlugIncludingDeleted(this.db, slug);
-  }
-
   findProjectByTitle(title: string, excludeId?: string): Promise<ProjectRow | null> {
     return projectsRepo.findByTitle(this.db, title, excludeId);
   }

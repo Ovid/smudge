@@ -497,6 +497,33 @@ describe("GET /api/projects/:slug/trash", () => {
     expect(bTrash.status).toBe(200);
     expect(bTrash.body).toEqual([]);
   });
+
+  // F-01 (architecture report 2026-08-22): migration 002's uniqueness index is
+  // `WHERE deleted_at IS NULL`, so trashing a project RELEASES its slug and the
+  // next project with the same title takes it over. getTrash resolved the slug
+  // through an unfiltered `.first()`, which table-scans in rowid order and
+  // returns the OLDER — soft-deleted — row, hiding the live project's own
+  // trashed chapters for the whole 30-day recovery window.
+  it("lists the live project's trashed chapters when a soft-deleted project holds the same slug", async () => {
+    const title = `Reclaimed Slug ${Date.now()}`;
+
+    const first = await request(t.app).post("/api/projects").send({ title, mode: "fiction" });
+    const slug = first.body.slug;
+    await request(t.app).delete(`/api/projects/${slug}`);
+
+    const second = await request(t.app).post("/api/projects").send({ title, mode: "fiction" });
+    // Precondition: the slug really is reclaimed, not suffixed. If this ever
+    // stops holding, the collision this test guards is no longer reachable.
+    expect(second.body.slug).toBe(slug);
+
+    const get = await request(t.app).get(`/api/projects/${slug}`);
+    const chapterId = get.body.chapters[0].id;
+    await request(t.app).delete(`/api/chapters/${chapterId}`);
+
+    const res = await request(t.app).get(`/api/projects/${slug}/trash`);
+    expect(res.status).toBe(200);
+    expect(res.body.map((c: { id: string }) => c.id)).toEqual([chapterId]);
+  });
 });
 
 describe("PATCH /api/projects/:slug — target fields", () => {

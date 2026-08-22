@@ -317,9 +317,21 @@ export async function getDashboard(slug: string): Promise<DashboardResponse | nu
   };
 }
 
+/**
+ * F-01 (architecture report 2026-08-22): resolves the LIVE project only.
+ *
+ * Migration 002's uniqueness index is `WHERE deleted_at IS NULL`, so trashing a
+ * project releases its slug and the next project with the same title takes it
+ * over. This used to resolve through an unfiltered lookup, which returned the
+ * soft-deleted row and hid the live project's own trashed chapters for the
+ * whole 30-day recovery window. A slug names the live project or it names
+ * nothing; a trashed project's trash is not addressable and never was
+ * reachable from the client, which can only reach this endpoint for a project
+ * already loaded through the live-only `GET /api/projects/:slug`.
+ */
 export async function getTrash(slug: string): Promise<DeletedChapterRow[] | null> {
   const store = getProjectStore();
-  const project = await store.findProjectBySlugIncludingDeleted(slug);
+  const project = await store.findProjectBySlug(slug);
   if (!project) return null;
 
   return store.listDeletedChaptersByProject(project.id);
