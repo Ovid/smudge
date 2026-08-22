@@ -222,7 +222,7 @@ describe("useFindReplaceController — finalizeReplaceSuccess reloadFailed branc
     // is already on screen as machine state. Setting a dismissible error here
     // too would double-report it, in a dismissible form that contradicts the
     // non-dismissible one.
-    const { deps, applyReloadFailedLock, setActionError } = buildDeps({
+    const { deps, applyReloadFailedLock, setActionError, setActionInfo } = buildDeps({
       runResult: committedUnreloaded(false),
       activeChapterId: "ch-1",
     });
@@ -237,6 +237,10 @@ describe("useFindReplaceController — finalizeReplaceSuccess reloadFailed branc
     expect(setActionError).not.toHaveBeenCalledWith(
       STRINGS.findReplace.replaceSucceededReloadFailed,
     );
+    // S1 (agentic review 2026-08-21): a positive assertion, so the test can
+    // tell "the arm ran and chose correctly" from "the arm did nothing". The
+    // two negatives above are both satisfied by an empty body.
+    expect(setActionInfo).toHaveBeenCalledWith(STRINGS.findReplace.replaceSuccess(2));
   });
 });
 

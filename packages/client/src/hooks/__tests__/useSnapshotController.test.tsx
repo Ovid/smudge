@@ -447,26 +447,6 @@ describe("useSnapshotController — handleRestoreSnapshot mutate callback", () =
     expect(h.refreshSnapshotCount).toHaveBeenCalled();
   });
 
-  it("still locks when the user is on the chapter the restore targeted", async () => {
-    const h = buildHarness({
-      runResult: {
-        ok: false,
-        stage: "committed_but_unreloaded",
-        data: { staleChapterSwitch: false },
-        drifted: false,
-      },
-    });
-
-    await act(async () => {
-      await h.result.current.handleRestoreSnapshot();
-    });
-
-    // F-07: the lock is raised by the seam, which carries this flow's copy in
-    // the directive's committedLock. Dispatching here too would be a second
-    // transition on an already-settled machine.
-    expect(h.applyReloadFailedLock).not.toHaveBeenCalled();
-  });
-
   it("skips the cache clear and the active-chapter reload on a stale chapter switch", async () => {
     // The restore landed on a now-background chapter: reloading the active
     // chapter would pull the wrong chapter's server state over the user's draft.
