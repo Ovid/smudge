@@ -728,9 +728,18 @@ export function EditorPage() {
       // not let an editor->preview->editor round trip remount the Editor
       // with editable=true while the banner persists, since the remount
       // alone restores writability and the next keystroke schedules an
-      // auto-save that overwrites the server-committed mutation. The
-      // banner is already on screen; no second banner needed.
+      // auto-save that overwrites the server-committed mutation.
+      //
+      // Answer the click (S7, agentic review 2026-08-22). This branch used
+      // to return false silently, reasoning that the lock banner was already
+      // on screen. But that banner is ambient — it does not change when the
+      // user acts, so a chapter click that produces nothing reads as a
+      // dropped click or a frozen app, and the writer clicks again instead
+      // of refreshing. Same refusal as the six guarded destructive handlers,
+      // so it gets the same copy they already use. Mirrors the busy branch
+      // directly above, whose comment states the identical rationale.
       if (editorMachine.isLocked()) {
+        setActionInfo(STRINGS.editor.lockedRefusal);
         return false;
       }
       // flushSave returns false when the save pipeline gave up (4xx or

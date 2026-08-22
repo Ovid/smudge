@@ -1665,6 +1665,55 @@ describe("EditorPage find-and-replace confirmation", () => {
     expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
   });
 
+  it("tells the user why a chapter click was refused while the editor is locked", async () => {
+    // Agentic review 2026-08-22 (S7). switchToView refuses two ways and only
+    // one of them speaks. The busy branch directly above the lock branch sets
+    // STRINGS.editor.mutationBusy, and its comment gives the reason — "so the
+    // click is not silently dropped". The lock branch returned false and said
+    // nothing, on the rationale that the lock banner is already on screen.
+    //
+    // That rationale under-weights what a click means. The banner is ambient:
+    // the user has already read it, and it does not change when they act. A
+    // chapter click that produces no response at all is indistinguishable from
+    // a dropped click or a frozen app, so the writer's next move is to click
+    // harder rather than to refresh — the one thing the banner is asking for.
+    // The six destructive entry points (add, delete, trash, rename, status,
+    // reorder) all answer with STRINGS.editor.lockedRefusal already; this is
+    // the same refusal and should say the same thing.
+    //
+    // Sharpened by an accessibility asymmetry: keyboard chapter navigation
+    // announces navigationFailed into the polite live region
+    // (useKeyboardShortcuts), so a screen-reader user is told and a sighted
+    // mouse user is not. That is the inverse of the usual gap, in a project
+    // where WCAG 2.1 AA is a first-class constraint.
+    vi.mocked(api.search.replace).mockRejectedValueOnce(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+
+    await openPanelAndClickReplaceAll();
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+
+    // Lock banner is up.
+    await screen.findByText(STRINGS.findReplace.replaceResponseUnreadable);
+
+    // Click a different chapter in the sidebar — routes through
+    // handleSelectChapterWithFlush -> switchToView, which refuses.
+    await userEvent.click(screen.getByText("Chapter Two"));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // The refusal is now explained rather than silent.
+    expect(screen.getByText(STRINGS.editor.lockedRefusal)).toBeInTheDocument();
+
+    // And it is still a refusal: the switch did not happen, and the
+    // persistent lock banner is untouched. Without these two the test would
+    // pass on a change that let the click through while showing the notice.
+    expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    expect(screen.getByText(STRINGS.findReplace.replaceResponseUnreadable)).toBeInTheDocument();
+  });
+
   it("Ctrl+S refuses to flush while editor is locked after BAD_JSON (I2-lock)", async () => {
     // After a 2xx BAD_JSON replace raises the lock banner, pressing Ctrl+S
     // used to reach editorRef.current.flushSave(), which called

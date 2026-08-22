@@ -223,8 +223,18 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
           // I1: both outcomes SPEAK. The refusal arm used to clear to "", but a
           // polite live region announces content additions — emptying it says
           // nothing, so the pending string above stayed the last thing spoken
-          // for a navigation that was refused. The editor-lock path shows no
-          // banner by design, making this the only correction it can offer.
+          // for a navigation that was refused.
+          //
+          // S7 (agentic review 2026-08-22): this used to add "the editor-lock
+          // path shows no banner by design, making this the only correction it
+          // can offer." That is no longer true — switchToView now answers a
+          // lock refusal with STRINGS.editor.lockedRefusal in a polite
+          // role="status" banner, so on the lock path a screen reader hears
+          // two announcements. Kept deliberately: they carry different facts.
+          // The banner says WHY nothing happened ("the editor is locked"); this
+          // says WHAT was refused, naming the chapter. Neither substitutes for
+          // the other, and both are polite rather than assertive. Revisit only
+          // if the pair proves chatty in real use.
           deps.setNavAnnouncement(
             navigated
               ? STRINGS.sidebar.navigatedToChapter(nextChapter.title)
