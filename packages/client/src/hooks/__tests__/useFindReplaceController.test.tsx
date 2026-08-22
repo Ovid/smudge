@@ -426,11 +426,22 @@ describe("useFindReplaceController — handleReplaceOne", () => {
     });
 
     expect(directives).toHaveLength(1);
-    expect(directives[0]).toMatchObject({
+    // S6 (agentic review 2026-08-21): toEqual, not toMatchObject. This is the
+    // only test that sees handleReplaceOne's directive, and toMatchObject
+    // ignores unlisted properties — so committedLock went unasserted and
+    // targetChapterId could be silently changed from the replaced chapter to
+    // the ACTIVE one (re-introducing OOSI1 in production) with the suite green.
+    expect(directives[0]).toEqual({
       clearCacheFor: ["ch-2"],
       reloadActiveChapter: false,
+      data: { replaced_count: 1, affected_chapter_ids: ["ch-2"] },
+      // Replace-one always targets the chapter it replaced in — never the
+      // active one, which here is a chapter the replace did not touch.
+      committedLock: {
+        message: STRINGS.findReplace.replaceSucceededReloadFailed,
+        targetChapterId: "ch-2",
+      },
     });
-    expect(directives[0]).not.toHaveProperty("reloadChapterId");
   });
 
   it("re-runs the search and clears no cache when the match is already gone on the server", async () => {
@@ -454,7 +465,15 @@ describe("useFindReplaceController — handleReplaceOne", () => {
       await result.current.handleReplaceOne("ch-1", 0);
     });
 
-    expect(directives[0]).toMatchObject({ clearCacheFor: [], reloadActiveChapter: false });
+    expect(directives[0]).toEqual({
+      clearCacheFor: [],
+      reloadActiveChapter: false,
+      data: { replaced_count: 0, affected_chapter_ids: [] },
+      committedLock: {
+        message: STRINGS.findReplace.replaceSucceededReloadFailed,
+        targetChapterId: "ch-1",
+      },
+    });
     expect(setActionError).toHaveBeenCalledWith(STRINGS.findReplace.matchNotFound);
     expect(findReplace.search).toHaveBeenCalledWith("proj-slug");
     // The action banner is the authoritative description of this click; the
