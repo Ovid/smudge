@@ -552,6 +552,52 @@ describe("useEditorMutation — reload superseded (I5)", () => {
     expect(events.map((e) => e.type)).toEqual(["MUTATION_STARTED", "COMMITTED_UNRELOADED"]);
   });
 
+  it("S9: the committed verdict reads the active chapter exactly once", async () => {
+    // S9 (agentic review 2026-08-22): committed() built ONE verdict from TWO
+    // independent reads — it called getActiveChapter() for `currentId`, then
+    // activeChapterIsAffected() called getActiveChapter() again. Correct while
+    // no await separates them, but activeChapterIsAffected's own doc comment
+    // justifies its LIVE read ("every caller sits after an await"), which is
+    // right for settleAfterFailedRelock and wrong inside committed(). A future
+    // await between the two reads yields a torn verdict in the DANGEROUS
+    // direction: drift is judged against the chapter the user is on now, and
+    // affectedness against a chapter they have already left, so an affected
+    // chapter is re-enabled as if it were safe.
+    //
+    // This mock makes the two reads disagree the way an interleaving would.
+    // Read 1 says "c2" (in clearCacheFor — unsafe), read 2 says "c1" (not in
+    // it — looks safe). One read means the unsafe answer wins, which is the
+    // lock, not the dismissible notice.
+    const { editorRef, projectEditor } = buildHandles();
+    projectEditor.reloadActiveChapter = vi.fn(async () => "failed" as const);
+    projectEditor.getActiveChapter = vi
+      .fn<() => Chapter | null>()
+      .mockReturnValueOnce(chapterWithId("c2"))
+      .mockReturnValue(chapterWithId("c1"));
+
+    const events: EditorMutationEvent[] = [];
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor, dispatch: (e) => events.push(e) }),
+    );
+    const res = await result.current.run(async () => ({
+      clearCacheFor: ["c2"],
+      committedLock: { message: LOCK_COPY, targetChapterId: "c1" },
+      reloadActiveChapter: true,
+      reloadChapterId: "c1",
+      data: undefined,
+    }));
+
+    expect(res).toEqual({
+      ok: false,
+      stage: "committed_but_unreloaded",
+      data: undefined,
+      drifted: false,
+    });
+    expect(events.map((e) => e.type)).toEqual(["MUTATION_STARTED", "COMMITTED_UNRELOADED"]);
+    // The point of the test: one read, not two.
+    expect(projectEditor.getActiveChapter).toHaveBeenCalledTimes(1);
+  });
+
   it("plain supersession (active ∉ clearCacheFor) → ok:true and terminal MUTATION_SETTLED_SUPERSEDED (B5)", async () => {
     // When the first reload returns "superseded" and the now-active chapter is
     // NOT in clearCacheFor, no second reload is needed. The mutation committed

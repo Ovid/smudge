@@ -200,11 +200,18 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
        *
        * Read live rather than captured — every caller sits after an await, and
        * the user may have moved again since the last read.
+       *
+       * S9 (agentic review 2026-08-22): the live read is a property of THIS
+       * wrapper, not of the question. `committed()` already holds a chapter id
+       * and must judge drift and affectedness against the SAME one, so it calls
+       * `chapterIsAffected` directly. Two reads there would let a future await
+       * between them tear the verdict in the dangerous direction — drift judged
+       * against where the user is now, affectedness against where they were.
        */
-      const activeChapterIsAffected = (d: MutationDirective<T>): boolean => {
-        const currentId = projectEditorRef.current.getActiveChapter()?.id;
-        return currentId !== undefined && d.clearCacheFor.includes(currentId);
-      };
+      const chapterIsAffected = (d: MutationDirective<T>, id: string | undefined): boolean =>
+        id !== undefined && d.clearCacheFor.includes(id);
+      const activeChapterIsAffected = (d: MutationDirective<T>): boolean =>
+        chapterIsAffected(d, projectEditorRef.current.getActiveChapter()?.id);
       /**
        * Take the committed-but-unreloaded path (F-07).
        *
@@ -235,7 +242,8 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
       const committed = (d: MutationDirective<T>): MutationResult<T> => {
         const currentId = projectEditorRef.current.getActiveChapter()?.id;
         const drifted =
-          isDriftedFrom(d.committedLock.targetChapterId, currentId) && !activeChapterIsAffected(d);
+          isDriftedFrom(d.committedLock.targetChapterId, currentId) &&
+          !chapterIsAffected(d, currentId);
         committedOutcome.value = { drifted, message: d.committedLock.message };
         return { ok: false, stage: "committed_but_unreloaded", data: d.data, drifted };
       };
