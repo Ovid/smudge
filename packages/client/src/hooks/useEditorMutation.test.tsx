@@ -1385,6 +1385,52 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
     warn.calledWith("safeSetEditable: setEditable threw", expect.any(Error));
   });
 
+  it("S5 late-lock throw escalates when the active chapter was affected (OOSS1)", async () => {
+    // Backlog f518cf8d. Same late-mount lock failure as the test above, but the
+    // user is sitting on a chapter this mutation wrote to. The cache-clear has
+    // already run, so that chapter's draft is gone, and markClean() never
+    // completed — the editor is left dirty over content that may predate the
+    // commit. Returning ok:true here leaves it writable and the next auto-save
+    // PATCHes stale text over the server write. The sibling post-mutate catch
+    // has escalated on exactly this condition since I5; this one did not,
+    // while its own comment claimed parity with it.
+    const { projectEditor } = buildHandles();
+    projectEditor.getActiveChapter = vi.fn(() => chapterWithId("c1"));
+    const editorRef: MutableRefObject<EditorHandle | null> = { current: null };
+
+    const throwingLate: EditorHandle = {
+      flushSave: vi.fn(async () => true),
+      editor: null,
+      insertImage: vi.fn(),
+      markClean: vi.fn(() => {
+        throw new Error("late-mount markClean throw");
+      }),
+      setEditable: vi.fn(),
+    };
+    vi.mocked(clearAllCachedContent).mockImplementation(() => {
+      editorRef.current = throwingLate;
+    });
+
+    const warn = expectConsole("warn");
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor, dispatch: () => {} }),
+    );
+    const res = await result.current.run(async () => ({
+      clearCacheFor: ["c1"],
+      committedLock: { message: LOCK_COPY, targetChapterId: "c9" },
+      reloadActiveChapter: false,
+      data: { replaced_count: 2 } as const,
+    }));
+    expect(res.ok).toBe(false);
+    if (!res.ok && res.stage === "committed_but_unreloaded") {
+      // Affected, so not safe drift (I1) — the persistent lock, not a notice.
+      expect(res.drifted).toBe(false);
+    } else {
+      expect.unreachable("expected the committed_but_unreloaded escalation");
+    }
+    warn.calledWith("useEditorMutation: failed to lock late-mounted editor (S5)", expect.any(Error));
+  });
+
   it("second reloadActiveChapter throw surfaces as stage:committed_but_unreloaded (S4)", async () => {
     // Covers the catch path on the "superseded-then-retry" branch:
     // first reload returns superseded, getActiveChapter is in

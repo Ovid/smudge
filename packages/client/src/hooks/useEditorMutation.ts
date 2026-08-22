@@ -214,6 +214,31 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
         committedOutcome.value = { drifted, message: d.committedLock.message };
         return { ok: false, stage: "committed_but_unreloaded", data: d.data, drifted };
       };
+      /**
+       * Settle a re-lock failure. Both re-lock attempts — the post-mutate one
+       * and the S5 late-mount one — reach here, and both settle identically.
+       *
+       * The server has committed and we could not get the editor locked down,
+       * so the question is only how loudly to say so. A directive that asked
+       * for a reload has an unconfirmed chapter on screen by definition:
+       * escalate. A directive that said "no GET needed" (0 replace_count, or
+       * the target is no longer active) normally means the on-screen chapter is
+       * untouched and leaving it writable is correct — UNLESS the user is
+       * sitting on a chapter this mutation DID write to, whose cache the
+       * clear-step already wiped (I5).
+       *
+       * These two catches were separate inlined copies, justified at the time
+       * by "duplicating is simpler than threading the state back through the
+       * main catch". They then diverged: the post-mutate copy grew the I5
+       * escalation and the late-mount copy did not, which is backlog f518cf8d
+       * (OOSS1) — an editor left writable and never markClean()'d over possibly
+       * pre-mutation content. One function, so the next guard lands once.
+       */
+      const settleAfterFailedRelock = (d: MutationDirective<T>): MutationResult<T> => {
+        if (d.reloadActiveChapter) return committed(d);
+        if (activeChapterIsAffected(d)) return committed(d);
+        return { ok: true, data: d.data };
+      };
       // Entry-time editor snapshot — used to detect mid-mutate remounts:
       // if editorAtEntry was null (chapter mid-remount) and a new TipTap
       // instance mounts during the await mutate(), we must re-read the
@@ -399,26 +424,10 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
             // chapters has been cleared, and the new editor's own chapter
             // is untouched by the mutation so leaving it writable is
             // correct.
-            if (!directive.reloadActiveChapter) {
-              // I5 (review 2026-04-21): if the now-active chapter was ALSO
-              // in clearCacheFor (typical when a chapter switch during the
-              // mutation landed on a different affected chapter), returning
-              // ok:true leaves the user with a writable editor whose
-              // displayed content may be pre-mutation — the cache was
-              // cleared, but the on-screen draft is whatever
-              // handleSelectChapter's GET loaded, which could have raced the
-              // server-side commit. The very next keystroke PATCHes stale
-              // content over the server-committed mutation. Escalate to
-              // stage:"committed_but_unreloaded" so callers raise the persistent lock banner
-              // instead. Readers at a chapter OUTSIDE clearCacheFor are
-              // unaffected and the ok:true branch still applies.
-              const currentId = projectEditorRef.current.getActiveChapter()?.id;
-              if (currentId && directive.clearCacheFor.includes(currentId)) {
-                return committed(directive);
-              }
-              return { ok: true, data: directive.data };
-            }
-            return committed(directive);
+            // I5 (review 2026-04-21) + OOSS1: the no-reload / affected-chapter
+            // split lives in settleAfterFailedRelock, shared with the S5
+            // late-mount catch below.
+            return settleAfterFailedRelock(directive);
           }
         }
         if (directive.clearCacheFor.length > 0) {
@@ -442,13 +451,9 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
               lateMounted.markClean();
               projectEditorRef.current.cancelPendingSaves();
             } catch (err) {
-              // Match the main re-lock-fail catch's discipline: server
-              // already committed, so on failure promote to stage:
-              // "committed_but_unreloaded" (or ok:true when directive said no reload),
-              // exactly as the post-mutate re-lock catch does above.
-              // Inlined here because we've already passed the cache-
-              // clear step — duplicating is simpler than threading
-              // the state back through the main catch.
+              // Settles through the same helper as the post-mutate re-lock
+              // catch above, so the two cannot drift apart again — they did
+              // once, and that was OOSS1 (backlog f518cf8d).
               clientWarn("useEditorMutation: failed to lock late-mounted editor (S5)", err);
               try {
                 projectEditorRef.current.cancelPendingSaves();
@@ -458,10 +463,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
                   cancelErr,
                 );
               }
-              if (!directive.reloadActiveChapter) {
-                return { ok: true, data: directive.data };
-              }
-              return committed(directive);
+              return settleAfterFailedRelock(directive);
             }
           }
         }
