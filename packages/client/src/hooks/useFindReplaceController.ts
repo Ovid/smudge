@@ -7,7 +7,7 @@ import { clearCachedContent, clearAllCachedContent } from "./useContentCache";
 import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
 import { STRINGS } from "../strings";
 import { isDriftedFrom } from "./useEditorMutation";
-import type { useEditorMutation } from "./useEditorMutation";
+import type { MutationDirective, useEditorMutation } from "./useEditorMutation";
 import type { useFindReplaceState } from "./useFindReplaceState";
 import type { useSnapshotState } from "./useSnapshotState";
 
@@ -47,6 +47,45 @@ export interface ReplaceConfirmation {
   totalCount: number;
   chapterCount: number;
   perChapterCount: number;
+}
+
+/**
+ * Build the directive both replace flows hand to `useEditorMutation.run()`.
+ *
+ * S10 (agentic review 2026-08-22): `executeReplace` and `handleReplaceOne` each
+ * carried a structurally identical block differing only in `targetChapterId`
+ * and how `clearCacheFor` was derived. The coupling that matters is the shared
+ * `committedLock.message`: both flows describe the same failure — the server
+ * committed and the confirming GET could not vouch for the screen — and must
+ * say the same thing. Nothing enforced that while the copy was spelled out
+ * twice. `settleAfterFailedRelock` was extracted on this same branch on exactly
+ * this evidence.
+ *
+ * The reload predicate unifies too, and that is not a coincidence:
+ * `handleReplaceOne`'s extra `replaced_count > 0` conjunct is already folded
+ * into its `clearCacheFor`, which is `[]` on a zero-count replace. Asking
+ * whether the on-screen chapter is one we are about to clear answers both.
+ */
+function buildReplaceDirective<T>(
+  data: T,
+  clearCacheFor: string[],
+  targetChapterId: string | undefined,
+  current: Chapter | null,
+): MutationDirective<T> {
+  const committedLock = {
+    message: STRINGS.findReplace.replaceSucceededReloadFailed,
+    targetChapterId,
+  };
+  if (current && clearCacheFor.includes(current.id)) {
+    return {
+      clearCacheFor,
+      reloadActiveChapter: true,
+      reloadChapterId: current.id,
+      data,
+      committedLock,
+    };
+  }
+  return { clearCacheFor, reloadActiveChapter: false, data, committedLock };
 }
 
 export function useFindReplaceController(deps: FindReplaceControllerDeps) {
@@ -268,33 +307,19 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
           // Read the CURRENT active chapter (not the closure value) so a
           // chapter switch between click and response still reloads when the
           // now-active chapter was affected.
-          const current = getActiveChapter();
-          const reload = !!current && resp.affected_chapter_ids.includes(current.id);
+          //
           // F-07: the seam owns the committed-path transition, so it needs the
           // banner copy and the chapter the user started from. targetChapterId
-          // is the CLICK-time chapter, not `current` — a project-scope replace
-          // can reload a chapter the user drifted onto mid-flight, and pinning
-          // a non-dismissible banner there would name a chapter they never
-          // started on.
-          const committedLock = {
-            message: STRINGS.findReplace.replaceSucceededReloadFailed,
+          // is the CLICK-time chapter, not the live one — a project-scope
+          // replace can reload a chapter the user drifted onto mid-flight, and
+          // pinning a non-dismissible banner there would name a chapter they
+          // never started on.
+          return buildReplaceDirective(
+            resp,
+            resp.affected_chapter_ids,
             targetChapterId,
-          };
-          if (reload && current) {
-            return {
-              clearCacheFor: resp.affected_chapter_ids,
-              reloadActiveChapter: true,
-              reloadChapterId: current.id,
-              data: resp,
-              committedLock,
-            };
-          }
-          return {
-            clearCacheFor: resp.affected_chapter_ids,
-            reloadActiveChapter: false,
-            data: resp,
-            committedLock,
-          };
+            getActiveChapter(),
+          );
         });
 
         if (result.ok) {
@@ -542,35 +567,15 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
             ),
           );
           const resp = await promise;
-          const current = getActiveChapter();
           // Replace-one with 0 count means the match was gone on the server —
-          // emit no cache clear / no reload; the ok branch will surface the
-          // matchNotFound banner and re-run the search.
-          const reload =
-            resp.replaced_count > 0 && !!current && resp.affected_chapter_ids.includes(current.id);
+          // emit no cache clear, which is also what makes buildReplaceDirective
+          // skip the reload (the ok branch surfaces matchNotFound and re-runs
+          // the search instead).
           const clearCacheFor = resp.replaced_count > 0 ? resp.affected_chapter_ids : [];
           // F-07: replace-one always targets chapterId, so that is the drift
           // reference point regardless of which chapter is active when the
           // response lands.
-          const committedLock = {
-            message: STRINGS.findReplace.replaceSucceededReloadFailed,
-            targetChapterId: chapterId,
-          };
-          if (reload && current) {
-            return {
-              clearCacheFor,
-              reloadActiveChapter: true,
-              reloadChapterId: current.id,
-              data: resp,
-              committedLock,
-            };
-          }
-          return {
-            clearCacheFor,
-            reloadActiveChapter: false,
-            data: resp,
-            committedLock,
-          };
+          return buildReplaceDirective(resp, clearCacheFor, chapterId, getActiveChapter());
         });
 
         if (result.ok) {

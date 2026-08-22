@@ -170,7 +170,7 @@ describe("useContentCache", () => {
       store.set("smudge:draft:ch-c", "{}");
       mockLocalStorage.removeItem.mockImplementation((key: string) => {
         if (key === "smudge:draft:ch-b") throw new Error("SecurityError");
-        store.delete(key);
+        return store.delete(key);
       });
 
       clearAllCachedContent(["ch-a", "ch-b", "ch-c"]);
