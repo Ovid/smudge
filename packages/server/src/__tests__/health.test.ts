@@ -44,6 +44,31 @@ describe("GET /api/health", () => {
   });
 });
 
+// Safety net (F-02, architecture report 2026-08-22): a grep for Host / Origin
+// handling across packages/server/src returns zero production hits today, so
+// every request is accepted whatever those headers say. These pin the request
+// shapes that must KEEP working once a rebinding defence lands: the Vite dev
+// client calling cross-origin under `make dev`, a loopback Host, and the
+// header-less request every existing Supertest case already sends.
+describe("request-origin shapes that must keep working", () => {
+  it("accepts a request carrying the Vite dev client's Origin", async () => {
+    const res = await request(ctx.app)
+      .get("/api/health")
+      .set("Origin", "http://localhost:5173");
+    expect(res.status).toBe(200);
+  });
+
+  it("accepts a request carrying a loopback Host", async () => {
+    const res = await request(ctx.app).get("/api/health").set("Host", "127.0.0.1:3456");
+    expect(res.status).toBe(200);
+  });
+
+  it("accepts a request carrying neither Host override nor Origin", async () => {
+    const res = await request(ctx.app).get("/api/health");
+    expect(res.status).toBe(200);
+  });
+});
+
 describe("Global error handler via malformed JSON", () => {
   it("returns 400 for malformed JSON body", async () => {
     const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});

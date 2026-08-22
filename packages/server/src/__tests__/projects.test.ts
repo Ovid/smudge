@@ -469,6 +469,34 @@ describe("GET /api/projects/:slug/trash", () => {
 
     expect(res.status).toBe(404);
   });
+
+  // Safety net (F-01, architecture report 2026-08-22): nothing pinned that a
+  // trash listing is scoped to the project the slug names. Every existing case
+  // above uses a single project, so a resolution that returned the WRONG
+  // project's chapters would pass all of them. This is the behaviour the slug
+  // -resolution fix must preserve.
+  it("scopes the trash listing to the project the slug names", async () => {
+    const aRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: `Trash Scope A ${Date.now()}`, mode: "fiction" });
+    const bRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: `Trash Scope B ${Date.now()}`, mode: "fiction" });
+
+    const aGet = await request(t.app).get(`/api/projects/${aRes.body.slug}`);
+    const aChapterId = aGet.body.chapters[0].id;
+    await request(t.app).delete(`/api/chapters/${aChapterId}`);
+
+    const aTrash = await request(t.app).get(`/api/projects/${aRes.body.slug}/trash`);
+    expect(aTrash.status).toBe(200);
+    expect(aTrash.body).toHaveLength(1);
+    expect(aTrash.body[0].id).toBe(aChapterId);
+
+    // B trashed nothing; A's trashed chapter must not leak into B's listing.
+    const bTrash = await request(t.app).get(`/api/projects/${bRes.body.slug}/trash`);
+    expect(bTrash.status).toBe(200);
+    expect(bTrash.body).toEqual([]);
+  });
 });
 
 describe("PATCH /api/projects/:slug — target fields", () => {

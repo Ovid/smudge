@@ -403,6 +403,70 @@ describe("applyImageRefDiff()", () => {
     );
     warnSpy.mockRestore();
   });
+
+  // Safety net (F-34, architecture report 2026-08-22): the two branches above
+  // cover the ADD loop's skips. These two cover the REMOVE loop's matching
+  // skips, which had no test at all. They pin the outcome that must hold
+  // whatever the loop logs: a skipped decrement issues no ref-count write and
+  // does not throw. The logger.warn spy is suppression only — these tests
+  // deliberately assert nothing about logging, so the observability fix is
+  // free to add a warning here without touching them.
+  it("skips decrement (no ref-count write) when the removed image is gone", async () => {
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger);
+    const incrementCalls: Array<[string, number]> = [];
+    const missingId = "33333333-3333-3333-3333-333333333333";
+    const projectId = "11111111-1111-1111-1111-111111111111";
+
+    await applyImageRefDiff(
+      {
+        findImagesByIds: async () => [],
+        incrementImageReferenceCount: async (id, delta) => {
+          incrementCalls.push([id, delta]);
+        },
+      },
+      JSON.stringify({
+        type: "doc",
+        content: [{ type: "image", attrs: { src: `/api/images/${missingId}` } }],
+      }),
+      JSON.stringify({ type: "doc", content: [] }),
+      projectId,
+    );
+
+    expect(incrementCalls).toEqual([]);
+    warnSpy.mockRestore();
+  });
+
+  it("skips decrement (no ref-count write) when the removed image belongs to a different project", async () => {
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger);
+    const incrementCalls: Array<[string, number]> = [];
+    const imageId = "44444444-4444-4444-4444-444444444444";
+    const projectA = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    const projectB = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+
+    await applyImageRefDiff(
+      {
+        findImagesByIds: async () => [
+          {
+            id: imageId,
+            project_id: projectB,
+            reference_count: 1,
+          } as unknown as ImageRow,
+        ],
+        incrementImageReferenceCount: async (id, delta) => {
+          incrementCalls.push([id, delta]);
+        },
+      },
+      JSON.stringify({
+        type: "doc",
+        content: [{ type: "image", attrs: { src: `/api/images/${imageId}` } }],
+      }),
+      JSON.stringify({ type: "doc", content: [] }),
+      projectA,
+    );
+
+    expect(incrementCalls).toEqual([]);
+    warnSpy.mockRestore();
+  });
 });
 
 describe("scanImageReferences()", () => {
