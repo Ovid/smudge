@@ -295,7 +295,7 @@
 - **Confidence:** Medium
 - **Found by:** Concurrency & State (`claude-opus-5[1m]`)
 - **First seen:** 2026-08-22 on branch `ovid/architecture` at `7b9e1c68`
-- **Last seen:** 2026-08-22 on branch `ovid/architecture` at `7b9e1c68`
+- **Last seen:** 2026-08-22 on branch `ovid/architecture` at `eb9ffee8`
 - **Severity:** Suggestion
 
 ## `4485eebf` — Replace flow's safe-drift notice is not chapter-attributed, contradicting CLAUDE.md and strings.ts
@@ -307,7 +307,7 @@
 - **Confidence:** Medium
 - **Found by:** Contract & Integration (`claude-opus-5[1m]`)
 - **First seen:** 2026-08-22 on branch `ovid/architecture` at `7b9e1c68`
-- **Last seen:** 2026-08-22 on branch `ovid/architecture` at `7b9e1c68`
+- **Last seen:** 2026-08-22 on branch `ovid/architecture` at `eb9ffee8`
 - **Severity:** Suggestion
 
 ## `8ff156ec` — Nothing at any level tests that a locked editor can become writable again
@@ -322,3 +322,4 @@
 - **First seen:** 2026-08-22 on branch `ovid/architecture` at `7b9e1c68`
 - **Last seen:** 2026-08-22 on branch `ovid/architecture` at `7b9e1c68`
 - **Severity:** Important
+
