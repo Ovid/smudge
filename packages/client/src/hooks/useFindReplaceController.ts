@@ -140,15 +140,15 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
         ? seamOutcome.drifted
         : isDriftedFrom(targetChapterId, currentId);
       if (reloadFailed && !stale) {
-        // I6: applyReloadFailedLock sets banner + safeSetEditable as an
-        // invariant pair. In the stage:"committed_but_unreloaded" path the hook kept the
-        // editor setEditable(false) (reloadFailed branch skips the
-        // finally's re-enable). In the stage:"mutate" 2xx BAD_JSON path
-        // the hook's finally already re-enabled it. The helper call
-        // converges both call sites on the same read-only invariant —
-        // the banner and the editor state never disagree (C1). The
-        // embedded safeSetEditable (I2) prevents a TipTap mid-remount
-        // throw from skipping the awaited search refresh below.
+        // I6: applyReloadFailedLock sets banner + editable:false as one
+        // machine transition, so the two cannot disagree (C1).
+        //
+        // Only the 2xx-BAD_JSON path reaches the dispatch now. There the mutate
+        // callback threw, so run()'s finally already settled with
+        // MUTATION_SETTLED_OK and the editor is writable over content the
+        // server may have replaced — this is what re-locks it. On the committed
+        // path `seamOutcome` is present and the seam raised the identical lock
+        // itself, with this flow's copy, before returning (F-07).
         if (!seamOutcome) {
           applyReloadFailedLock(lockMessage ?? STRINGS.findReplace.replaceSucceededReloadFailed);
         }

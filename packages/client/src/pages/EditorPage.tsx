@@ -70,9 +70,17 @@ export function EditorPage() {
   // I6 (review 2026-04-24): invariant-pair helper. CLAUDE.md save-
   // pipeline invariant #2 requires setEditable(false) around any
   // mutation that can fail mid-typing; the persistent lock banner is the
-  // only user-visible signal of that read-only state. Three call sites
-  // pair them today (restore stage:"committed_but_unreloaded", restore stage:"mutate"
-  // possiblyCommitted, and finalizeReplaceSuccess non-stale reloadFailed).
+  // only user-visible signal of that read-only state.
+  //
+  // Two call sites pair them today, and both are 2xx-BAD_JSON /
+  // possiblyCommitted paths: useSnapshotController's restore stage:"mutate"
+  // arm, and finalizeReplaceSuccess's non-stale reloadFailed arm behind its
+  // `if (!seamOutcome)` guard. The committed_but_unreloaded path used to be a
+  // third; F-07 moved that lock into useEditorMutation, which raises it from
+  // the directive's committedLock before returning. (Count re-grepped
+  // 2026-08-21 per CLAUDE.md §Documentation Discipline rule 2 — do not carry it
+  // forward.)
+  //
   // Callers keep their surrounding refreshes / cache-clear / stale-chapter
   // branching inline because those diverge between the restore and replace
   // flows in non-mechanical ways.
@@ -237,11 +245,15 @@ export function EditorPage() {
       reloadActiveChapter,
       getActiveChapter,
     },
-    // The hook emits MUTATION_STARTED at entry and one terminal event on
-    // settle; on the committed-but-unreloaded path it dispatches nothing and
-    // the consumer raises COMMITTED_UNRELOADED with its own banner copy. The
-    // machine's MUTATION_SETTLED_OK transition preserves the old "do not
-    // re-enable under a persistent lock" guard (I1) by construction.
+    // The hook emits MUTATION_STARTED at entry and exactly one terminal event
+    // on settle, on EVERY path — including committed-but-unreloaded, where it
+    // raises COMMITTED_UNRELOADED with the copy the caller put in the
+    // directive's committedLock, or MUTATION_SETTLED_SUPERSEDED when the user
+    // has drifted onto a chapter the mutation left alone (F-07). A consumer's
+    // residual duty on that path is copy and refreshes; a second dispatch would
+    // land on an already-settled machine. The machine's MUTATION_SETTLED_OK
+    // transition preserves the old "do not re-enable under a persistent lock"
+    // guard (I1) by construction.
     dispatch: editorMachine.dispatch,
   });
 
