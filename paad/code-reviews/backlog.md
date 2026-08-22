@@ -299,3 +299,17 @@
 - **Last seen:** 2026-08-22 on branch `ovid/architecture` at `7b9e1c68`
 - **Severity:** Important
 
+
+## `f518cf8d` — S5 late-mount re-lock catch skipped the `clearCacheFor` escalation its sibling applies
+- **File (at first sighting):** `packages/client/src/hooks/useEditorMutation.ts:434`
+- **Symbol:** `run` (the S5 late-mount re-lock catch)
+- **Bug class:** Error Handling
+- **Description:** The S5 late-mount re-lock catch returned `{ok:true}` whenever `!directive.reloadActiveChapter`, omitting the `clearCacheFor.includes(currentId)` escalation that the sibling post-mutate catch applies — while its own comment claimed parity with it ("exactly as the post-mutate re-lock catch does above"). The two catches began as separate inlined copies and then diverged: the post-mutate copy grew the I5 escalation and the late-mount copy did not. The cache-clear has already run by the time either catch fires, so the omission left an un-re-lockable editor writable over possibly pre-mutation content with `markClean()` never having run. Reachability is narrow — it needs `markClean()` or `cancelPendingSaves()` to throw during a late TipTap mount.
+- **Suggested fix:** Give both catches one settle path so the next guard lands once.
+- **FIXED 2026-08-22** on branch `ovid/architecture` by commit `3ac13bca`, which extracted `settleAfterFailedRelock` — one function reached by both catches, escalating through `committed()` when the directive asked for a reload or when the active chapter is in `clearCacheFor`. Pinned by "S5 late-lock throw escalates when the active chapter was affected (OOSS1)" in `useEditorMutation.test.tsx`.
+- **Filed late (S2, code review 2026-08-22):** this entry did not exist when `3ac13bca` landed, yet that commit's `[backlog f518cf8d]` tag is the only thing licensing it under the fix-session PR-scope rules, and production code cites the id twice as the reason `settleAfterFailedRelock` exists. An id resolving to nothing makes both unverifiable. Recorded here retroactively, with the fix, rather than by rewriting the citations.
+- **Confidence:** Medium
+- **Found by:** Logic & Correctness, Error Handling & Edge Cases (`claude-opus-5[1m]`)
+- **First seen:** 2026-08-21 on branch `ovid/architecture` at `94c958c4`
+- **Last seen:** 2026-08-21 on branch `ovid/architecture` at `94c958c4`
+- **Severity:** Suggestion

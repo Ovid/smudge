@@ -315,15 +315,39 @@ and it is the specific failure recorded against `d4002d6d` below.
 **The honest cost.** Counted rather than estimated, because a first draft of
 this paragraph asserted an ordinal nobody had checked — the failure this file's
 own governing steering doc (`CLAUDE.md` §Documentation Discipline rule 2) exists
-to catch, committed inside a paragraph about honesty. **On this branch, four
-commits now sit outside these rules:** `d4002d6d` (rule 5 — a correctly-placed
-safety-net commit carrying an `[F-07]` tag while its body invokes the untagged
-allowance, the same shape as `af2a7161` below), `3ac13bca` (rule 6 — a 200-line
-code-review report filed inside a commit whose subject names only a backlog
-fix), and the two recorded above. The first two were found by the 2026-08-22
-review as findings S9 and S11 and are **not yet recorded in this file**; a
-future session closing them should extend this section rather than start a new
-one.
+to catch, committed inside a paragraph about honesty. It then got the count
+wrong anyway: it said four and the real figure was six, because two untagged
+commits had landed that nobody enumerated, and a third landed after the
+paragraph was written. **On this branch, ten commits now sit outside these
+rules:**
+
+- `d4002d6d` — rule 5. A correctly-placed safety-net commit carrying an
+  `[F-07]` tag while its body invokes the untagged allowance, the same shape as
+  `af2a7161` below.
+- `3ac13bca` — rule 6. A 200-line code-review report filed inside a commit
+  whose subject names only a backlog fix.
+- `2920fa68` and `3d7aaa42` — the two granted exceptions recorded above.
+- `7b9e1c68` — *"Add MathJax to the TODO list in docs/TODO.md"*. Untagged, no
+  body, touches no code, answers to no finding and no roadmap phase. The
+  2026-08-22 review filed it as `[OOSA1]` with the remedy "if kept, retag
+  `[chore]`". **Kept** — it is a one-line product idea in the maintainer's own
+  TODO list and reverting it would be absurd — and recorded here instead of
+  retagged, because it is now eleven commits deep and the rules file's own
+  retag test permits amending only the tip.
+- `eb9ffee8` — *"formatted"*. Untagged Prettier reflow; the correct form is
+  `c10fd5e2`'s `style(client): [lint] … plus prettier reflow` on this same
+  branch. The 2026-08-22 review's `[S4]` proposed amending it, which was
+  available then (it was the tip) and is not now.
+- `7250904e` — *"Add note to CLAUDE instructing Claude to speak plainly."*
+  Untagged, unrelated to any finding, and it landed **after** `8d15fdda` wrote
+  the count this paragraph is correcting.
+- `63307187`, `9232702e`, `b0393d22` — the three out-of-scope fixes recorded
+  in the next section.
+
+The distribution is the point. Six of the ten are documentation, formatting or
+process commits that nobody thought of as commits at all while making them,
+which is exactly how an untagged commit gets past a rule its author agrees
+with.
 
 The five instances recorded elsewhere in this file — `af2a7161`, `97c5160e`,
 `d7595686`, `09aaba1e`, `6eae2ee8` — are on **earlier** branches, already merged
@@ -338,6 +362,45 @@ question about the rules, not only about the commits. The load-bearing bound
 remains reviewer capacity, per the argument below — and by that measure this
 branch is now large enough that the next finding should go to a fresh branch
 rather than be argued into this one.
+
+## Recorded exception: three out-of-scope fixes from the 2026-08-22 (14:21) code-review response
+
+The 2026-08-22 14:21 agentic review carried three out-of-scope suggestions
+(`OOSS1`, `OOSS2`, `OOSS3`). The trade-offs of each were put to the maintainer
+in prose — what fixing bought, what it cost, and the strongest argument for
+leaving all three alone — and the answer was **fix all three**. Recorded here as
+a bounded one-off, on the same terms as the two granted above: no rule is being
+rewritten.
+
+**`63307187` — `fix(client): [OOSS3 6b01b73b] one try per key in
+clearAllCachedContent`.** Strains **rule 1's round-4 backlog carve-out**, which
+permits a backlog fix only in a file the session already has open.
+`useContentCache.ts` is not touched anywhere else on this branch.
+
+**`9232702e` — `fix(client): [OOSS1 f858e66a] double supersession onto an
+affected chapter escalates`.** Inside the carve-out: `useEditorMutation.ts` is
+the branch's central file, and the fix sits in the same closure as the in-scope
+`[S9]` change immediately before it.
+
+**`b0393d22` — `fix(client): [OOSS2 4485eebf, S6] name the chapter the replace
+actually wrote to`.** Inside the carve-out for its file, but it carries **two
+tags** — an out-of-scope fix and the in-scope `[S6]` documentation finding —
+against rule 1's one-finding-per-commit shape. They are one change: `[S6]` is
+the CLAUDE.md sentence that `[OOSS2]` makes true, and splitting them would land
+a commit whose only content is a doc edit describing code that does not exist
+yet.
+
+Why they were granted: all three are latent (none is reachable through the
+current UI, each needing a mid-flight chapter switch that `switchToView`'s
+`isActionBusy()` gate refuses), and all three sit on the save pipeline's
+data-loss paths — the draft cache that CLAUDE.md save-pipeline invariant 3 calls
+the last line of defence, and the two re-enable decisions that decide whether an
+auto-save can revert a server-committed write. Deferring a known data-loss
+guard to a branch that may not be written is the more expensive choice.
+
+**What this does not license.** Same bound as the section above: this is not
+evidence that out-of-scope findings may be swept up by default. The ask was made
+explicitly, per tier, with the case against stated, and answered explicitly.
 
 ## Honest argument against
 
