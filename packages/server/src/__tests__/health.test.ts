@@ -69,6 +69,34 @@ describe("request-origin shapes that must keep working", () => {
   });
 });
 
+// F-02 (architecture report 2026-08-22): DNS rebinding is the path that reaches
+// a writer who never exposed anything — the attacker's page is same-origin with
+// the target from the browser's point of view, so a GET carries NO Origin
+// header at all and only `Host` names the attacker's domain. Validating Host is
+// therefore the load-bearing defence; validating Origin would inspect a header
+// the attack does not send.
+describe("Host validation (F-02)", () => {
+  it.each([
+    ["a rebinding domain", "evil.com"],
+    ["a rebinding domain with the server port", "evil.com:3456"],
+    ["a LAN address", "192.168.1.50:3456"],
+  ])("rejects %s with 400 INVALID_HOST", async (_label, host) => {
+    const res = await request(ctx.app).get("/api/health").set("Host", host);
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("INVALID_HOST");
+  });
+
+  it.each([
+    ["localhost", "localhost:3456"],
+    ["IPv4 loopback", "127.0.0.1:3456"],
+    ["IPv6 loopback", "[::1]:3456"],
+    ["a bare loopback name with no port", "localhost"],
+  ])("accepts %s", async (_label, host) => {
+    const res = await request(ctx.app).get("/api/health").set("Host", host);
+    expect(res.status).toBe(200);
+  });
+});
+
 describe("Global error handler via malformed JSON", () => {
   it("returns 400 for malformed JSON body", async () => {
     const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});

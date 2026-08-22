@@ -11,8 +11,14 @@ import { imagesRouter, imagesDirectRouter } from "./images/images.routes";
 import { snapshotChapterRouter, snapshotDirectRouter } from "./snapshots/snapshots.routes";
 import { projectOuttakesRouter, outtakeDirectRouter } from "./outtakes/outtakes.routes";
 import { searchRouter } from "./search/search.routes";
-import { AppError, ERROR_STATUS_ALLOWLIST, NotFoundError } from "./errors/appError";
+import {
+  AppError,
+  BadRequestError,
+  ERROR_STATUS_ALLOWLIST,
+  NotFoundError,
+} from "./errors/appError";
 import { requestContext } from "./requestContext";
+import { isLoopbackHost } from "./config/loopback";
 import { MAX_CHAPTER_CONTENT_BYTES } from "./constants";
 
 export function createApp(): express.Express {
@@ -36,6 +42,28 @@ export function createApp(): express.Express {
   // F-10: assign a correlation id before any body parsing, so even a
   // malformed-JSON 400 is traceable in the logs.
   app.use(requestContext);
+
+  // F-02: DNS-rebinding defence. The attacker's page is same-origin with the
+  // target from the browser's point of view, so a GET carries no Origin header
+  // at all — only `Host` names the attacker's domain, because Host always comes
+  // from the URL. Validating Host is therefore the load-bearing check and an
+  // Origin allowlist would inspect a header the attack does not send.
+  //
+  // Runs after requestContext so a rejection is traceable, and before body
+  // parsing so a rebound request is refused without being read. 400 rather than
+  // 403 because the error-status allowlist is 400/404/409/413/500 — a new
+  // condition takes an existing status plus a discriminating code
+  // (CLAUDE.md §API Design).
+  //
+  // `make dev` and `make e2e` are unaffected: Vite proxies /api with
+  // `changeOrigin: true`, so the server sees the proxy target's host.
+  app.use((req, _res, next) => {
+    if (!isLoopbackHost(req.headers.host)) {
+      throw new BadRequestError("Request Host is not recognized.", "INVALID_HOST");
+    }
+    next();
+  });
+
   app.use(express.json({ limit: MAX_CHAPTER_CONTENT_BYTES }));
 
   app.use("/api/projects", projectsRouter());

@@ -5,6 +5,7 @@ import { createApp } from "./app";
 import { purgeOldTrash } from "./db/purge";
 import { reapOrphanImages } from "./images/images.reaper";
 import { logger } from "./logger";
+import { getBindHost } from "./config/loopback";
 import { DEFAULT_SERVER_PORT, parsePort } from "@smudge/shared";
 import type { Server } from "node:http";
 
@@ -50,8 +51,12 @@ async function main() {
 
   const app = createApp();
 
-  const server = app.listen(PORT, () => {
-    logger.info({ port: PORT }, "Smudge server running");
+  // F-02: bind loopback explicitly. `app.listen(PORT, cb)` bound the
+  // unspecified address, so any host that could reach the port had full
+  // read/write/delete on the manuscript with no authentication.
+  const host = getBindHost();
+  const server = app.listen(PORT, host, () => {
+    logger.info({ port: PORT, host }, "Smudge server running");
   });
 
   server.on("error", (err: NodeJS.ErrnoException) => {

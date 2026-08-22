@@ -63,6 +63,14 @@ The Express app sets no security-related HTTP headers (no `helmet()`, CSP, X-Fra
 
 **What's needed:** Install and configure `helmet` middleware for standard security headers. Add CORS middleware restricting `Origin` to expected values (e.g., `localhost:5173` in dev, the served origin in production). Consider `Host` header validation to defend against DNS rebinding.
 
+**Resolved 2026-08-22 (architecture report F-02).** All three parts are now closed, by three separate changes over time:
+
+- **Security headers** — `helmet()` has been mounted in `createApp()` since an earlier phase, with an explicit CSP. Pinned by `health.test.ts`.
+- **DNS rebinding** — closed by `Host` validation rather than by CORS, and the substitution is deliberate. In a rebinding attack the malicious page is same-origin with the target from the browser's point of view, so a `GET` carries **no `Origin` header at all**; only `Host` names the attacker's domain. An `Origin` allowlist would inspect a header the attack does not send. See `packages/server/src/config/loopback.ts` and the middleware in `app.ts`.
+- **Network exposure** — the server binds `127.0.0.1` rather than every interface.
+
+No `Origin`/CORS allowlist was added. It would need to cover the dev, production and e2e origins in both `localhost` and `127.0.0.1` spellings — four-plus entries, each a way to break `make dev` on a port change — to defend against an attack `Host` validation already blocks.
+
 ### Post-update corrupt check can misrepresent outcome to client
 
 **Severity:** Suggestion
