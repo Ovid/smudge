@@ -167,7 +167,9 @@ test.describe("Editor save pipeline E2e Tests", () => {
     await expectEditorReady(page);
     const editorAfterRefresh = page.getByRole("textbox");
     await expect(editorAfterRefresh).toHaveAttribute("contenteditable", "true");
-    await expect(page.getByRole("alert").filter({ hasText: /no longer available/i })).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: /no longer available/i })).toHaveCount(
+      0,
+    );
 
     // The assertion that makes this a recovery test rather than a rendering
     // test: typing reaches the server again.
@@ -200,7 +202,9 @@ test.describe("Editor save pipeline E2e Tests", () => {
 
     await gotoProjectEditor(page, project.slug);
     await expect(page.getByRole("textbox")).toHaveAttribute("contenteditable", "true");
-    await expect(page.getByRole("alert").filter({ hasText: /no longer available/i })).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: /no longer available/i })).toHaveCount(
+      0,
+    );
   });
 
   test("shows error on save failure and recovers when network returns", async ({ page }) => {
