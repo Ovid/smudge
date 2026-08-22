@@ -286,18 +286,6 @@
 - **Last seen:** 2026-08-20 on branch `ovid/architecture` at `67c00204`
 - **Severity:** Suggestion
 
-## `f858e66a` — Double supersession re-enables the editor without checking `activeChapterIsAffected`
-- **File (at first sighting):** `packages/client/src/hooks/useEditorMutation.ts:592-598`
-- **Symbol:** `run`
-- **Bug class:** Concurrency
-- **Description:** When the second `reloadActiveChapter` also returns `"superseded"`, control falls through with `reloadSuperseded === true` and no `committedOutcome`, so `run()`'s `finally` dispatches `MUTATION_SETTLED_SUPERSEDED` → `{editable:true, lock:null}` without consulting the directive's `clearCacheFor` list. The sibling committed path applies `!activeChapterIsAffected` for exactly this reason. Interleaving: project replace affects A,B,C; user on A at click; cache wiped for A,B,C; active becomes B mid-flight; first reload superseded; second reload fires for B; active changes again during that GET; fall through; editor writable on B whose cache was wiped and whose on-screen text may predate the commit. Pre-existing: `main` carries the byte-identical arm. Needs two active-chapter changes in one mutation, which `isActionBusy()` gating makes very hard to reach through the UI. Verified by reading only; not reproduced.
-- **Suggested fix:** Guard the `reloadSuperseded` arm the same way the committed path is guarded — if the now-active chapter is in `directive.clearCacheFor`, route through `committed(directive)` instead of falling through to `MUTATION_SETTLED_SUPERSEDED`. The predicate (`activeChapterIsAffected`) already exists in the same closure, so this is a one-line change. Note the in-code comment at `:592-597` accepts the residual explicitly; that acceptance predates the predicate and should be updated or removed with the fix.
-- **Confidence:** Medium
-- **Found by:** Concurrency & State (`claude-opus-5[1m]`)
-- **First seen:** 2026-08-22 on branch `ovid/architecture` at `7b9e1c68`
-- **Last seen:** 2026-08-22 on branch `ovid/architecture` at `eb9ffee8`
-- **Severity:** Suggestion
-
 ## `4485eebf` — Replace flow's safe-drift notice is not chapter-attributed, contradicting CLAUDE.md and strings.ts
 - **File (at first sighting):** `packages/client/src/hooks/useFindReplaceController.ts:170`
 - **Symbol:** `finalizeReplaceSuccess`

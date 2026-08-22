@@ -597,12 +597,25 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
                 // semantics over the superseded "unrelated chapter" semantics.
                 reloadSucceeded = true;
               }
-              // "superseded" second time: another chapter switch happened,
-              // and the newly-active chapter wasn't necessarily affected.
-              // Fall through — reloadSuperseded remains true. If the user
-              // landed on yet another affected chapter, they'll hit the
-              // same race on the NEXT keystroke, which is as rare as this
-              // branch and is the same cost as the original I3 window.
+              // "superseded" second time: another chapter switch happened.
+              //
+              // OOSS1 / backlog f858e66a (agentic review 2026-08-22): this used
+              // to fall through unconditionally, so run() returned ok:true and
+              // the finally dispatched MUTATION_SETTLED_SUPERSEDED — the one
+              // re-enable site of three that never asked whether the chapter
+              // the user landed on is one this mutation wrote to. If it is, its
+              // draft cache is gone and its on-screen text predates the commit,
+              // so the next keystroke PATCHes pre-mutation content over the
+              // server write. The comment that used to sit here accepted that
+              // residual; it was written before activeChapterIsAffected existed.
+              //
+              // Landing somewhere UNaffected still falls through: nothing on
+              // screen is stale, and a lock banner there would name a chapter
+              // the mutation was not about.
+              else if (activeChapterIsAffected(directive)) {
+                reloadSuperseded = false;
+                return committed(directive);
+              }
             }
           }
         }

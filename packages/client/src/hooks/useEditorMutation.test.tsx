@@ -630,6 +630,89 @@ describe("useEditorMutation — reload superseded (I5)", () => {
     expect(projectEditor.reloadActiveChapter).toHaveBeenCalledTimes(1);
   });
 
+  it("double supersession onto an affected chapter escalates rather than re-enabling (OOSS1)", async () => {
+    // OOSS1 / backlog f858e66a. When the first reload returns "superseded" and
+    // the now-active chapter IS in clearCacheFor, a second reload fires against
+    // it. If that second reload ALSO returns "superseded", control matched
+    // neither the "failed" nor the "reloaded" branch and fell out of the chain
+    // with reloadSuperseded still true — so run() returned ok:true and the
+    // finally dispatched MUTATION_SETTLED_SUPERSEDED, re-enabling the editor.
+    //
+    // That was the one re-enable site of three that never asked this branch's
+    // own question: is the chapter the user is on now one this mutation wrote
+    // to? If it is, its draft cache has been wiped and its on-screen text
+    // predates the commit, so the next keystroke's auto-save PATCHes
+    // pre-mutation content over the server-committed replace.
+    //
+    // Third supersession = a third chapter switch. getActiveChapter still
+    // reports c2 (affected), which is the state that must escalate.
+    const { editorRef, projectEditor } = buildHandles();
+    const reloadMock = vi.fn(async () => "superseded" as const);
+    projectEditor.reloadActiveChapter = reloadMock;
+    projectEditor.getActiveChapter = vi.fn(() => chapterWithId("c2"));
+
+    const events: EditorMutationEvent[] = [];
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor, dispatch: (e) => events.push(e) }),
+    );
+    const res = await result.current.run<{ n: number }>(async () => ({
+      clearCacheFor: ["c1", "c2"],
+      committedLock: { message: LOCK_COPY, targetChapterId: "c1" },
+      reloadActiveChapter: true,
+      reloadChapterId: "c1",
+      data: { n: 7 },
+    }));
+
+    expect(reloadMock).toHaveBeenCalledTimes(2);
+    expect(res).toEqual({
+      ok: false,
+      stage: "committed_but_unreloaded",
+      data: { n: 7 },
+      drifted: false,
+    });
+    // Drift onto an AFFECTED chapter is not safe drift, so the persistent lock
+    // banner, not the re-enable.
+    expect(events.map((e) => e.type)).toEqual(["MUTATION_STARTED", "COMMITTED_UNRELOADED"]);
+  });
+
+  it("double supersession onto an UNaffected chapter still re-enables (OOSS1 boundary)", async () => {
+    // The other side of the OOSS1 guard. A third chapter switch that lands
+    // somewhere this mutation never wrote to is the benign case the original
+    // fall-through was written for: nothing on screen is stale, so re-enabling
+    // is correct and a lock banner there would name a chapter the mutation was
+    // not about. Pinned so the guard cannot widen into an unconditional lock.
+    const { editorRef, projectEditor } = buildHandles();
+    const reloadMock = vi
+      .fn<
+        (onError?: (message: string) => void, expectedChapterId?: string) => Promise<ReloadOutcome>
+      >()
+      .mockResolvedValueOnce("superseded")
+      .mockResolvedValueOnce("superseded");
+    projectEditor.reloadActiveChapter = reloadMock;
+    // Affected on the FIRST read (so the second reload fires at all), then the
+    // user moves to an unrelated chapter before the verdict is taken.
+    projectEditor.getActiveChapter = vi
+      .fn<() => Chapter | null>()
+      .mockReturnValueOnce(chapterWithId("c2"))
+      .mockReturnValue(chapterWithId("c9"));
+
+    const events: EditorMutationEvent[] = [];
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor, dispatch: (e) => events.push(e) }),
+    );
+    const res = await result.current.run<{ n: number }>(async () => ({
+      clearCacheFor: ["c1", "c2"],
+      committedLock: { message: LOCK_COPY, targetChapterId: "c1" },
+      reloadActiveChapter: true,
+      reloadChapterId: "c1",
+      data: { n: 8 },
+    }));
+
+    expect(reloadMock).toHaveBeenCalledTimes(2);
+    expect(res).toEqual({ ok: true, data: { n: 8 } });
+    expect(events.map((e) => e.type)).toEqual(["MUTATION_STARTED", "MUTATION_SETTLED_SUPERSEDED"]);
+  });
+
   it("does NOT re-reload when the now-active chapter was not in clearCacheFor (I3)", async () => {
     // If the user switched to an unrelated chapter (not in the mutation's
     // clearCacheFor), its content wasn't touched by the server-side
