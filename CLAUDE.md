@@ -1,10 +1,12 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 When you have finished reading this file, announce "CLAUDE.md loaded"
 
-Always address me as "Ovid" in your responses. This lets me know that you have read this file, even if I don't see the previous announcement.
+Always address me as "Ovid" in your responses. This lets me know that you have
+read this file, even if I don't see the previous announcement.
+
+When you have information for me, please state the information plainly because
+I often have trouble understanding what you have said.
 
 ## Asking Me Questions (Mandatory)
 
