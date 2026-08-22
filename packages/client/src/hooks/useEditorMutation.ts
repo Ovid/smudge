@@ -162,6 +162,22 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
       // premise was always about a different chapter.
       let reloadSuperseded = false;
       /**
+       * Is the chapter the user is looking at RIGHT NOW one this mutation
+       * changed? (I1, agentic review 2026-08-21.)
+       *
+       * `clearCacheFor` is the mutation's own list of chapters it wrote to, so
+       * membership means two things at once: that chapter's draft cache has
+       * been wiped, and its on-screen content predates the server commit unless
+       * a confirming GET refreshed it. Both make it unsafe to type into.
+       *
+       * Read live rather than captured — every caller sits after an await, and
+       * the user may have moved again since the last read.
+       */
+      const activeChapterIsAffected = (d: MutationDirective<T>): boolean => {
+        const currentId = projectEditorRef.current.getActiveChapter()?.id;
+        return currentId !== undefined && d.clearCacheFor.includes(currentId);
+      };
+      /**
        * Take the committed-but-unreloaded path (F-07).
        *
        * The server mutation landed but the client cannot vouch for what is on
@@ -177,13 +193,24 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
        * A mutation with no target chapter, or a user with no chapter open at
        * all, reads as "not drifted": there is no unrelated editor to strand,
        * and the banner is the honest signal that a refresh is needed.
+       *
+       * I1: drifting off the target is necessary but NOT sufficient. Drift only
+       * makes the editor safe when the chapter drifted ONTO is one this
+       * mutation left alone — hence `!activeChapterIsAffected`. A project-scope
+       * replace hitting A and B, with the user switching A→B mid-flight and B's
+       * confirming GET failing, is drift onto an affected chapter: B's cache is
+       * gone, B's post-replace text was never fetched, and re-enabling there
+       * lets the next auto-save PATCH pre-replace content over the commit. That
+       * omission also silently neutralized both escalation sites below, whose
+       * whole entry condition is membership in `clearCacheFor`.
        */
       const committed = (d: MutationDirective<T>): MutationResult<T> => {
         const currentId = projectEditorRef.current.getActiveChapter()?.id;
         const drifted =
           d.committedLock.targetChapterId !== undefined &&
           currentId !== undefined &&
-          currentId !== d.committedLock.targetChapterId;
+          currentId !== d.committedLock.targetChapterId &&
+          !activeChapterIsAffected(d);
         committedOutcome.value = { drifted, message: d.committedLock.message };
         return { ok: false, stage: "committed_but_unreloaded", data: d.data, drifted };
       };

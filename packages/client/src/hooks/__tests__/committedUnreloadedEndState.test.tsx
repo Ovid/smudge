@@ -186,7 +186,7 @@ describe("F-07 safety net — committed_but_unreloaded end state (find and repla
     vi.clearAllMocks();
   });
 
-  it("leaves the editor typeable and unbannered when the user drifted off the replace target (OOSI1)", async () => {
+  it("locks when the user drifted onto a chapter the replace ALSO affected", async () => {
     vi.mocked(api.search.replace).mockResolvedValue({
       replaced_count: 2,
       affected_chapter_ids: [TARGET, DRIFTED],
@@ -197,11 +197,18 @@ describe("F-07 safety net — committed_but_unreloaded end state (find and repla
       await result.current.findReplace.executeReplace(FROZEN_REPLACE);
     });
 
-    // The user is on a chapter the replace targeted but did not START on. A
-    // persistent, non-dismissible banner here pins to the wrong chapter, and
-    // leaving editable:false strands an editor with nothing on screen to
-    // explain it — that combination IS the OOSI1 defect.
-    expect(result.current.state).toEqual<EditorMutationState>({ editable: true, lock: null });
+    // I1 (agentic review 2026-08-21): the user is on a chapter the replace did
+    // not START on, but DID change. Drift alone does not make the editor safe
+    // to type in — DRIFTED's draft cache was wiped, its confirming GET failed,
+    // and its post-replace content was therefore never fetched. Re-enabling
+    // here hands back a writable editor showing pre-replace text, and the next
+    // auto-save PATCHes it over the server-committed replace with no cached
+    // draft left to recover from. Only drift onto an UNaffected chapter is
+    // safe; that case is pinned by the snapshot sibling below.
+    expect(result.current.state).toEqual<EditorMutationState>({
+      editable: false,
+      lock: { message: STRINGS.findReplace.replaceSucceededReloadFailed },
+    });
   });
 
   it("leaves the editor read-only under the replace banner when the target is still active", async () => {
