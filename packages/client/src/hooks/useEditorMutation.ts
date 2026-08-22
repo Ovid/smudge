@@ -66,9 +66,7 @@ export function isDriftedFrom(
   targetChapterId: string | undefined,
   currentId: string | undefined,
 ): boolean {
-  return (
-    targetChapterId !== undefined && currentId !== undefined && currentId !== targetChapterId
-  );
+  return targetChapterId !== undefined && currentId !== undefined && currentId !== targetChapterId;
 }
 
 export type MutationDirective<T = void> = {

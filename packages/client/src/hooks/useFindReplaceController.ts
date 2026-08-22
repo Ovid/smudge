@@ -136,9 +136,7 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       // seamOutcome.drifted; the fallback arm serves the 2xx-BAD_JSON path,
       // where there is no affected-chapter list to consult.
       const currentId = getActiveChapter()?.id;
-      const stale = seamOutcome
-        ? seamOutcome.drifted
-        : isDriftedFrom(targetChapterId, currentId);
+      const stale = seamOutcome ? seamOutcome.drifted : isDriftedFrom(targetChapterId, currentId);
       if (reloadFailed && !stale) {
         // I6: applyReloadFailedLock sets banner + editable:false as one
         // machine transition, so the two cannot disagree (C1).

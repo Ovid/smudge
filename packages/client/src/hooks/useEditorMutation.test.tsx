@@ -1428,7 +1428,10 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
     } else {
       expect.unreachable("expected the committed_but_unreloaded escalation");
     }
-    warn.calledWith("useEditorMutation: failed to lock late-mounted editor (S5)", expect.any(Error));
+    warn.calledWith(
+      "useEditorMutation: failed to lock late-mounted editor (S5)",
+      expect.any(Error),
+    );
   });
 
   it("second reloadActiveChapter throw surfaces as stage:committed_but_unreloaded (S4)", async () => {

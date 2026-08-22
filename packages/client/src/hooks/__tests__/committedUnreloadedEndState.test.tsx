@@ -97,6 +97,18 @@ function fakeEditor(): EditorHandle {
 }
 
 /**
+ * Module-scope, not per-render (S3): the controllers capture these in callbacks
+ * at the render that built them, so a fresh `vi.fn()` per render would leave the
+ * spy a test asserts on disconnected from the one that was actually called.
+ * `vi.clearAllMocks()` in each beforeEach keeps them independent between tests.
+ */
+const spies = {
+  setActionError: vi.fn(),
+  setActionInfo: vi.fn(),
+  refreshSnapshotCount: vi.fn(),
+};
+
+/**
  * Wires the real machine + real seam + a real controller exactly as EditorPage
  * does, and reports the machine's live state.
  *
@@ -127,16 +139,6 @@ function useHarness(activeChapterId: string) {
   const applyReloadFailedLock = (message: string) => {
     machine.dispatch({ type: "COMMITTED_UNRELOADED", message });
   };
-
-  // Stable across renders (S3): the controllers capture these in callbacks at
-  // the render that built them, so a fresh vi.fn() per render would leave the
-  // spy this harness returns disconnected from the one that was actually
-  // called. Only matters once a test asserts on one — which is the point.
-  const spies = useRef({
-    setActionError: vi.fn(),
-    setActionInfo: vi.fn(),
-    refreshSnapshotCount: vi.fn(),
-  }).current;
 
   const shared = {
     mutation,
@@ -171,7 +173,7 @@ function useHarness(activeChapterId: string) {
     findReplace: { clearError: vi.fn() },
   } as unknown as SnapshotControllerDeps);
 
-  return { state: machine.state, findReplace, snapshot, setActionError: spies.setActionError };
+  return { state: machine.state, findReplace, snapshot };
 }
 
 /** Chapter-scoped replace on TARGET. `affected` decides whether the chapter
@@ -266,7 +268,7 @@ describe("2xx BAD_JSON replace — the OTHER possibly-committed path", () => {
     // S3: the same copy obligation as the restore sibling, for the replace flow.
     // A typeable editor with no notice is indistinguishable from nothing having
     // happened, and something did — the server committed.
-    expect(result.current.setActionError).toHaveBeenCalledWith(
+    expect(spies.setActionError).toHaveBeenCalledWith(
       STRINGS.findReplace.replaceResponseUnreadable,
     );
   });
@@ -290,7 +292,7 @@ describe("F-07 safety net — committed_but_unreloaded end state (snapshot resto
     // consumer surfaces copy on this path; `committedLock` being required does
     // not, because a caller can supply it and ignore the returned result. This
     // is the surviving statement of that obligation for the restore flow.
-    expect(result.current.setActionError).toHaveBeenCalledWith(
+    expect(spies.setActionError).toHaveBeenCalledWith(
       STRINGS.snapshots.restoreSucceededReloadFailedOnOtherChapter(`Chapter ${TARGET}`),
     );
   });
