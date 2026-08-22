@@ -40,7 +40,7 @@ export function isLoopbackHost(hostHeader: string | undefined): boolean {
   // address rather than a port separator — split on ":" only outside them.
   const bare = host.startsWith("[")
     ? host.slice(0, host.indexOf("]") + 1)
-    : (host.split(":")[0] ?? "");
+    : host.replace(/:.*$/, "");
 
   return bare === "localhost" || bare === "[::1]" || /^127(?:\.\d{1,3}){3}$/.test(bare);
 }
