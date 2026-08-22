@@ -1,5 +1,7 @@
 Need import/export roundtrip tests for Smudge.
 
+- MathJax?
+
 - Plugins?
 
 - Need to look at agentic code simplification in the agentic review?
