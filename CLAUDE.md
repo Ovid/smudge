@@ -288,15 +288,31 @@ transition lands a non-dismissible banner on a read-only editor pinned to a
 chapter the mutation never touched. That pairing is the OOSI1/OOSS1 defects.
 
 **"Drifted" means drifted somewhere the mutation did not write.** The seam's
-verdict is `isDriftedFrom(targetChapterId, currentId) && !activeChapterIsAffected`
-— exported and shared so the 2xx-`BAD_JSON` path reads it the same way. Both
-conjuncts are load-bearing. Drift alone is not safety: a project-scope replace
-touching A and B, with the user on B when B's confirming GET fails, has wiped
-B's draft cache and never fetched B's post-replace text, so re-enabling there
-lets the next auto-save revert the commit. "No chapter open" reads as **not**
-drifted — there is no unrelated editor to strand, so the banner is the honest
-signal that a refresh is needed. Invariant 2's `setEditable(false)` is expressed
-as machine intent.
+verdict is `isDriftedFrom(targetChapterId, currentId) && !activeChapterIsAffected`,
+and both conjuncts are load-bearing *there*. Drift alone is not safety: a
+project-scope replace touching A and B, with the user on B when B's confirming
+GET fails, has wiped B's draft cache and never fetched B's post-replace text, so
+re-enabling there lets the next auto-save revert the commit. "No chapter open"
+reads as **not** drifted — there is no unrelated editor to strand, so the banner
+is the honest signal that a refresh is needed. Invariant 2's `setEditable(false)`
+is expressed as machine intent.
+
+**Only the first conjunct is shared, and that is deliberate.** `isDriftedFrom` is
+exported so both possibly-committed paths read _drift_ the same way.
+`activeChapterIsAffected` is a closure inside `run()` and the 2xx-`BAD_JSON` path
+cannot call it: an unreadable response body is precisely why that path has no
+affected-chapter list to consult. `useFindReplaceController`'s fallback arm
+therefore applies one conjunct where the seam applies two — an asymmetry, not an
+oversight. No other document records this: F-07's S2 note says only that both
+arms now share `isDriftedFrom`, which is true and is not the whole story, so
+this paragraph is the sole statement of it. It is currently unreachable: the
+mid-flight chapter switch it would need is refused by `switchToView`'s
+`isActionBusy()` gate, and for chapter-scope replace and
+replace-one the target _is_ the only chapter written, so "drifted" and "on an
+affected chapter" cannot both hold. **If that gate is ever relaxed** — to let a
+writer keep working during a long project-wide replace — the asymmetry goes live
+the same day, and the fallback must then fail closed, treating unknown
+affectedness as unsafe rather than reading drift as proof of safety.
 
 **Machine intent reaches TipTap by two routes, and both must stay wired.**
 Post-mount transitions go through the imperative `setEditable` handle;
