@@ -666,8 +666,30 @@ export const STRINGS = {
       "Unable to save pending changes. Try again once your connection recovers before replacing.",
     replaceSucceededReloadFailed:
       "Replace succeeded, but reloading the chapter failed. Refresh the page before editing — editing now would overwrite the replacement.",
+    // OOSS2 (agentic review 2026-08-22): chapter-attributed, dismissible twins
+    // of the banner above, for when the user navigated away during the replace
+    // round trip. Unattributed, the copy reads as a claim about the chapter now
+    // on screen — the one chapter the seam has just established is safe to edit
+    // — while the chapter actually at risk is never named. Mirrors
+    // restoreSucceededReloadFailedOnOtherChapter.
+    //
+    // Two variants because a replace does not always have one target. A
+    // chapter-scope replace and a replace-one write exactly one chapter and can
+    // name it; a manuscript-wide replace writes every chapter that matched, so
+    // naming the click-time chapter would name a chapter that may not even have
+    // been touched.
+    replaceSucceededReloadFailedOnOtherChapter: (chapterTitle: string) =>
+      `Replace succeeded in "${chapterTitle}", but reloading that chapter failed. Switch back to it and refresh the page before editing it — editing it now would overwrite the replacement.`,
+    replaceSucceededReloadFailedOnOtherChapters:
+      "Replace succeeded, but reloading the replaced chapters failed. The chapter on screen was not changed; refresh the page before editing any chapter that was — editing one now would overwrite the replacement.",
     replaceResponseUnreadable:
       "The replace may have completed, but the server response was unreadable. Refresh the page to see the current state before retrying — retrying without refreshing could replace twice.",
+    // The 2xx-BAD_JSON twin of the pair above, for the same drift. Mirrors
+    // restoreResponseUnreadableOnOtherChapter. There is no plural variant: a
+    // manuscript-wide replace whose body was unreadable has no affected-chapter
+    // list to name, so it keeps the chapter-agnostic copy above.
+    replaceResponseUnreadableOnOtherChapter: (chapterTitle: string) =>
+      `The replace in "${chapterTitle}" may have completed, but the server response was unreadable. Switch back to that chapter and refresh the page before editing it — retrying without refreshing could replace twice.`,
     replaceScopeNotFound: "The chapter for this replace is no longer available.",
     replaceProjectNotFound: "This project is no longer available.",
     searchProjectNotFound: "This project is no longer available.",

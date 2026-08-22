@@ -286,18 +286,6 @@
 - **Last seen:** 2026-08-20 on branch `ovid/architecture` at `67c00204`
 - **Severity:** Suggestion
 
-## `4485eebf` — Replace flow's safe-drift notice is not chapter-attributed, contradicting CLAUDE.md and strings.ts
-- **File (at first sighting):** `packages/client/src/hooks/useFindReplaceController.ts:170`
-- **Symbol:** `finalizeReplaceSuccess`
-- **Bug class:** Contract
-- **Description:** On the safe-drift arm the editor is re-enabled on a chapter the replace did not write to, but the dismissible notice uses the unattributed `STRINGS.findReplace.replaceSucceededReloadFailed` ("Replace succeeded, but reloading the chapter failed... editing now would overwrite the replacement"), which is false for the chapter on screen and names no chapter. There is no `replaceSucceededReloadFailedOnOtherChapter` in `strings.ts` — only the snapshot-restore side has `OnOtherChapter` variants. `strings.ts:498-499` claims the restore variant "Mirrors ... the find-replace stale-drift arm", and `CLAUDE.md:273` claims the notice is "chapter-attributed". Pre-existing; the drift arm used the same string before the branch.
-- **Suggested fix:** Add a `replaceSucceededReloadFailedOnOtherChapter(chapterTitle)` string mirroring `restoreSucceededReloadFailedOnOtherChapter`, and pass the target chapter's title into `finalizeReplaceSuccess`'s drift arm. In the same change, correct or scope CLAUDE.md's "chapter-attributed" sentence and `strings.ts:499`'s "Mirrors ... the find-replace stale-drift arm" comment, both of which currently assert a parity that does not exist.
-- **Confidence:** Medium
-- **Found by:** Contract & Integration (`claude-opus-5[1m]`)
-- **First seen:** 2026-08-22 on branch `ovid/architecture` at `7b9e1c68`
-- **Last seen:** 2026-08-22 on branch `ovid/architecture` at `eb9ffee8`
-- **Severity:** Suggestion
-
 ## `8ff156ec` — Nothing at any level tests that a locked editor can become writable again
 - **File (at first sighting):** `e2e/editor-save.spec.ts:107`
 - **Symbol:** `PATCH 404 surfaces chapter-gone copy`

@@ -50,6 +50,27 @@ export interface ReplaceConfirmation {
 }
 
 /**
+ * Copy for the safe-drift arm: the server committed, the confirming GET could
+ * not vouch for the screen, and the user is now on a chapter this replace did
+ * not write to.
+ *
+ * OOSS2 (agentic review 2026-08-22). Three cases, not two. `lockMessage` is
+ * passed only by the 2xx-BAD_JSON path, so its presence discriminates that
+ * path from the committed one; `chapterTitle` is present only when the replace
+ * had a single target chapter to name.
+ */
+function driftNotice(lockMessage: string | undefined, chapterTitle: string | undefined): string {
+  if (lockMessage !== undefined) {
+    return chapterTitle === undefined
+      ? lockMessage
+      : STRINGS.findReplace.replaceResponseUnreadableOnOtherChapter(chapterTitle);
+  }
+  return chapterTitle === undefined
+    ? STRINGS.findReplace.replaceSucceededReloadFailedOnOtherChapters
+    : STRINGS.findReplace.replaceSucceededReloadFailedOnOtherChapter(chapterTitle);
+}
+
+/**
  * Build the directive both replace flows hand to `useEditorMutation.run()`.
  *
  * S10 (agentic review 2026-08-22): `executeReplace` and `handleReplaceOne` each
@@ -125,6 +146,7 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       reloadFailed,
       lockMessage,
       targetChapterId,
+      targetChapterTitle,
       seamOutcome,
     }: {
       replacedCount: number | null;
@@ -141,6 +163,13 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       // possibly_committed stale-chapter-switch branch. Omit to preserve legacy
       // unconditional-lock behavior (e.g. paths where no target can be inferred).
       targetChapterId?: string;
+      // OOSS2 (agentic review 2026-08-22): title of that same chapter, for the
+      // drift arm's copy. Supplied only when the replace had ONE target — a
+      // chapter-scope replace or a replace-one. A manuscript-wide replace omits
+      // it: its targetChapterId is merely the click-time chapter, which may not
+      // even have been among the ones written, so naming it would misattribute
+      // in the other direction.
+      targetChapterTitle?: string;
       /** F-07: present only when the committed_but_unreloaded path ran. There,
        * useEditorMutation has ALREADY settled the machine — lock on target,
        * re-enable on drift — so this function must not dispatch again; it owns
@@ -206,7 +235,15 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
         // second case; it was removed once the first stopped needing one,
         // because it could only ever re-derive the state the machine was
         // already in (S4, agentic review 2026-08-21).
-        setActionError(lockMessage ?? STRINGS.findReplace.replaceSucceededReloadFailed);
+        //
+        // OOSS2: attribute the notice to the chapter the replace actually
+        // wrote to. Unattributed, "editing now would overwrite the
+        // replacement" reads as a claim about the chapter on screen — the one
+        // chapter this arm has just established is safe to edit — while the
+        // chapter genuinely at risk is never named. `lockMessage` present means
+        // the 2xx-BAD_JSON path (it is the only caller that passes one), which
+        // has its own attributed twin.
+        setActionError(driftNotice(lockMessage, targetChapterTitle));
       }
       // findReplace.search catches network/5xx/4xx internally and resolves
       // void — see useFindReplaceState's search(). No external try/catch
@@ -278,8 +315,16 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       // but the user's mental model pins the lock banner to whatever they
       // were looking at). finalizeReplaceSuccess uses this to skip the
       // persistent lock when the user has since switched chapters.
-      const targetChapterId =
-        frozen.scope.type === "chapter" ? frozen.scope.chapter_id : getActiveChapter()?.id;
+      const scopeChapterId = frozen.scope.type === "chapter" ? frozen.scope.chapter_id : undefined;
+      const targetChapterId = scopeChapterId ?? getActiveChapter()?.id;
+      // OOSS2: only a single-target replace can name its chapter in the
+      // drift notice. A manuscript-wide replace leaves this undefined —
+      // targetChapterId there is the click-time chapter, which the replace
+      // may not even have written to.
+      const targetChapterTitle =
+        scopeChapterId === undefined
+          ? undefined
+          : project.chapters.find((c) => c.id === scopeChapterId)?.title;
       try {
         // Clear any stale banners so a prior op's error/success cannot
         // co-display with this op's outcome — including the panel-local
@@ -360,6 +405,7 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
             replacedCount: result.data.replaced_count,
             reloadFailed: true,
             targetChapterId,
+            targetChapterTitle,
             seamOutcome: { drifted: result.drifted },
           });
           return;
@@ -422,6 +468,7 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
               reloadFailed: true,
               lockMessage: mapped.message as string,
               targetChapterId,
+              targetChapterTitle,
             });
             return;
           }
@@ -521,6 +568,9 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       const frozenOptions = findReplace.resultsOptions;
       const frozenReplacement = findReplace.replacement;
       if (!frozenQuery || !frozenOptions) return;
+      // OOSS2: replace-one always writes exactly one chapter, so the drift
+      // notice can always name it.
+      const targetChapterTitle = project.chapters.find((c) => c.id === chapterId)?.title;
 
       // C1: Same lock-banner guard as executeReplace/handleRestoreSnapshot.
       // Per-match Replace must not issue a server write while the lock
@@ -616,6 +666,7 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
             // I1 (this review): replace-one always targets chapterId. If the
             // user switched chapters mid-flight, route to dismissible error.
             targetChapterId: chapterId,
+            targetChapterTitle,
             seamOutcome: { drifted: result.drifted },
           });
           return;
@@ -642,6 +693,7 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
               reloadFailed: true,
               lockMessage: mapped.message as string,
               targetChapterId: chapterId,
+              targetChapterTitle,
             });
             return;
           }

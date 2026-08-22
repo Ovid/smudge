@@ -272,7 +272,14 @@ facts dispatched from distinct sites, so do not merge them.
 committed, display unconfirmed" outcome (2xx `BAD_JSON` on replace/restore,
 reload-GET failure, race-only supersession); it routes to the persistent lock
 banner — except the safe-drift sub-case, which re-enables the now-unrelated
-editor with a dismissible, chapter-attributed notice.
+editor with a dismissible notice. That notice **names the chapter at risk
+whenever the mutation had exactly one** — every restore, a chapter-scope
+replace, a replace-one. A manuscript-wide replace has no single target
+(`targetChapterId` there is only the click-time chapter, which the replace may
+not even have written to), so its notice says what is true instead: the chapter
+on screen was not changed, and the ones that were need a refresh. The
+per-scope copy lives in `strings.ts` beside its unattributed sibling; the
+selection is `driftNotice` in `useFindReplaceController.ts`.
 
 **The seam settles that transition itself, and a consumer must not settle it
 again (F-07).** `MutationDirective.committedLock` is a **required** field

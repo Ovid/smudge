@@ -69,6 +69,9 @@ function buildDeps(overrides: {
   // directive's data. The captured directives are returned for assertion.
   replaceResponse?: ReplaceData;
   activeChapterId: string | null;
+  // Overrides `activeChapterId` entirely, for the rare test that needs the
+  // active chapter to CHANGE between reads (a mid-flight chapter switch).
+  getActiveChapter?: () => Chapter | null;
   isActionBusy?: () => boolean;
   projectChapterIds?: string[];
 }) {
@@ -118,8 +121,10 @@ function buildDeps(overrides: {
     slug: "proj-slug",
     findReplace,
     mutation,
-    getActiveChapter: () =>
-      overrides.activeChapterId === null ? null : chapterWithId(overrides.activeChapterId),
+    getActiveChapter:
+      overrides.getActiveChapter ??
+      (() =>
+        overrides.activeChapterId === null ? null : chapterWithId(overrides.activeChapterId)),
     isActionBusy: overrides.isActionBusy ?? (() => false),
     actionBusyRef,
     isEditorLocked: () => false,
@@ -213,7 +218,36 @@ describe("useFindReplaceController — finalizeReplaceSuccess reloadFailed branc
       await result.current.executeReplace(FROZEN_CHAPTER_REPLACE);
     });
 
-    expect(setActionError).toHaveBeenCalledWith(STRINGS.findReplace.replaceSucceededReloadFailed);
+    // OOSS2: the notice names the chapter the replace actually wrote to.
+    // Unattributed, it reads as a claim about ch-2 — the one chapter the seam
+    // has just established is safe to edit.
+    expect(setActionError).toHaveBeenCalledWith(
+      STRINGS.findReplace.replaceSucceededReloadFailedOnOtherChapter("Chapter ch-1"),
+    );
+    expect(applyReloadFailedLock).not.toHaveBeenCalled();
+  });
+
+  it("names no single chapter on a manuscript-wide replace (OOSS2)", async () => {
+    // OOSS2 boundary. A project-scope replace writes every chapter that
+    // matched, so there is no one chapter to name — targetChapterId is only the
+    // click-time chapter, which may not even have been touched. The copy says
+    // what is true instead: the chapter on screen was not changed, and the ones
+    // that were need a refresh.
+    const { deps, applyReloadFailedLock, setActionError } = buildDeps({
+      runResult: committedUnreloaded(true),
+      activeChapterId: "ch-2",
+      projectChapterIds: ["ch-1", "ch-2"],
+    });
+
+    const { result } = renderHook(() => useFindReplaceController(deps));
+
+    await act(async () => {
+      await result.current.executeReplace(FROZEN_PROJECT_REPLACE);
+    });
+
+    expect(setActionError).toHaveBeenCalledWith(
+      STRINGS.findReplace.replaceSucceededReloadFailedOnOtherChapters,
+    );
     expect(applyReloadFailedLock).not.toHaveBeenCalled();
   });
 
@@ -396,6 +430,58 @@ describe("useFindReplaceController — drift reading on the 2xx BAD_JSON path", 
     );
     expect(setActionError).not.toHaveBeenCalledWith(STRINGS.findReplace.replaceResponseUnreadable);
   });
+
+  it("attributes the unreadable-response notice to the replaced chapter on drift (OOSS2)", async () => {
+    // OOSS2 sibling. The chapter-agnostic replaceResponseUnreadable copy is
+    // right when the user is still on the target — the lock arm keeps it — but
+    // on drift it reads as a claim about the chapter now on screen. Restore's
+    // 2xx-BAD_JSON arm has named its chapter since I6; this one did not.
+    const { deps, applyReloadFailedLock, setActionError } = buildDeps({
+      runResult: { ok: false, stage: "mutate", error: badJsonError() },
+      activeChapterId: "ch-2",
+      projectChapterIds: ["ch-1", "ch-2"],
+    });
+
+    const { result } = renderHook(() => useFindReplaceController(deps));
+
+    await act(async () => {
+      await result.current.executeReplace(FROZEN_CHAPTER_REPLACE);
+    });
+
+    expect(applyReloadFailedLock).not.toHaveBeenCalled();
+    expect(setActionError).toHaveBeenCalledWith(
+      STRINGS.findReplace.replaceResponseUnreadableOnOtherChapter("Chapter ch-1"),
+    );
+  });
+
+  it("keeps the chapter-agnostic copy when a manuscript-wide replace drifts (OOSS2)", async () => {
+    // No single target to name, and no affected-chapter list either — the
+    // response body is what was unreadable. The chapter-agnostic copy is the
+    // most that can honestly be said, so it survives here.
+    //
+    // A manuscript-wide replace takes its drift reference point from the LIVE
+    // active chapter at click time, so reaching the drift arm at all needs the
+    // active chapter to change between that read and the one in
+    // finalizeReplaceSuccess — hence the two-value stub rather than a fixed id.
+    const { deps, applyReloadFailedLock, setActionError } = buildDeps({
+      runResult: { ok: false, stage: "mutate", error: badJsonError() },
+      activeChapterId: "ch-2",
+      getActiveChapter: vi
+        .fn<() => Chapter | null>()
+        .mockReturnValueOnce(chapterWithId("ch-1"))
+        .mockReturnValue(chapterWithId("ch-2")),
+      projectChapterIds: ["ch-1", "ch-2"],
+    });
+
+    const { result } = renderHook(() => useFindReplaceController(deps));
+
+    await act(async () => {
+      await result.current.executeReplace(FROZEN_PROJECT_REPLACE);
+    });
+
+    expect(applyReloadFailedLock).not.toHaveBeenCalled();
+    expect(setActionError).toHaveBeenCalledWith(STRINGS.findReplace.replaceResponseUnreadable);
+  });
 });
 
 describe("useFindReplaceController — handleReplaceOne", () => {
@@ -553,6 +639,10 @@ describe("useFindReplaceController — handleReplaceOne", () => {
     // F-07: the seam re-enabled the unrelated editor already. The dismissible
     // notice is what this arm still owns.
     expect(applyReloadFailedLock).not.toHaveBeenCalled();
-    expect(setActionError).toHaveBeenCalledWith(STRINGS.findReplace.replaceSucceededReloadFailed);
+    // OOSS2: replace-one always has one target chapter, so the notice names it
+    // rather than reading as a claim about ch-2.
+    expect(setActionError).toHaveBeenCalledWith(
+      STRINGS.findReplace.replaceSucceededReloadFailedOnOtherChapter("Chapter ch-1"),
+    );
   });
 });
