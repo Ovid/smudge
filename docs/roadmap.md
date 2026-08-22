@@ -1987,9 +1987,12 @@ pinned, so a route silently broadened to accept both stays green.
 **Do not build a source-scanning route-discovery guard for this.**
 `mutationCommittedSurface.test.ts` needed four consecutive review rounds and a
 switch to the TypeScript parser before it stopped green-passing shapes it was
-recorded as blocking; F-07's own round-4 caveat says the answer to a fifth miss
-is a structural fix, not a fifth patch. Per-route behavioural assertions are
-enough here.
+recorded as blocking — and was then deleted outright (2026-08-21) in favour of
+making the compiler force the same obligation. F-07's own round-4 caveat says
+the answer to a fifth miss is a structural fix, not a fifth patch; that fix, and
+what it gave up, are recorded in F-07's Status notes in
+`paad/architecture-reviews/2026-08-11-smudge-architecture-report.md`. Per-route
+behavioural assertions are enough here.
 
 ### Data Model Changes
 

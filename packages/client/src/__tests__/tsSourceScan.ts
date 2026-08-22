@@ -3,13 +3,19 @@ import { join } from "node:path";
 
 import ts from "typescript";
 
-// Shared source-tree scanning helpers for the structural drift-detector tests
-// (migrationStructuralCheck.test.ts, mutationCommittedSurface.test.ts). They
-// live in a plain module rather than in either test file because importing a
+// Shared source-tree scanning helpers for the structural drift-detector tests.
+// They live in a plain module rather than in a test file because importing a
 // *.test.ts from another test file re-registers its describe blocks in the
-// importer's suite. Review I2 (2026-08-19) asked the second file to reuse the
+// importer's suite. Review I2 (2026-08-19) asked a second detector to reuse the
 // first's comment stripper instead of re-deriving a weaker one; this module is
 // where the reuse lands.
+//
+// The surviving consumer is migrationStructuralCheck.test.ts. The second one,
+// mutationCommittedSurface.test.ts, was DELETED on 2026-08-21 when F-07's seam
+// fix made the compiler force what it was detecting; see that finding's Status
+// notes in paad/architecture-reviews/2026-08-11-smudge-architecture-report.md.
+// It is named below wherever the history of a shape or a bug needs it, and
+// nothing here depends on it existing (S5, code review 2026-08-21).
 
 // S1/S3 (review 2026-05-25): the prior `.run(` import-implies-call check
 // matched commented occurrences as if they were live code. A file
@@ -25,10 +31,10 @@ import ts from "typescript";
 // common positions. Its regex-literal lookbehind class held no `>` and no
 // keyword, so `=> /…/` and `return /…/` never entered the regex branch and
 // fell through to the string alternative, which has no newline exclusion and
-// runs to the next quote anywhere below. Counts go DOWN, which is the
-// silent-green direction: a file drops out of mutationCommittedSurface's
-// caller discovery and the F-07 forcing pause ships green on an unguarded
-// caller. Rather than a fourth hand-patch, the job is now done by the
+// runs to the next quote anywhere below. Counts went DOWN, which is the
+// silent-green direction: a file dropped out of the (now deleted)
+// mutationCommittedSurface's caller discovery and the F-07 forcing pause
+// shipped green on an unguarded caller. Rather than a fourth hand-patch, the job is now done by the
 // TypeScript parser that already ships as a root devDependency. Both
 // consumers are Node-side test files, so the cost is test-time only.
 //
@@ -82,7 +88,9 @@ export function stripCommentsFromTsSource(source: string): string {
 // receiver and `.run`, and one `.current` hop for a ref-held binding. Not
 // tolerated, deliberately: a destructured
 // `const { run } = op`, which each caller must detect and reject on its own
-// terms — see mutationCommittedSurface.test.ts, where it is an offender.
+// terms. The now-deleted mutationCommittedSurface.test.ts was the file with an
+// offender of that shape; migrationStructuralCheck.test.ts is the only caller
+// left, and it rejects the shape at its own `bindings` loop.
 export function runCallPattern(name: string, flags = ""): RegExp {
   return new RegExp(
     `\\b${name}(?:\\s*\\??\\.\\s*current)?\\s*\\??\\.\\s*run\\s*(?:<.*?>)?\\s*\\(`,
