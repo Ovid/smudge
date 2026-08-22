@@ -70,7 +70,10 @@ function uploadRequestError(err: unknown): AppError {
     return new BadRequestError("Unexpected file field in upload.");
   }
   if (typeof code === "string" && code.startsWith("LIMIT_")) {
-    return new PayloadTooLargeError("Upload has too many parts or fields.", "UPLOAD_TOO_MANY_PARTS");
+    return new PayloadTooLargeError(
+      "Upload has too many parts or fields.",
+      "UPLOAD_TOO_MANY_PARTS",
+    );
   }
   return new BadRequestError("Malformed file upload.", "MALFORMED_UPLOAD");
 }

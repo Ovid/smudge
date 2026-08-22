@@ -92,7 +92,10 @@ describe("Host validation (F-02)", () => {
   ])("rejects %s with 400 INVALID_HOST and logs it", async (_label, host) => {
     const child = logger.child({});
     const warnSpy = vi.spyOn(child, "warn").mockImplementation(() => {});
-    const childSpy = vi.spyOn(logger, "child").mockReturnValue(child);
+    // `as never` matches the existing mock idiom in this suite: pino types the
+    // child returned by `logger.child({})` as Logger<never> and the method as
+    // returning Logger<string>, which no honest annotation reconciles.
+    const childSpy = vi.spyOn(logger, "child").mockReturnValue(child as never);
 
     const res = await request(ctx.app).get("/api/health").set("Host", host);
 
@@ -120,7 +123,10 @@ describe("Host validation (F-02)", () => {
   it("truncates an overlong Host before logging it", async () => {
     const child = logger.child({});
     const warnSpy = vi.spyOn(child, "warn").mockImplementation(() => {});
-    const childSpy = vi.spyOn(logger, "child").mockReturnValue(child);
+    // `as never` matches the existing mock idiom in this suite: pino types the
+    // child returned by `logger.child({})` as Logger<never> and the method as
+    // returning Logger<string>, which no honest annotation reconciles.
+    const childSpy = vi.spyOn(logger, "child").mockReturnValue(child as never);
 
     await request(ctx.app)
       .get("/api/health")
