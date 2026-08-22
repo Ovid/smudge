@@ -137,6 +137,56 @@ describe("POST /api/projects/:projectId/images", () => {
     expect(res.status).toBe(413);
     expect(res.body.error.code).toBe("PAYLOAD_TOO_LARGE");
   });
+
+  // F-38 (architecture report 2026-08-22): only fileSize was capped, so part,
+  // field and file counts were unbounded and every non-file part accumulated in
+  // memory. express.json's body cap does not reach here — this endpoint is not
+  // JSON. The client posts exactly one part (a file named "file", no other
+  // fields), so the limits describe what the endpoint actually accepts.
+  it("returns 413 when the upload carries a non-file field", async () => {
+    const projectId = await createTestProject();
+
+    const res = await request(t.app)
+      .post(`/api/projects/${projectId}/images`)
+      .field("caption", "unexpected")
+      .attach("file", TEST_PNG, { filename: "test.png", contentType: "image/png" });
+
+    expect(res.status).toBe(413);
+    expect(res.body.error.code).toBe("PAYLOAD_TOO_LARGE");
+  });
+
+  // Before the fix every multer LIMIT_* other than LIMIT_FILE_SIZE fell through
+  // to the global handler carrying no status and was clamped to 500 — a client
+  // mistake recorded as a server fault. These pin both arms of the mapping.
+  //
+  // A second file trips the `files: 1` COUNT cap (LIMIT_FILE_COUNT) before
+  // upload.single() ever reaches its unexpected-field check, so it is a 413:
+  // too many, not malformed. Verified by execution rather than assumed.
+  it("returns 413 when the upload carries a second file part", async () => {
+    const projectId = await createTestProject();
+
+    const res = await request(t.app)
+      .post(`/api/projects/${projectId}/images`)
+      .attach("file", TEST_PNG, { filename: "a.png", contentType: "image/png" })
+      .attach("file", TEST_PNG, { filename: "b.png", contentType: "image/png" });
+
+    expect(res.status).toBe(413);
+    expect(res.body.error.code).toBe("PAYLOAD_TOO_LARGE");
+  });
+
+  // A single file under the wrong field name is within every count cap, so it
+  // reaches LIMIT_UNEXPECTED_FILE — malformed rather than oversized, hence 400.
+  // This is the arm that keeps the BadRequestError branch of the mapping live.
+  it("returns 400 when the file arrives under an unexpected field name", async () => {
+    const projectId = await createTestProject();
+
+    const res = await request(t.app)
+      .post(`/api/projects/${projectId}/images`)
+      .attach("avatar", TEST_PNG, { filename: "a.png", contentType: "image/png" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+  });
 });
 
 describe("GET /api/projects/:projectId/images", () => {

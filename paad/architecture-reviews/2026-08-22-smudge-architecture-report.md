@@ -598,6 +598,10 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** Only `fileSize` is configured, so the underlying parser's part, field and file limits stay unbounded, and the JSON body-size cap does not apply because this endpoint is not JSON.
 - **Evidence:** `packages/server/src/images/images.routes.ts:15-18`, excerpt: `const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_IMAGE_UPLOAD_BYTES } });`
 - **Found by:** Security & Code Quality
+- **Status:** Fixed
+- **Status reason:** `limits` now sets `files: 1` and `fields: 0` alongside `fileSize`, which is exactly what the client posts (one file part named `file`, no other fields). `parts` is deliberately NOT set: files + fields already bound every part type a multipart body can contain, and busboy's `parts` counter is off by one against the obvious reading — verified by execution, `parts: 1` rejects a *single* file part with LIMIT_PART_COUNT. A second, unrelated defect surfaced while fixing this and is fixed with it: the route mapped only LIMIT_FILE_SIZE, so every other multer cap breach reached `globalErrorHandler` carrying no status and was clamped to **500** — a client mistake recorded as a server fault. `multerLimitError` now maps size and count breaches to 413 and LIMIT_UNEXPECTED_FILE to 400, and returns null for non-cap errors so a genuine parser failure still propagates. Impact note: F-02 was fixed first (commit 3d6a5bbc), so the "Medium while F-02 stands" compounding no longer applies — this is now the Low standalone case it was graded as.
+- **Status date:** 2026-08-22 15:46 UTC
+- **Status commit:** 19f9c3a1
 - **Note:** With those limits unset the parser accepts unlimited parts and fields, each field defaulting to a 1 MiB cap, and multer accumulates every non-file part into memory. `express.json`'s 5 MiB body cap covers every endpoint except this one, because it only parses `application/json`. On a loopback single-user deployment this is self-inflicted at worst; it compounds with F-02 into a remote memory-exhaustion path, and the compounding is the reason it is recorded at all.
 
 ---
