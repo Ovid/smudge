@@ -331,6 +331,44 @@ it("readCentralDirectorySizes throws DecompressionBombError (not RangeError) for
   expect(() => readCentralDirectorySizes(corrupted)).toThrow(DecompressionBombError);
 });
 
+// Backlog e8ba6c7b: findEocdOffset scanned backward and returned the FIRST
+// 0x06054b50 it met — which, scanning backward, is the LAST one in the file.
+// A zip comment containing those four bytes sits after the true EOCD, so it
+// shadowed it and the archive was refused (safe failure, but a refusal of a
+// perfectly valid archive). The EOCD's own comment-length field discriminates:
+// for the real record, offset + 22 + commentLen lands exactly on end-of-buffer.
+describe("findEocdOffset — comment containing the EOCD signature (e8ba6c7b)", () => {
+  // "PK\u0005\u0006" is the EOCD signature as bytes; the padding pushes the
+  // decoy far enough from the end that the backward scan reaches it first.
+  const DECOY_COMMENT = "PK\u0005\u0006" + "A".repeat(40);
+
+  it("returns the true EOCD, not the decoy inside the comment", async () => {
+    const zip = new JSZip();
+    zip.file("a.txt", "hello");
+    const buf = await zip.generateAsync({ type: "nodebuffer", comment: DECOY_COMMENT });
+
+    const offset = findEocdOffset(buf);
+    expect(offset).toBeGreaterThan(-1);
+    // The defining property of the real record: its declared comment length
+    // reaches exactly end-of-buffer.
+    expect(offset + 22 + buf.readUInt16LE(offset + 20)).toBe(buf.length);
+  });
+
+  it("still parses the central directory of an archive with such a comment", async () => {
+    const zip = new JSZip();
+    zip.file("a.txt", "hello");
+    zip.file("b.txt", "world");
+    const buf = await zip.generateAsync({ type: "nodebuffer", comment: DECOY_COMMENT });
+
+    const paths = [...walkCentralDirectory(buf)].map((e) => e.path).sort();
+    expect(paths).toEqual(["a.txt", "b.txt"]);
+  });
+
+  it("still reports -1 for a buffer that is not a zip at all", () => {
+    expect(findEocdOffset(Buffer.alloc(200, 0x41))).toBe(-1);
+  });
+});
+
 describe("checkDeclaredSizes", () => {
   it("refuses when total exceeds maxUncompressed", () => {
     expect(() =>

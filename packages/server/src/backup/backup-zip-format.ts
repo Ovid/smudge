@@ -30,10 +30,21 @@ const ZIP64_SENTINEL = 0xffffffff;
 /** Locate the end-of-central-directory record by scanning backward from the end
  *  (max 64 KiB comment). Returns its byte offset, or -1 if not found. Exported so
  *  the security-critical bomb tests parse archives with the SAME logic as
- *  production — the byte offsets cannot drift apart (S9). */
+ *  production — the byte offsets cannot drift apart (S9).
+ *
+ *  Backlog e8ba6c7b: a bare signature match is not enough. The scan runs
+ *  backward, so the first signature it meets is the LAST one in the file — and
+ *  the archive comment is the last thing in the file. A comment whose bytes
+ *  happen to contain 0x06054b50 therefore shadowed the true record, and the
+ *  archive was refused. The EOCD's own comment-length field discriminates: for
+ *  the real record, `offset + 22 + commentLen` lands exactly on end-of-buffer,
+ *  because everything after the record IS the comment. A decoy sitting inside
+ *  that comment reads an arbitrary length there and (all but certainly) misses.
+ *  `i <= buf.length - 22` bounds the readUInt16LE at `i + 20`. */
 export function findEocdOffset(buf: Buffer): number {
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 0xffff); i--) {
-    if (buf.readUInt32LE(i) === EOCD_SIG) return i;
+    if (buf.readUInt32LE(i) !== EOCD_SIG) continue;
+    if (i + 22 + buf.readUInt16LE(i + 20) === buf.length) return i;
   }
   return -1;
 }
