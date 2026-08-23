@@ -70,7 +70,7 @@ specifier, remove the `NODE_OPTIONS` line from the Makefile. Tracked in
   proxies `/api` to Express on `http://localhost:3456`. Express serves the API
   only and has no route for `/`, so opening 3456 in a browser gives
   `Cannot GET /`, not Smudge. Ports are overridable via `SMUDGE_CLIENT_PORT`
-  and `SMUDGE_SERVER_PORT`.
+  and `SMUDGE_PORT` (see `docs/configuration.md`).
 - SQLite DB: `packages/server/data/smudge.db`. `make clean` wipes it (and the
   WAL/SHM files) for a full reset — there is no automatic recovery.
 
