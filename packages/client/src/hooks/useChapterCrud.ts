@@ -194,17 +194,24 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
         // in the sidebar and pointing subsequent edits at the wrong
         // project's chapter id.
         if (isStaleProject()) return;
-        // Backlog 8b34a209, residual. FOUR writes take the OUTER guard
-        // only, not the inside-updater re-test: `setActiveChapter` and
-        // `setChapterWordCount` here, and — in the recovery arm below —
+        // Backlog 8b34a209, residual. SIX writes take the OUTER guard only,
+        // not the inside-updater re-test. On the success path:
+        // `setActiveChapter` and `setChapterWordCount` immediately below, and
+        // the `confirmedStatusRef.current[newChapter.id]` seed after the
+        // setProject merge. In the recovery arm further down:
         // `replaceConfirmedStatusesFromProject` plus its own
-        // `setActiveChapter`/`setChapterWordCount` pair. (I6, review
-        // 2026-08-23: this comment previously said "the confirmedStatusRef
-        // seed below", singular, naming only the success-path seed on the
-        // next line and silently dropping the recovery arm's whole-map
-        // replacement — the more damaging of the two. Per CLAUDE.md F-19
-        // the enumeration IS the mitigation, so an unenumerated residual
-        // had no mitigation.)
+        // `setActiveChapter`/`setChapterWordCount` pair.
+        //
+        // The count has now been wrong twice in opposite directions, which is
+        // why it is spelled out write by write. I6 (review 2026-08-23) found
+        // the original text saying "the confirmedStatusRef seed below",
+        // singular — it named the success-path seed and silently dropped the
+        // recovery arm's whole-map replacement, the more damaging of the two.
+        // S1 (same review, round 2) found the I6 rewrite had swapped one
+        // omission for the opposite one: it said "FOUR" over a five-item list
+        // and dropped the success-path seed the original HAD named. Per
+        // CLAUDE.md F-19 the enumeration IS the mitigation, so a residual
+        // missing from it has no mitigation at all.
         //
         // They are plain value sets with no updater body, so there is no
         // drain-time hook where a `prev.id === projectId` re-test could
