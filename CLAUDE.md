@@ -163,7 +163,10 @@ npx playwright test                  # E2e tests
 
 # Build & Deploy
 make build                           # Build client for production
-docker compose up                    # Full app on port 3456
+# docker compose up                  # NOT RUNNABLE — no Dockerfile/compose file
+#                                    # exists. Roadmap Phase 7g.1; see
+#                                    # §Tech Stack for why the 127.0.0.1 bind
+#                                    # and the Host allowlist must widen together.
 make backup                          # On-demand backup zip under backups/ (safe while running)
 make restore BACKUP=<file>           # Restore a backup zip (Smudge must be stopped; confirms by filename)
 

@@ -62,7 +62,8 @@ npx playwright test                  # E2e tests
 
 # Build & Deploy
 make build                           # Build client for production
-docker compose up                    # Full app on port 3456
+# docker compose up                  # NOT RUNNABLE — no Dockerfile/compose file
+#                                    # exists. Roadmap Phase 7g.1.
 
 # Help
 make help                            # Show all available make targets
