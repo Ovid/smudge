@@ -3646,6 +3646,73 @@ describe("useProjectEditor", () => {
     warn.calledWith("Failed to delete chapter:", expect.any(ApiRequestError));
   });
 
+  it("cross-project nav guard (OOSS2 872b6760): handleDeleteChapter does NOT pin project A's chapter as active on project B", async () => {
+    // The SUCCESS path's sibling of the test above. handleDeleteChapter
+    // builds its drift guard at entry but consulted it only in the two catch
+    // arms; everything after a SUCCESSFUL delete ran unguarded.
+    //
+    // The damaging write is setActiveChapter. After deleting the active
+    // chapter, the handler fetches the next chapter to make active. If the
+    // user navigates A → B while that secondary GET is in flight, the GET
+    // resolves last and pins one of PROJECT A's chapters as the active
+    // chapter under project B's URL. loadProject never calls
+    // selectChapterSeq.start(), so nothing arbitrates between them —
+    // last resolver wins. The next keystroke then auto-saves into A's
+    // chapter id while the writer believes they are editing B.
+    const warn = expectConsole("warn");
+    const otherProject = {
+      ...mockProject,
+      id: "p2",
+      slug: "other-project",
+      chapters: [],
+    };
+
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
+    vi.mocked(api.chapters.delete).mockReset().mockResolvedValue(undefined);
+
+    const { rerender, result } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug),
+      { initialProps: { slug: "test-project" } },
+    );
+    await waitFor(() => expect(result.current.project?.slug).toBe("test-project"));
+    await waitFor(() => expect(result.current.activeChapter?.id).toBe(mockChapter1.id));
+
+    // Hold the post-delete "load the next chapter" GET open so the
+    // navigation can overtake it.
+    let resolveNextChapter!: (ch: unknown) => void;
+    vi.mocked(api.chapters.get).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveNextChapter = resolve as (ch: unknown) => void;
+        }) as unknown as ReturnType<typeof api.chapters.get>,
+    );
+
+    let deletePromise!: Promise<unknown>;
+    act(() => {
+      // Delete the ACTIVE chapter, which is what triggers the follow-up GET.
+      deletePromise = result.current.handleDeleteChapter(mockChapter1);
+    });
+    await waitFor(() => expect(api.chapters.delete).toHaveBeenCalled());
+
+    // Navigate to project B and let its load finish, all while A's
+    // secondary GET is still parked.
+    vi.mocked(api.projects.get).mockResolvedValueOnce(otherProject);
+    rerender({ slug: "other-project" });
+    await waitFor(() => expect(result.current.project?.slug).toBe("other-project"));
+
+    // Now A's GET answers. It must not touch B.
+    await act(async () => {
+      resolveNextChapter(mockChapter2);
+      await deletePromise;
+    });
+
+    expect(result.current.project?.slug).toBe("other-project");
+    expect(result.current.activeChapter?.id).not.toBe(mockChapter2.id);
+    expect(result.current.activeChapter?.project_id).not.toBe(mockProject.id);
+    warn.silent();
+  });
+
   it("cross-project nav guard (sweep): handleStatusChange does NOT setError or fire onError on the wrong project after A→B nav", async () => {
     // handleStatusChange's catch tail routed through applyMappedError
     // with an `if (onError) onError else setError` fallback — both

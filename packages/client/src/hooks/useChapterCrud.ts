@@ -716,6 +716,24 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
             return { ...prev, chapters: prev.chapters.filter((c) => c.id !== chapter.id) };
           });
 
+          // OOSS2 (backlog 872b6760): the drift guard covers the SUCCESS path
+          // too, not just the two catch arms. Everything below writes
+          // active-chapter state, and after an A-to-B navigation those writes
+          // land on B.
+          //
+          // Placed HERE rather than at the entry's suggested spot (right after
+          // the DELETE's abort check): `clearCachedContent(chapter.id)` above
+          // must still run on drift, because the chapter really is deleted
+          // server-side and its cached draft is garbage either way. Bailing
+          // earlier would leak that cache entry. The `setProject` filter above
+          // is safe on drift by construction — filtering B's chapters by A's
+          // deleted id matches nothing — as the catch-path comment already
+          // notes.
+          //
+          // Returning TRUE, matching the two inner arms below: the delete
+          // succeeded on the server, so the caller should still refresh its
+          // trash list. Only the UI writes are being skipped.
+          if (isStaleProject()) return true;
           // If deleting the active chapter, switch to the first remaining
           if (activeChapterRef.current?.id === chapter.id) {
             const first = remaining[0];
@@ -735,6 +753,15 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
                 const ch = await api.chapters.get(first.id, s);
                 if (s.aborted) return true;
                 if (token.isStale()) return true;
+                // OOSS2: re-check AFTER the await. The guard above ran before
+                // this GET was issued; the navigation this defends against
+                // typically happens WHILE it is in flight, and because
+                // loadProject never calls selectChapterSeq.start(), the token
+                // check above cannot see a project switch — only a competing
+                // chapter selection. Without this line the GET resolves last
+                // and pins project A's chapter as active under project B's
+                // URL, and the next keystroke auto-saves into A's chapter id.
+                if (isStaleProject()) return true;
                 setActiveChapter(ch);
                 setChapterWordCount(countWords(ch.content));
               } catch (err) {
