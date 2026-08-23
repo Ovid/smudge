@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, cleanup, act } from "@testing-library/react";
 import { UNTITLED_CHAPTER } from "@smudge/shared";
 import { EditorPage } from "../pages/EditorPage";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -324,6 +324,55 @@ describe("Ctrl+Shift+Arrow chapter navigation", () => {
 
     fireEvent.keyDown(document, { key: "ArrowDown", ctrlKey: true, shiftKey: true });
 
+    await waitFor(
+      () => {
+        expect(screen.getByTestId("nav-announcement")).toHaveTextContent(
+          "Navigated to Chapter Two",
+        );
+      },
+      { timeout: 3000 },
+    );
+  });
+
+  // Review 2026-08-23 (I3). The re-entrancy latch added for I7 inverted the
+  // premise this announcement rests on. The navEpoch comment in
+  // useKeyboardShortcuts states that premise: "press N+1 aborts press N's
+  // in-flight GET synchronously, so press N resolves false FIRST". With the
+  // latch, press 2 never reaches the GET — it is refused at the top of
+  // switchToView and resolves false IMMEDIATELY, while press 1 is still parked
+  // on flushSave. Press 2 owns the epoch, so its refusal speaks; press 1 then
+  // navigates for real and its success is discarded as epoch-stale.
+  //
+  // The screen-reader user is therefore told "Could not navigate to Chapter
+  // Two" while sitting on Chapter Two, and the live region is the only signal
+  // they have. That is the defect F-13/I1 exist to prevent.
+  it("announces the navigation that happened, not the press the latch refused", async () => {
+    renderEditorPage();
+    await waitFor(
+      () => {
+        expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
+
+    // Two presses in ONE tick — the shape key autorepeat produces. Press 1
+    // parks on flushSave; press 2 arrives while it is still in flight.
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "ArrowDown", ctrlKey: true, shiftKey: true });
+      fireEvent.keyDown(document, { key: "ArrowDown", ctrlKey: true, shiftKey: true });
+      await Promise.resolve();
+    });
+
+    // Press 1 wins: the writer lands on Chapter Two.
+    await waitFor(
+      () => {
+        expect(api.chapters.get).toHaveBeenCalledWith("ch-2", expect.any(AbortSignal));
+      },
+      { timeout: 3000 },
+    );
+
+    // So the live region must say so. Before the fix it said the opposite,
+    // naming the very chapter the writer had just arrived on.
     await waitFor(
       () => {
         expect(screen.getByTestId("nav-announcement")).toHaveTextContent(
