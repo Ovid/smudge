@@ -711,8 +711,32 @@ export function EditorPage() {
     [handleReorderChapters, isActionBusy, setActionError, editorMachine],
   );
 
+  // I7 (review 2026-08-23): switchToView's own re-entrancy latch. isActionBusy()
+  // below cannot cover this — it reads mutation.isBusy() and actionBusyRef, and
+  // switchToView sets NEITHER, so before this ref two view switches could run
+  // concurrently. Key autorepeat produces that by construction (the Ctrl+Shift+P
+  // handler has no e.repeat check), and a double-click on the view nav does the
+  // same. The damage is in the overlap: press 2 makes press 1's save token
+  // stale, so press 1's flushSave resolves false even when its PATCH committed,
+  // and the `if (!flushed)` arm then shows a save-failed banner that is not true
+  // AND re-enables the editor while press 2's flush is still running — the
+  // window CLAUDE.md save-pipeline invariant 2 closes.
+  //
+  // A ref, not machine state, for the same reason mutation-busy is a ref
+  // (CLAUDE.md §"Mutation-busy is deliberately not machine state"): the latch
+  // must be readable BEFORE the first await, and reducer state is visible only
+  // after React commits.
+  const viewSwitchInFlightRef = useRef(false);
+
   const switchToView = useCallback(
     async (mode: ViewMode): Promise<boolean> => {
+      // Refuse a view switch while another one is mid-flush. Same copy as the
+      // two refusal branches below, so the click is answered rather than
+      // dropped.
+      if (viewSwitchInFlightRef.current) {
+        setActionInfo(STRINGS.editor.mutationBusy);
+        return false;
+      }
       // Refuse view switches while a useEditorMutation.run() is in-flight
       // (I2): switchToView's flushSave would abort the mutation's save
       // controller and the user could click away mid-replace, racing the
@@ -759,56 +783,63 @@ export function EditorPage() {
       // that fires AFTER the view switch, desyncing editor state from
       // the displayed view. Mirrors SnapshotPanel.onView and the three
       // mutation.run() callers.
-      safeSetEditable(editorRef, false);
-      let flushed: boolean;
+      // Latch AFTER the three refusal branches: a refused switch never started,
+      // so it must not block the next one. Cleared in the finally below.
+      viewSwitchInFlightRef.current = true;
       try {
-        flushed = (await editorRef.current?.flushSave()) ?? true;
-      } catch (err) {
-        // A flush throw must not leave the editor in an inconsistent state
-        // and must not surface as an unhandled rejection (C2): callers like
-        // handleSelectChapterWithFlush void this promise via the sidebar
-        // click handler and have no try/catch. Convert to a save-failed
-        // banner + false return — the same shape as a flushed:false reject.
-        //
-        // S2 (agentic-review 2026-05-26): the chapter.flushBeforeNavigate
-        // scope was added in this PR for this exact case (flush failure
-        // observed BEFORE navigation completes) but had been wired only
-        // to handleSelectChapterWithFlush's defensive outer catch, which
-        // is unreachable today (this catch already converts throws to a
-        // banner+false return). Route the mapping here so the scope has
-        // a real reachable site and the NETWORK case gets the scope's
-        // transient-specific `flushBeforeNavigateFailedNetwork` copy
-        // instead of the generic viewSwitchSaveFailed string.
-        safeSetEditable(editorRef, true);
-        clientWarn("switchToView: flushSave threw", err);
-        applyMappedError(mapApiError(err, "chapter.flushBeforeNavigate"), {
-          onMessage: setActionError,
-        });
-        return false;
+        safeSetEditable(editorRef, false);
+        let flushed: boolean;
+        try {
+          flushed = (await editorRef.current?.flushSave()) ?? true;
+        } catch (err) {
+          // A flush throw must not leave the editor in an inconsistent state
+          // and must not surface as an unhandled rejection (C2): callers like
+          // handleSelectChapterWithFlush void this promise via the sidebar
+          // click handler and have no try/catch. Convert to a save-failed
+          // banner + false return — the same shape as a flushed:false reject.
+          //
+          // S2 (agentic-review 2026-05-26): the chapter.flushBeforeNavigate
+          // scope was added in this PR for this exact case (flush failure
+          // observed BEFORE navigation completes) but had been wired only
+          // to handleSelectChapterWithFlush's defensive outer catch, which
+          // is unreachable today (this catch already converts throws to a
+          // banner+false return). Route the mapping here so the scope has
+          // a real reachable site and the NETWORK case gets the scope's
+          // transient-specific `flushBeforeNavigateFailedNetwork` copy
+          // instead of the generic viewSwitchSaveFailed string.
+          safeSetEditable(editorRef, true);
+          clientWarn("switchToView: flushSave threw", err);
+          applyMappedError(mapApiError(err, "chapter.flushBeforeNavigate"), {
+            onMessage: setActionError,
+          });
+          return false;
+        }
+        if (!flushed) {
+          safeSetEditable(editorRef, true);
+          setActionError(STRINGS.editor.viewSwitchSaveFailed);
+          return false;
+        }
+        setTrashOpen(false);
+        setViewMode(mode);
+        if (mode === "dashboard") {
+          setDashboardRefreshKey((k) => k + 1);
+        }
+        // View-switch succeeded; re-enable so the editor is writable when
+        // the user returns to editor mode. (Preview/Dashboard unmount the
+        // Editor, so this primarily covers the editor→editor no-op path
+        // and any transitional render between switch and remount.) Skipped
+        // when the lock is set (defensive — switchToView refuses above when
+        // locked, but a future refactor that loosens the gate must still
+        // honor the lock here).
+        if (!editorMachine.isLocked()) {
+          safeSetEditable(editorRef, true);
+        }
+        return true;
+      } finally {
+        viewSwitchInFlightRef.current = false;
       }
-      if (!flushed) {
-        safeSetEditable(editorRef, true);
-        setActionError(STRINGS.editor.viewSwitchSaveFailed);
-        return false;
-      }
-      setTrashOpen(false);
-      setViewMode(mode);
-      if (mode === "dashboard") {
-        setDashboardRefreshKey((k) => k + 1);
-      }
-      // View-switch succeeded; re-enable so the editor is writable when
-      // the user returns to editor mode. (Preview/Dashboard unmount the
-      // Editor, so this primarily covers the editor→editor no-op path
-      // and any transitional render between switch and remount.) Skipped
-      // when the lock is set (defensive — switchToView refuses above when
-      // locked, but a future refactor that loosens the gate must still
-      // honor the lock here).
-      if (!editorMachine.isLocked()) {
-        safeSetEditable(editorRef, true);
-      }
-      return true;
     },
-    [setTrashOpen, setActionError, isActionBusy, editorMachine],
+    [setTrashOpen, setActionError, setActionInfo, isActionBusy, editorMachine],
   );
 
   // mutation.isBusy() guards for entry points that either (a) bump the save
