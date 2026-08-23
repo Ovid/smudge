@@ -327,6 +327,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** `apiFetch` and the two raw-`fetch` transports pass a caller-supplied `AbortSignal` for cancellation but never compose in a timeout, so a connection that is accepted and never answered produces no rejection and the save retry ladder — which is reached entirely through `catch` — never starts.
 - **Evidence:** `packages/client/src/api/client.ts:150-162` (`apiFetch`), `:336`, `:444`, excerpt: ``const res = await fetch(`${BASE}${path}`, { headers: { "Content-Type": "application/json" }, ...options })`` — the caller's signal rides in `options`; `AbortSignal.timeout` appears nowhere in `packages/client/src`
 - **Found by:** Integration & Data
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** The user-visible failure is silent: `saveStatus` stays `"saving"` indefinitely, the three-attempt backoff never runs, and the "Unable to save" banner — the whole point of the ladder — never appears, while the writer keeps typing. The realistic trigger is a half-open socket (laptop sleep/resume, a reverse proxy holding the connection), not a slow query; browser and OS TCP timeouts eventually fire on the order of minutes. Bounded in practice, unbounded in the code, on the path CLAUDE.md calls the core trust promise.
 
 ### [F-04] A rejected auto-save produces zero server log output at any level, on exactly the path where the client discards the draft cache
@@ -335,6 +338,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** `globalErrorHandler` returns early for every `AppError` and logs only at status ≥ 500, so a 400 `VALIDATION_ERROR` from the chapter PATCH emits nothing; the access log carries a status and nothing else. Meanwhile the client clears the cached draft on exactly that code.
 - **Evidence:** `packages/server/src/app.ts:102-123` (`globalErrorHandler`), `packages/server/src/requestContext.ts:52-54`, `packages/client/src/hooks/useProjectEditor.ts:608-613`, excerpt: `if (terminalSaveError && terminalSaveError.code === "VALIDATION_ERROR" && !token.isStale()) { clearCachedContent(savingChapterId);`
 - **Found by:** Error Handling & Observability
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** Even at `LOG_LEVEL=trace` there is no code, no message and no chapter id for the rejection. The 4xx-is-quiet rule is well reasoned for a 404 on a deleted row — those are expected outcomes, not faults — but a schema rejection of a writer's manuscript content is not that class of event, and it is the one place where the server refuses content and the client then discards the only local copy of it.
 
 ### [F-05] Error-code identifiers are shared constants for three domains and bare duplicated literals for the rest
@@ -343,6 +349,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** Snapshots, outtakes and search publish their codes as shared constants consumed symbolically on both sides; chapters, projects and images type theirs independently as string literals on the server and again on the client, where nothing links the two.
 - **Evidence:** shared at `packages/shared/src/constants.ts:64,84,100`; duplicated at `packages/server/src/chapters/chapters.routes.ts:43,99`, `packages/server/src/projects/projects.routes.ts:68,88`, `packages/server/src/images/images.routes.ts:144,166` against `packages/client/src/errors/scopes.ts:77,136,210,227,243,252,272,285,360,470`, excerpt: `const CHAPTER_PATCH_COMMITTED_CODES = ["UPDATE_READ_FAILURE"];` against `"UPDATE_READ_FAILURE",`
 - **Found by:** Integration & Data, Error Handling & Observability (agreement)
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** The consequence is asymmetric and silent. Renaming a code server-side turns the server suite red, which forces the server literal to be updated; the client's `byCode` and `committedCodes` entries then stop matching with no compile error, and the user drops to generic fallback copy. `committedCodes: ["UPDATE_READ_FAILURE"]` is what drives the possibly-committed editor lock on the save path, so the failure mode is that the committed-write protection quietly stops firing. The mechanism to prevent exactly this — cross-package parity tests — already exists in `packages/shared/src/__tests__/` and was not applied to the error-code surface.
 
 ### [F-06] Five security-refusal branches in the untrusted-ZIP parser never execute in the test suite
@@ -351,6 +360,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** The module exists so that production restore and the security tests share one copy of the byte-offset arithmetic, but five of its rejection branches — including the containment check its own comment calls the real backstop — have an execution count of zero.
 - **Evidence:** `packages/server/src/backup/backup-zip-format.ts:58,62,64,72,132`, excerpt at `:132`: ``if (dest !== root && !dest.startsWith(root + sep)) { throw new ZipSlipError(`entry escapes target dir: ${JSON.stringify(p)}`); }`` against `:122-124`: "S3: no blanket whitespace reject … The `resolve()` containment check below is the real backstop"
 - **Found by:** Security & Code Quality
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** Coverage freshness was verified rather than assumed — `coverage/coverage-final.json` (2026-08-22 15:47) postdates the source file (2026-08-18), and the zero counts were re-extracted independently. The three path checks that *precede* the backstop (null byte, absolute path, `..` segment) are tested; the one they defer to is not. The zip64 gap is deliberate in the tests and untested in its own right — `backup-core.test.ts:325-326` records choosing `0xFFFFFFFE` specifically to avoid the zip64 early-exit. This matters because `runRestore` writes `smudge.db` to disk verbatim with zero payload inspection, and `config/paths.ts:44-50` builds its entire threat model on that fact.
 
 ### [F-07] The post-commit ordering contract for the velocity side effect is enforced only by a doc comment
@@ -359,6 +371,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** `fireDailySnapshot` must run after its caller's transaction commits, because it reaches the non-scoped store and would starve the single-connection pool; nothing but prose constrains a new caller.
 - **Evidence:** `packages/server/src/velocity/velocity.side-effects.ts:72` (`fireDailySnapshot`); call sites `chapters.service.ts:129,182,356`, `snapshots.service.ts:331`, `search.service.ts:381`, excerpt: doc block — "Must be called AFTER the transaction commits, never inside it."
 - **Found by:** Coupling & Dependencies
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** All five current call sites were read and each does sit after its transaction returns. A sixth placed inside one would starve the pool for the full 60-second acquire timeout, and `fireDailySnapshot`'s own catch would then swallow the timeout — the endpoint returns 2xx after a minute-long hang with a log line as the only trace. Shares a root cause with F-08 but is separate code, separate call sites and a separate fix.
 
 ### [F-08] Transaction scope is a parameter name, not a type
@@ -367,6 +382,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** Four helpers require a transaction-scoped store and say so by naming the parameter `txStore`, but the discriminating field is `private`, so it never participates in structural assignability and the root store satisfies the parameter type exactly as well as a scoped one.
 - **Evidence:** `packages/server/src/chapters/chapter-content-write.ts:70`, `packages/server/src/snapshots/auto-snapshot.ts:37`, `packages/server/src/stores/sqlite-project-store.ts:36`, excerpt: `export class SqliteProjectStore implements ProjectStore { private readonly isTransactionScoped: boolean;` against `txStore: Pick<ProjectStore, "updateChapter" | "incrementImageReferenceCount" | "findImagesByIds">`
 - **Found by:** Coupling & Dependencies
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** Two failure modes: the root store passed from *inside* a transaction queues behind the caller's own connection until the 60-second acquire timeout; passed from *outside* one, the writes autocommit separately and a failure between them leaves content updated and the image reference count stale. The blast radius is bounded and the codebase already says so — `chapter-content-write.ts` records that a stale reference count is not a data-loss path, because the reaper deletes only files with no DB row and the delete gate scans chapter content live. The residual was recognised and closed with prose (commit `f93fa80f`, "warn that writeChapterContent's txStore is unenforced") rather than with a type, and it is not among the accepted trade-offs in CLAUDE.md.
 
 ### [F-09] The knex `{min: 1, max: 1}` pool is load-bearing at seven correctness arguments, comes from a third-party default under a caret range, and is asserted by no test
@@ -375,6 +393,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** Smudge's own knex config sets neither `pool` nor `acquireConnectionTimeout`, yet the single-connection property is cited as the *reason* a correctness argument holds at seven production sites.
 - **Evidence:** `packages/server/src/db/knexfile.ts:8-20` (`createKnexConfig`); cited at `auto-snapshot.ts:30`, `snapshots.service.ts:84`, `images.repository.ts:15`, `images.service.ts:131`, `chapters.service.ts:273`, `chapter-content-write.ts:62`, `projects.service.ts:243`, excerpt: the config is `{ client: "better-sqlite3", connection: { filename: dbPath ?? getDbPath() }, useNullAsDefault: true, migrations: {...} }`
 - **Found by:** Coupling & Dependencies
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** The effective values were measured read-only during verification (instantiating knex with this exact client yields `pool.min 1`, `pool.max 1`, `acquireTimeoutMillis 60000`) rather than by mutating the config. The `min: 1` half is separately load-bearing and mentioned nowhere: `initDb` issues `PRAGMA journal_mode = WAL`, `foreign_keys = ON` and `busy_timeout` on the single pooled connection, and those are per-connection session settings that survive only because the pool never reaps below `min`. A knex minor that changes its dialect defaults would silently invalidate seven documented safety arguments and could hand out a connection with foreign keys off.
 
 ### [F-10] The two newest content-mutating service entry points carry no doc comment, which is the mitigation F-19 was accepted on
@@ -383,6 +404,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** CLAUDE.md accepts hidden side effects in chapter mutations **on the condition** that each is enumerated in the function's doc comment, and states that new mutations with non-obvious side effects must keep it. Two mutations added since do not.
 - **Evidence:** `packages/server/src/snapshots/snapshots.service.ts:143` (`restoreSnapshot`), `packages/server/src/search/search.service.ts:209` (`replaceInProject`), excerpt: in `snapshots.service.ts` the preceding `/** */` block binds to `export interface RestoreSuccess {` at `:138`, leaving `export async function restoreSnapshot(` at `:143` with nothing attached; in `search.service.ts`, `searchProjectBySlug`'s JSDoc closes at `:198` and `replaceInProject` begins at `:209` with no comment
 - **Found by:** Error Handling & Observability
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** Both halves were verified. The three originally-named functions **do** still comply — `updateChapter`, `deleteChapter` and `restoreChapter` each carry an intact side-effect enumeration abutting the declaration — so the premise holds where it was written. It does not hold for the two newer mutations, which both fire the same `fireDailySnapshot` side effect the trade-off names, plus (for `restoreSnapshot`) a pre-restore auto-snapshot write, an image reference-count diff, a project timestamp bump, and the silent dropping of references to images that no longer exist.
 
 ### [F-11] Two startup jobs bypass the repository layer and open a second transaction owner
@@ -391,6 +415,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** CLAUDE.md states that repositories encapsulate all SQL and that the store facade hosts the transaction boundary. The purge job writes raw Knex query-builder calls against three domains' tables and opens its own transaction alongside the store seam; the image reaper reads a table directly.
 - **Evidence:** `packages/server/src/db/purge.ts:14-48` (`purgeOldTrash`), `packages/server/src/images/images.reaper.ts:57` (`reapOrphanImages`), excerpt: `const { chapters, projects, images, purgedProjectIds } = await db.transaction(async (trx) => { ... await trx("chapters").where("deleted_at", "<", cutoff).delete();` and `const rows = await db("images").select("id");`
 - **Found by:** Coupling & Dependencies
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** These are the only two non-repository production files touching the Knex query builder — re-grepped during verification. The consequence is that the soft-delete filter rule and the cascade assumptions now live in two places, and the single-owner transaction seam that the accepted F-4 trade-off calls "genuinely load-bearing" has an undocumented second owner. Both jobs receive the bare Knex handle from `index.ts` before or around store initialization.
 
 ### [F-12] The server's declared production entrypoint cannot be executed
@@ -399,6 +426,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** `moduleResolution: "bundler"` makes TypeScript emit relative import specifiers without file extensions, which Node's ESM loader rejects in a `"type": "module"` package — so the `start` script's `node dist/index.js` fails immediately.
 - **Evidence:** `packages/server/package.json` (`"start": "node dist/index.js"`), `tsconfig.base.json:5`, `packages/shared/package.json` (`"main": "./src/index.ts"`), `Makefile:81-82`, excerpt (run during verification): `Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/Users/ovid/projects/smudge/packages/server/dist/db/connection' imported from .../dist/index.js`
 - **Found by:** Coupling & Dependencies
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** The staleness question was checked explicitly: `dist/index.js` is dated 2026-08-21, newer than its source, so this artifact is current rather than left over. More importantly the failure is structural — extensionless relative specifiers are what these compiler settings emit for *any* build, so a fresh build fails identically. A fresh build was not run, because that would write to the repository; that conclusion rests on reading the emitted specifiers plus the two configuration settings. Behind the first failure sits a second: the shared package's `main` points at raw TypeScript, binding every consumer to a TypeScript-aware runtime. This is invisible today because development runs through `tsx`, `make build` builds only the client, and there is no `Dockerfile` — it becomes blocking on the day the documented single-container deployment is attempted.
 
 ### [F-13] Mutable, reclaimable slugs address five destructive write routes; the steering file records only the read consequence
@@ -407,6 +437,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** CLAUDE.md documents that renaming a project releases its slug and that the hazard is reachable through a bookmark, a history entry or a shared link — then states the consequence purely as a read that opens a different project.
 - **Evidence:** `packages/server/src/projects/projects.routes.ts:31` (PATCH), `:58` (POST chapters), `:75` (PUT order), `:117` (DELETE), `packages/server/src/search/search.routes.ts:88` (POST replace), `packages/server/src/projects/projects.repository.ts:122-143` (`resolveUniqueSlug`), excerpt: CLAUDE.md — "an old `/projects/my-novel` URL then opens a _different_ project, silently, with no 404."
 - **Found by:** Integration & Data
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** This is not a re-opening of the accepted F-24 route-shape split; it is a gap in that trade-off's *recorded impact*. The same reachability applies unchanged to project rename, whole-project soft delete, chapter creation, chapter reordering and manuscript-wide find-and-replace. A stale second tab left open across a rename, then resubmitted, trashes or rewrites a different manuscript with no error. The writes are recoverable — trash retains 30 days, replace leaves auto-snapshots — but they land on the wrong manuscript silently, and a reader of the steering file would not know to look for it.
 
 ### [F-14] The client emits no diagnostic output in a production build and has no knob to enable any
@@ -415,6 +448,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** `clientWarn` and `clientError` are gated on `import.meta.env.DEV`, which Vite statically resolves to `false` in a production build, so all 41 non-test call sites compile to no-ops in the artifact that is actually served.
 - **Evidence:** `packages/client/src/errors/clientLog.ts:31-38`, `packages/client/src/hooks/useContentCache.ts:11,21,30`, excerpt: `export function clientWarn(...args: unknown[]): void { if (isDev()) console.warn(...args); }`
 - **Found by:** Error Handling & Observability
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** The framing matters: the production no-op is deliberate and documented, so this is not "client logging is missing." It is that the client has no counterpart to the server's `LOG_LEVEL`, which `docs/configuration.md` calls the knob to reach for when diagnosing a live problem — no query parameter, no `localStorage` flag, no debug build variant exists. The concrete case is `useContentCache`'s three failure sites, which cover `localStorage` quota exhaustion on the draft cache that CLAUDE.md calls the last line of defence against data loss: the user sees a footer banner, and the operator gets no error object, no key and no exception. The decision to have no production client observability appears nowhere as a recorded decision.
 
 ### [F-15] The TipTap node-type registry is spread across five sites and the in-repo cross-reference covers three of them
@@ -423,6 +459,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** Registering a node type in `editorExtensions.ts` requires coordinated edits in four other enumerations, each with a different silent failure mode, and the comment that names the hazard enumerates only the three that live in `shared`.
 - **Evidence:** `packages/shared/src/editorExtensions.ts:21` (registration), `packages/shared/src/tiptap-plaintext.ts:14` (`BLOCK_TYPES`), `packages/shared/src/tiptap-text.ts:69` (`LEAF_BLOCKS`), `packages/client/src/sanitizer.ts:40` (`ALLOWED_TAGS`), `packages/server/src/export/docx.renderer.ts:269-364` (`blockToParagraphs`), excerpt: "S9: THREE independent encodings of \"what separates text\" live in shared, and nothing forces a joint update when a node type is registered in editorExtensions.ts"
 - **Found by:** Structure & Boundaries
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** Neither `sanitizer.ts` nor `docx.renderer.ts` mentions the S9 note or any of the shared tables, and `editorExtensions.ts` — the file an author actually edits — points at none of them. The forcing test asserts the extension list and asks one question ("does this extension render into output?"), not which of the five tables need updating. The result would be a divergence rather than a uniform omission: a new block-level node renders in HTML and EPUB export while being stripped from preview and snapshot view by DOMPurify and dropped from DOCX by the switch's log-and-skip default. Live risk given the roadmap: paragraph tags (4c.3), citations (6a) and import (7e) are all plausibly node-adding.
 
 ### [F-16] `ImageGallery` holds two screens, all image server access, and eight concerns over one state bag
@@ -431,6 +470,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** A single 668-line component owns 11 pieces of state, a refresh counter, five async handlers, a live-region announcer with its own timer, two in-effect network loaders, and two complete view implementations sharing one state bag.
 - **Evidence:** `packages/client/src/components/ImageGallery.tsx:37-51` (11 `useState`), `:94` (`useReducer`), `:69,:78` (`useAbortableAsyncOperation`), `:118,:169` (in-effect loaders), grid view `:410-482`, detail view `:483-668`, excerpt: `:118 const controller = new AbortController(); api.images.list(projectId, controller.signal)`
 - **Found by:** Structure & Boundaries
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** Every comparable flow in this client has been extracted into a hook (`useSnapshotState`, `useFindReplaceState`, `useTrashManager`, `useOuttakeCapture`); the gallery has been worked on repeatedly but only on the abort and error axis, and Phase 4b.3a.4 explicitly left its two loader effects as they are. This is *not* covered by the accepted F-1 trade-off, which is scoped to `EditorPage` and rests on cross-hook busy/lock coordination the gallery does not participate in. One correction to the original finding: the two raw `AbortController` allocations are inline in `useEffect`, not `useRef` allocations, so the ESLint rule does not reach them — they are legal, merely inconsistent with the same file's two uses of the hook. The finding rests on cohesion, not on line count.
 
 ### [F-17] `useFindReplaceState.search()` advertises a parameter it discards
@@ -439,6 +481,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** The published interface takes a project slug; the implementation ignores it and reads a ref instead, because callers capture the slug in a closure that goes stale after a rename.
 - **Evidence:** `packages/client/src/hooks/useFindReplaceState.ts:41` (interface) versus `:348-362` (implementation); call sites `useFindReplaceController.ts:251,640,710`, excerpt: interface `search: (projectSlug: string) => Promise<void>;` against `async (_slug: string) => { ... const current = latestSlugRef.current; if (!current) return; await search(current); }`
 - **Found by:** Coupling & Dependencies
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** The discard is deliberate and documented at the implementation. There is no user-visible failure mode — the guard is correct. The residual is a signature that advertises a parameter it must ignore, and two of the three call sites pass the exact stale closure value the ref exists to avoid, so a reader auditing them cannot tell they are safe.
 
 ### [F-18] A two-call snapshot refresh obligation is open-coded at seven sites
@@ -447,6 +492,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** Every path that may have caused a server-side auto-snapshot must fire both the panel refresh and the count refresh; they are not interchangeable, because the panel handle is a no-op when the panel is closed.
 - **Evidence:** `packages/client/src/hooks/useSnapshotController.ts:253+260, 301+302, 320+326, 384+385, 398+406, 433+440`, `packages/client/src/hooks/useFindReplaceController.ts:252+256`, excerpt: `snapshotPanelRef.current?.refreshSnapshots(); refreshSnapshotCount();`
 - **Found by:** Coupling & Dependencies
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** The rationale is re-explained at six of the seven sites, and the pairs are already drifting apart in shape (two of them now straddle multi-line comment blocks). One piece of the original supporting evidence does not hold and was corrected: the final arm of `handleRestoreSnapshot` fires neither refresh, but that arm is a pre-mutation stage where no server call was made, so refreshing nothing there is correct. Worst case from a genuinely missed pairing is a stale badge or a stale list, both cleared by reopening the panel.
 
 ### [F-19] Backup restore depends on JSZip's internal source behaviour under a caret version range
@@ -455,6 +503,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** Restore parses the same archive bytes twice with two independent implementations, and reconciling their two key spaces rests on JSZip behaviour that is documented only in JSZip's source, not its public API.
 - **Evidence:** `packages/server/src/backup/backup-core.ts:252-268`, `:285-295` (`runRestore`), `packages/server/package.json` (`"jszip": "^3.10.1"`), excerpt: "JSZip keys its map by each entry's LOCAL header name (zipEntry.js readLocalPart overwrites fileName; readCentralPart deliberately skips it)"
 - **Found by:** Coupling & Dependencies
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** Two mitigations are real: the failure surfaces as a precondition error *before* the data-dir move-aside, so nothing is destroyed, and a test exercises the fallback key lookup. Worth contrasting with the TipTap coupling CLAUDE.md treats as load-bearing, which at least names an exact version.
 
 ### [F-20] The shared package's test suite reaches into both dependents' source trees by filesystem path
@@ -463,6 +514,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** The most-depended-upon package's tests hard-code six paths into its two dependents and regex-scrape their source for exact declaration syntax, an edge invisible to every static check in the repo because it travels through `readFileSync`.
 - **Evidence:** `packages/shared/src/__tests__/image-src-allowlist-parity.test.ts:38-40`, plus `upload-cap-label-parity.test.ts` and `vite-config-default-port.test.ts`, excerpt: `const CLIENT_SANITIZER = resolve(HERE, "../../../client/src/sanitizer.ts");`
 - **Found by:** Coupling & Dependencies
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** Reported as a qualified residual rather than a defect. The rationale is explicit and sound — this test lives in `shared` because it is the only package that may read both of the others — each scrape carries a "was it renamed? update this test" message, and unifying the regexes is forbidden by the accepted F-16 trade-off. The residual is that moving or reformatting a file in `client` or `server` turns the `shared` suite red with no static signal that the coupling exists. This is the cost side of strength S-17.
 
 ### [F-21] A load-bearing safety rationale rests on a false claim about the code
@@ -471,6 +525,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** The justification for `fireDailySnapshot`'s options-object signature argues that a swapped positional argument would fail silently because no production path enables SQLite foreign keys. Two production paths do.
 - **Evidence:** `packages/server/src/velocity/velocity.side-effects.ts:64-67` versus `packages/server/src/db/connection.ts:68` (`initDb`) and `:39` (`setDb`), excerpt: the comment claims "no production path issues `PRAGMA foreign_keys = ON` and SQLite defaults it off"; `connection.ts:68` is `await instance.raw("PRAGMA foreign_keys = ON");`
 - **Found by:** Coupling & Dependencies
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** `connection.test.ts` additionally asserts the pragma is on after `initDb`. The design decision the comment defends — named fields rather than two adjacent same-typed positionals — remains correct; only the stated reason is wrong. It matters because the next reader will use that reason to judge a sibling case.
 
 ### [F-22] CLAUDE.md's F-16 entry says the image-URI rule is encoded twice; it is encoded four times, and the mitigation has changed
@@ -479,6 +536,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** The accepted trade-off names two encodings and records the mitigation as cross-referencing comments. There are four encodings, and three of them are now held together by a machine check rather than by comments.
 - **Evidence:** `CLAUDE.md` §Accepted Architectural Trade-offs F-16 versus `packages/client/src/sanitizer.ts:115` (`ALLOWED_URI_REGEXP`), `packages/server/src/images/images.references.ts:36` (`IMAGE_SRC_RE`), `packages/server/src/export/export.renderers.ts:62` (`ALLOWED_IMAGE_SRC`), `packages/server/src/images/images.paths.ts:44` (`IMAGE_SRC_REGEX`), excerpt: CLAUDE.md — "The only residual is cross-package coupling: a change to one warrants review of the other (cross-referencing comments exist at both sites)."
 - **Found by:** Coupling & Dependencies
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** One correction to the original finding, added during verification: **the code has not drifted — the steering file has.** Both `sanitizer.ts:113` and `export.renderers.ts:61` explicitly say "This is NOT the F-16 pair," so the source already distinguishes the four. The drift is in both directions: the corpus grew from two to four, and the mitigation for three of the four was upgraded from comments to the parity test recorded as S-17. Only `IMAGE_SRC_RE`, deliberately outside that corpus because of its absolute-host arm, still rests on comments alone.
 
 ### [F-23] Seven of the eight store slice interfaces are never used as narrowing types
@@ -487,6 +547,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** Each per-domain slice appears exactly twice — at its own declaration and in the composed interface's `extends` list. Only one narrows a real signature anywhere in the codebase.
 - **Evidence:** `packages/server/src/stores/project-store.types.ts:37,52,83,90,96,108,137`, with the sole narrowing use at `packages/server/src/snapshots/auto-snapshot.ts:37`, excerpt: each is `export interface X {` plus one entry in the `extends` list at `:158-165`
 - **Found by:** Coupling & Dependencies
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** This deliberately does not re-litigate the accepted F-4 trade-off, whose stated premise is a documentation claim about data-surface value and which holds. It is recorded as the concrete measurement a future reviewer would otherwise re-derive: the slices earn their keep as reading aids, not as narrowing types, and `project-store.types.ts` is the only server file with both high afferent and high efferent coupling.
 
 ### [F-24] Client access to server data has no single owner, and two domains are split between a component and a hook
@@ -495,6 +558,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** The API client is imported by 8 components and 10 hooks with no rule separating them, and for snapshots and outtakes the resulting split requires hand-written coordination to stay consistent.
 - **Evidence:** `packages/client/src/components/SnapshotPanel.tsx:150` and `packages/client/src/hooks/useSnapshotState.ts:563` (both call `api.snapshots.list`); `packages/client/src/components/OuttakeCard.tsx:139,195` versus `OuttakesPanel.tsx:111` versus `useOuttakeCapture.ts:161`, excerpt: `OuttakeCard.tsx:95-104` — `const deleteInFlightRef = useRef(false); ... const updateInFlightRef = useRef(false); ... const inFlightLabelRef = useRef<string | null>(null);`
 - **Found by:** Structure & Boundaries
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** Downgraded from the original Medium during verification: no failure mode was identified, and the one place it could bite — the panel and hook both fetching — is deliberately suppressed by a documented ref that mirrors the panel's open state. The concrete cost is that `OuttakeCard`, a leaf list item, re-implements a three-ref busy latch that its sibling hooks own elsewhere, and that a new endpoint has no rule telling the next author where its call belongs.
 
 ### [F-25] Velocity is the only project sub-resource not mounted as its own router
@@ -503,6 +569,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** Five routers mount on `/api/projects`; velocity instead exports a bare handler that the projects router imports and mounts, giving `projects.routes.ts` a cross-domain import no sibling router has.
 - **Evidence:** `packages/server/src/velocity/velocity.routes.ts:5` (`velocityHandler`), mounted at `packages/server/src/projects/projects.routes.ts:45`, excerpt: `export const velocityHandler = asyncHandler(async (req, res) => {` mounted as `router.get("/:slug/velocity", velocityHandler);`
 - **Found by:** Structure & Boundaries
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** The extraction commit records no rationale and no decision log mentions it. The practical cost is that this is the one project endpoint you cannot find from `app.ts`.
 
 ### [F-26] A doc comment in `useEditorMutation.ts` is orphaned in exactly the way the steering file's documentation rule forbids
@@ -511,6 +580,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** A comment block describing `MutationDirective` is followed not by that type but by a different function's own JSDoc and declaration; the type it describes sits 28 lines further down with nothing attached.
 - **Evidence:** `packages/client/src/hooks/useEditorMutation.ts:35-44` (orphaned block), `:45-64` (`isDriftedFrom` JSDoc), `:66` (`isDriftedFrom`), `:72` (`MutationDirective`), excerpt: "// Discriminated union so the type system forces reloadChapterId whenever // reloadActiveChapter is true."
 - **Found by:** Structure & Boundaries
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** `git log -L` shows the insertion came from the commit that added the shared drift predicate. CLAUDE.md §Documentation Discipline rule 3 forbids exactly this shape. One nuance: the orphaned block uses line comments rather than JSDoc, so no editor tooltip is lost — the damage is that `MutationDirective`'s rationale now reads as a preamble to an unrelated predicate.
 
 ### [F-27] `POST /api/chapters/{id}/restore` is not idempotent, and its idempotent branch is unreachable
@@ -519,6 +591,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** A guard outside the transaction returns 404 when the chapter is not currently deleted; the correct already-restored branch inside the transaction can only be reached by a race a single-writer process never produces.
 - **Evidence:** `packages/server/src/chapters/chapters.service.ts:259-260` versus `:286-299`, excerpt: `const chapter = await store.findDeletedChapterById(id); if (!chapter) return null;` against the later `const alreadyActive = await txStore.findChapterById(id); if (alreadyActive) { return confirmRestore(...); }`
 - **Found by:** Integration & Data
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** A user retrying after a dropped-but-committed restore is told the chapter is "no longer available" about an operation that succeeded. The codebase already describes this behaviour but treats it as a reason to avoid a 500 rather than as an idempotency gap. Downgraded from the original Medium: the restore did succeed, nothing is lost or corrupted, and a reload shows the true state — the misleading copy is the whole cost. Every other retry-exposed mutation is idempotent by construction, and S-22 is the contrasting shape.
 
 ### [F-28] The "liveness check and read in one transaction" rule is applied to four read paths and skipped on the five largest
@@ -527,6 +602,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** Three modules deliberately wrap "resolve the parent, then read its children" in one transaction, each with a recorded rationale; the identical two-step shape runs unwrapped in the app's primary load, the dashboard, the trash view, export and search.
 - **Evidence:** applied at `packages/server/src/images/images.service.ts:125-138`, `outtakes.service.ts:54-62`, `snapshots.service.ts:87,98`; skipped at `projects.service.ts:108-118`, `:284-292`, `:320-326`, `export/export.service.ts:36-40`, `search/search.service.ts:126-130`, excerpt: "F-29: the liveness check and the read are ONE transaction ... Split across two round trips, a project soft-delete landing between them answered 200-with-data for a project the writer had just trashed."
 - **Found by:** Integration & Data
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** For a single writer the observable outcome is a 200 carrying a stale or empty child list rather than a 404, so severity is genuinely low. The finding is the unmarked inconsistency: an invariant recorded four times as a rule is unapplied five times with nothing indicating the omission was a decision.
 
 - **Citation drift (2026-08-22):** the `getTrash` site cited above as `projects.service.ts:320-326` moved to `:332` when F-01 was fixed in commit 81a87fd9. F-28 itself is **untouched** by that fix — `getTrash` still reads without a transaction-wrapped liveness check, it now just resolves the live project instead of an arbitrary one. The other four skipped sites are unverified against the current tree; re-derive every line number here before acting on them.
@@ -537,6 +615,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** The database is captured at one instant and the image tree is walked afterwards, with live writes permitted throughout, so an image deleted between the two is present as a row in the archived database and absent as bytes.
 - **Evidence:** `packages/server/src/backup/backup-core.ts:481-504` (`runBackup`), `docs/backup.md:79-80`, excerpt: ``db.exec(`VACUUM INTO '${staging...}'`)`` at `:484` then `for await (const file of walkFiles(imagesDir))` at `:492`; the doc says "Each archive contains a hot-consistent copy of the SQLite database (via `VACUUM INTO`) and the full `images/` tree."
 - **Found by:** Integration & Data
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** The documentation sentence is true of each half and easy to read as a claim about the pair; the limit is stated nowhere. Restoring such an archive yields a manuscript whose text is intact and whose images 404. The mirror case (an upload between the two instants) is benign — an orphan file the startup reaper collects.
 
 ### [F-30] The wire-type parity net has two holes, and one endpoint's response shape exists in no shared file
@@ -545,6 +626,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** The parity test covers four server row types; the project-list row and the dashboard response are served on the wire and covered by neither, with the dashboard shape re-declared inline on the client.
 - **Evidence:** `packages/server/src/__tests__/wire-type-parity.test.ts:39-63`; uncovered at `packages/server/src/projects/projects.types.ts:34-41` (`ProjectListRow`) and `packages/server/src/projects/projects.service.ts:26-35` (`DashboardResponse`) versus `packages/client/src/api/client.ts:298-320`, excerpt: ``apiFetch<{ chapters: Array<{...}>; status_summary: Partial<Record<ChapterStatusValue, number>>; totals: {...} }>(`/projects/${enc(slug)}/dashboard`)``
 - **Found by:** Integration & Data
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** Downgraded on a correction: half of this is already a documented decision — the client states that narrowing the server's `Record<string, number>` to the status enum is a deliberate JSON-boundary asymmetry. The undocumented residual is that neither shape is in the parity net, and the consequence of drift is a wrong number on a read-only dashboard.
 
 ### [F-31] Search and replace are the only body-carrying endpoints whose request schema is not in `shared`, and their option triple is restated eight times
@@ -553,6 +637,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** Every other body-carrying route validates through a schema exported from the shared package; these two declare theirs locally, and the option object is then hand-restated across five service signatures, the API client and a client hook.
 - **Evidence:** `packages/server/src/search/search.routes.ts:13-32`, with the shared counterpart at `packages/shared/src/tiptap-text.ts:32`, excerpt: `const SearchOptionsSchema = z.object({ case_sensitive: z.boolean().optional(), whole_word: ..., regex: ... }).strict().optional();`
 - **Found by:** Integration & Data
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** There *is* an exported shared `SearchOptions`, but it carries a server-internal `deadline` field that the route's `.strict()` schema would reject — so the shared type cannot serve as the wire type as written. That is the real reason the duplication exists, and it is recorded nowhere, so a reader has to rediscover it.
 
 ### [F-32] Structured-log field naming splits between snake_case and camelCase, and the split falls on the image-orphan events
@@ -561,6 +648,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** The dominant convention is snake_case domain keys, but five sites use camelCase — three of them inside a single file that uses both — and two logs carry no queryable domain id at all.
 - **Evidence:** `packages/server/src/images/images.service.ts:222` versus `:154,258,261`; also `packages/server/src/db/purge.ts:66`, `packages/server/src/export/docx.renderer.ts:398` (against `epub.renderer.ts:99`), `packages/server/src/images/images.reaper.ts:85`, excerpt: `logger.warn({ chapter_id: ch.id, image_id: id, project_id: image.project_id }, ...)` beside `logger.warn({ err, imageId: id }, "Failed to delete image file from disk")`
 - **Found by:** Error Handling & Observability
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** The link to the accepted F-2 trade-off is legitimate: that trade-off accepts the absence of request correlation *on the premise* that domain ids are the correlation key for a single-user app, and a query on `image_id` misses precisely the lines recording an orphaned blob and the reaper cleaning one up. Downgraded from the original Medium: the consequence is diagnosis friction for one operator running one process, not a failure.
 
 ### [F-33] The Zod-failure-to-400 conversion has three message shapes across two layers, and the helper written to own it is used at three of eleven sites
@@ -569,6 +659,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** A helper exists specifically to own this conversion and stop copies drifting; eight other sites open-code it, some throwing from the route and some returning a sentinel the route later converts, and one joins all issues where the others take only the first.
 - **Evidence:** `packages/server/src/badRequestFromSchema.ts:39` (used at `snapshots.routes.ts:19`, `outtakes.routes.ts:19,68`); open-coded at `settings.routes.ts:23`, `search.routes.ts:70,93`, `chapters.service.ts:68`, `projects.service.ts:59,129,260`, `export.service.ts:31`, `images.service.ts:163`, excerpt: `validationError: parsed.error.issues.map((i) => i.message).join("; ")` against the eight `parsed.error.issues[0]?.message ?? "Invalid input"` sites
 - **Found by:** Error Handling & Observability
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** Downgraded from the original Low-Medium: the divergence is message shape only — none of these emit a discriminating code, so every one arrives at the client as a bare `VALIDATION_ERROR` regardless of which shape produced it.
 
 ### [F-34] The image reference-count decrement loop silently skips where the increment loop warns, under a comment claiming they are the same guard
@@ -589,6 +682,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** In its fallback branch the component derives each status's display label by title-casing the key and derives workflow order from object iteration order — both of which are columns of a server-owned table.
 - **Evidence:** `packages/client/src/components/DashboardView.tsx:185-192`; server owner at `packages/server/src/db/migrations/003_add_chapter_status.js:10-14`, excerpt: `: Object.entries(status_summary).map(([status], i) => ({ status: status as ChapterStatusValue, sort_order: i, label: status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) }));`
 - **Found by:** Error Handling & Observability
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** The title-casing reproduces all five seed labels today and stops matching the moment a label is not the title-cased underscore-split of its key. The ordering is correct today only through an undocumented four-link chain from the repository's `ORDER BY` through object insertion order and JSON serialization. Both divergences would be silent, because this branch runs only when the statuses fetch has already failed. It is also generated word-bearing UI text that `strings.ts` does not own, invisible to the string-externalization ESLint rule because it is computed rather than literal.
 
 ### [F-36] The chapter-statuses retry loop inlines its attempt cap and backoff where the sibling save retry uses a named exported schedule
@@ -597,6 +693,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** One retry loop expresses its policy as two inline numbers; the other exports its schedule as a constant and derives the cap from it, so the cap and the schedule cannot drift apart.
 - **Evidence:** `packages/client/src/pages/EditorPage.tsx:619,626,627` versus `packages/client/src/hooks/useProjectEditor.ts:34`, excerpt: `if (attempts >= 2) { ... } attempts++; ... await sleep(2000 * attempts, s);` against `export const SAVE_BACKOFF_MS = [2000, 4000, 8000] as const;`
 - **Found by:** Error Handling & Observability
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** The inline form yields 2s and 4s, not the 2/4/8 shape CLAUDE.md documents for saves, and the cap is a second unnamed owner of the same policy. This is the only retry policy in the client not expressed as a named constant.
 
 ### [F-37] The orphan-blob cleanup on a genuinely failed image insert has no test; only the carve-out from it does
@@ -605,6 +704,9 @@ thirty-eight confirmed flaws are Low impact and most are of this shape.
 - **Explanation:** Both tests covering this catch block drive the one error that is *excluded* from cleanup; the rule the exclusion is carved out of never executes.
 - **Evidence:** `packages/server/src/images/images.service.ts:114-116` (`uploadImage` catch), excerpt: `if (!(err instanceof AppError && err.code === READ_AFTER_INSERT_FAILURE)) { await deleteImageFile(filePath).catch(() => {}); }`
 - **Found by:** Security & Code Quality
+- **Status:** Not yet fixed
+- **Status reason:** Not addressed by the 2026-08-22 fix session, which closed F-01, F-02, F-34 and F-38 only. Open for a future session; this block records that the finding was triaged and left, not overlooked. A session that fixes it replaces this block rather than adding a second one.
+- **Status date:** 2026-08-23 04:51 UTC
 - **Note:** Coverage counts re-extracted from the same verified-fresh coverage file: the two statements are at zero and the branch is one-sided. The regression consequence is that deleting the condition and its call together would leave both existing tests green while every failed-insert upload stranded a blob on disk. Mitigated but not closed by the startup reaper, which is why this is Low. The unreachable-by-construction extension guard in the same function is likewise at zero.
 
 ### [F-38] The multipart upload endpoint caps file size but not field count or part count
