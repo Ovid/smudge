@@ -194,9 +194,37 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
         // in the sidebar and pointing subsequent edits at the wrong
         // project's chapter id.
         if (isStaleProject()) return;
+        // Backlog 8b34a209, residual: these two, and the
+        // confirmedStatusRef seed below, take the OUTER guard only. They
+        // are plain value sets with no updater body, so there is no
+        // drain-time hook where a `prev.id === projectId` re-test could
+        // live — the guarantee the setProject call below gets is simply
+        // not available to them. Closing that would mean moving the
+        // active-chapter transition into a render-keyed effect, a
+        // structural change well past this fix. The asymmetry is
+        // deliberate and bounded: in the queue-drain window the sidebar
+        // now stays correct (project B's list is untouched) while the
+        // editor may briefly hold A's chapter — confusing, and it clears
+        // on the next project load, where before the window left a
+        // phantom chapter wedged in B's list that reorder and delete
+        // would then operate on.
         setActiveChapter(newChapter);
         setChapterWordCount(0);
-        setProject((prev) => (prev ? { ...prev, chapters: [...prev.chapters, newChapter] } : prev));
+        // Backlog 8b34a209: re-test identity INSIDE the updater. The
+        // isStaleProject() guard above is strictly stronger than an id
+        // compare — it also catches the pre-load window — but it is
+        // evaluated here, while this updater body runs later, when React
+        // drains the queue. A setProject(B) queued by a concurrent
+        // loadProject(B) in between drains first, and this updater would
+        // then append A's chapter onto B's list: a phantom chapter in
+        // project B's sidebar whose id points into project A. An outer
+        // guard cannot see inside the queue; only the updater can.
+        // Follows the S20 precedent in handleReorderChapters below.
+        setProject((prev) =>
+          prev && prev.id === projectId
+            ? { ...prev, chapters: [...prev.chapters, newChapter] }
+            : prev,
+        );
         // C2 (review 2026-04-25): seed the confirmed-status cache for the
         // newly-inserted row. Without this, a later status PATCH on this
         // chapter that fails (PATCH + recovery GET both failing) reads
@@ -331,7 +359,11 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
               // keystroke in that window auto-saves against A's chapter id
               // while the user is on B's URL.
               if (!isStaleProject()) {
-                setProject(refreshed);
+                // Backlog 8b34a209 (absorbing a65acf76): same queue-drain
+                // window as the success path above, and worse here —
+                // `refreshed` is A's WHOLE snapshot, so an unguarded
+                // merge replaces project B's state outright.
+                setProject((prev) => (prev && prev.id === projectId ? refreshed : prev));
                 // C2 (review 2026-04-25): re-seed the confirmed-status cache
                 // from the refreshed project. The recovery branch is a fresh
                 // server snapshot, so it carries the authoritative status
