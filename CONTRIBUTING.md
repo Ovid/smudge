@@ -13,7 +13,7 @@ git clone https://github.com/Ovid/smudge.git
 cd smudge
 nvm install         # reads .nvmrc — installs and selects Node 22 LTS (Jod)
 npm install
-make dev            # server + client on http://localhost:3456
+make dev            # open http://localhost:5173 (client); API on 3456
 ```
 
 E2E tests need browser binaries installed once per machine:
@@ -66,8 +66,11 @@ specifier, remove the `NODE_OPTIONS` line from the Makefile. Tracked in
 
 ### Paths worth knowing
 
-- App runs at `http://localhost:3456` (Express serves the API; Vite proxies
-  the client in dev).
+- App runs at `http://localhost:5173` in dev — Vite serves the client and
+  proxies `/api` to Express on `http://localhost:3456`. Express serves the API
+  only and has no route for `/`, so opening 3456 in a browser gives
+  `Cannot GET /`, not Smudge. Ports are overridable via `SMUDGE_CLIENT_PORT`
+  and `SMUDGE_SERVER_PORT`.
 - SQLite DB: `packages/server/data/smudge.db`. `make clean` wipes it (and the
   WAL/SHM files) for a full reset — there is no automatic recovery.
 

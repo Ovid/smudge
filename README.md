@@ -23,7 +23,7 @@ npm install
 make dev
 ```
 
-The app runs at [http://localhost:3456](http://localhost:3456).
+The app runs at [http://localhost:5173](http://localhost:5173) — that is the Vite dev server, which serves the interface and proxies `/api` through to Express on 3456. Opening 3456 directly reaches Express, which has no route for `/`.
 
 For the full contributor guide — Node version rationale, PR rules, commit conventions — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
