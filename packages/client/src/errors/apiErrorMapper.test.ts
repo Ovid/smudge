@@ -516,6 +516,60 @@ describe("SCOPES — chapter.create", () => {
   });
 });
 
+// Review 2026-08-23 (I4). A scope whose request MINTS A NEW ROW PER CALL must
+// never answer a 5xx by telling the writer to try again. The status is
+// ambiguous by three independent routes:
+//
+//   1. A reverse-proxy 502/504 is ambiguous by definition — the gateway gave up
+//      after handing the request on, so it cannot know what happened next.
+//   2. `createChapter` commits its insert inside `store.transaction(...)` and
+//      then calls `enrichChapterWithLabel` OUTSIDE it, so a throw there yields a
+//      bare 500 with the row already committed.
+//   3. A proxy that strips the error envelope turns a coded
+//      READ_AFTER_CREATE_FAILURE 500 into a bare 500, so `byCode` misses and the
+//      `byStatus[500]` row is what the user sees.
+//
+// And the mapper's byStatus arm hard-codes `possiblyCommitted: false`, so the
+// recovery-GET branch in `handleCreateChapter` cannot fire to clean up after the
+// duplicate. `image.upload` — the other non-idempotent scope — already gets this
+// right by carrying no 5xx rows at all and routing its committed case through
+// `byCode` + `committedCodes`.
+//
+// Iterating the list rather than asserting one string is deliberate: the same
+// defect reached `chapter.create` by copying `chapter.save`'s block, and the next
+// non-idempotent scope will be added the same way.
+describe("I4 — non-idempotent scopes never invite a 5xx retry", () => {
+  // Scopes whose successful request creates a NEW server row each time it runs.
+  // A retry after an ambiguous outcome leaves a duplicate the UI does not show.
+  const NON_IDEMPOTENT: ApiErrorScope[] = [
+    "chapter.create",
+    "image.upload",
+    "project.create",
+    "snapshot.create",
+    "outtake.create",
+  ];
+
+  it.each(NON_IDEMPOTENT)("%s maps no 5xx status to retry-inviting copy", (scopeName) => {
+    const entry = SCOPES[scopeName] as ScopeEntry;
+    for (const [status, copy] of Object.entries(entry.byStatus ?? {})) {
+      if (Number(status) < 500) continue;
+      expect(copy, `${scopeName}.byStatus[${status}] tells the user to retry`).not.toMatch(
+        /try again/i,
+      );
+    }
+  });
+
+  it.each(NON_IDEMPOTENT)("%s 5xx copy tells the user to refresh instead", (scopeName) => {
+    const entry = SCOPES[scopeName] as ScopeEntry;
+    for (const [status, copy] of Object.entries(entry.byStatus ?? {})) {
+      if (Number(status) < 500) continue;
+      expect(copy, `${scopeName}.byStatus[${status}] gives no recovery instruction`).toMatch(
+        /refresh/i,
+      );
+    }
+  });
+});
+
 describe("I4 — 2xx BAD_JSON on mutation scopes sets possiblyCommitted=true", () => {
   // Each mutation scope must surface the ambiguous-commit UX on 2xx
   // BAD_JSON. Missing this routes the user through the normal error

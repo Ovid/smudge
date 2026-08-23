@@ -249,6 +249,17 @@ export const SCOPES = {
     // and S7 (reverse-proxy 502/503/504). Without it those statuses fell
     // through to the createChapterFailed fallback, which reads like a
     // client-side problem the user can fix by clicking again.
+    //
+    // Review 2026-08-23 (I4): the copy these rows point at is NOT
+    // chapter.save's. That scope is an idempotent PATCH of a known row, so
+    // "Try again in a moment" is safe there; this one is a POST that mints a
+    // new row per call, and every status below can arrive with the insert
+    // already committed. The mapper's byStatus arm hard-codes
+    // possiblyCommitted: false, so handleCreateChapter's recovery GET cannot
+    // fire to reconcile a duplicate afterwards — the copy is the only guard,
+    // and it must send the user to a refresh rather than to the button.
+    // image.upload, the sibling non-idempotent scope, avoids the trap by
+    // carrying no 5xx rows at all.
     byStatus: {
       404: STRINGS.error.createChapterProjectGone,
       500: STRINGS.error.createChapterFailedServer,

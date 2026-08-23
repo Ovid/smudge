@@ -85,12 +85,20 @@ export const STRINGS = {
     restoreChapterFailedNetwork: "Failed to restore chapter — check your connection and try again.",
     settingsUpdateFailedNetwork: "Unable to save settings — check your connection and try again.",
     createChapterFailed: "Failed to create chapter",
-    // Backlog 3c4e8f72: sibling copy to editor.saveFailedServer. A bare
-    // 500, or a reverse-proxy 502/503/504, is the server's problem — the
-    // generic createChapterFailed invited an immediate retry without
-    // saying so.
+    // Backlog 3c4e8f72 asked for a sibling of editor.saveFailedServer, and
+    // review 2026-08-23 (I4) rejected half of that: a bare 500, or a
+    // reverse-proxy 502/503/504, is indeed the server's problem, but
+    // chapter.create is a POST that mints a NEW ROW per call while
+    // chapter.save is an idempotent PATCH of a known row. Any of those
+    // statuses can arrive with the insert already committed — a gateway
+    // times out after handing the request on; createChapter commits inside
+    // its transaction and then enriches the row outside it; a proxy strips
+    // the envelope off a coded READ_AFTER_CREATE_FAILURE. So this copy must
+    // never end in "Try again", the way its chapter.save sibling does:
+    // clicking again mints a duplicate chapter the sidebar does not show.
+    // Pinned by the non-idempotent-scope sweep in apiErrorMapper.test.ts.
     createChapterFailedServer:
-      "Failed to create chapter \u2014 the server is having trouble. Try again in a moment.",
+      "Failed to create chapter \u2014 the server is having trouble. The chapter may still have been created; refresh the chapter list before adding another.",
     createChapterResponseUnreadable:
       "The chapter may have been created, but the server response was unreadable. Refresh to see the current chapter list.",
     createChapterReadAfterFailure:
