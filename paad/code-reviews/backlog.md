@@ -441,13 +441,15 @@
 - **Symbol:** `runRestore`, `findEocdOffset`
 - **Bug class:** Contract / Security (differential parsing)
 - **Description:** `runRestore` reads the archive into one buffer and then parses it **twice, with two unrelated parsers**: Smudge's own central-directory walk at step 1 (which is what validates entry paths, declared sizes and free space) and `JSZip.loadAsync` at step 6 (which is what actually extracts). The two locate the end-of-central-directory record by different rules and **cannot be reconciled by editing Smudge's**, because the divergence is structural: jszip's `lastIndexOfSignature` scans the entire buffer starting at `length - 4`, while `findEocdOffset` starts at `length - 22` and stops after 64 KiB. Measured divergences: (a) a buffer under 22 bytes — jszip can locate a record, Smudge cannot; (b) a signature in the final 18 bytes — jszip sees it, Smudge structurally cannot; (c) **an archive with an over-long comment — jszip locates the record at offset 102 and `loadAsync` succeeds, while Smudge returns -1 and refuses, under the current rule and under every rule that has been tried** (verified with a 70 000-character comment; jszip's writer truncates the length field to 4 464 modulo 65 536, so a length-validating rule rejects it too).
+  **I2 (review 2026-08-23) — the enumeration above is incomplete, and the omitted case is the worst one.** Divergences (a)(b)(c) are all EOCD-*locator* cases, and the entry's framing ("cannot be reconciled by editing Smudge's") reads as if agreeing on the locator would be enough. It would not. The parsers also disagree about where the central directory *starts*: jszip's `readEndOfCentral` computes `extraBytes = endOfCentralDirOffset - (centralDirOffset + centralDirSize)` and, when positive, sets `reader.zero = extraBytes` — the standard handling for data prepended to a zip — while `walkCentralDirectory` reads the EOCD's central-directory offset as ABSOLUTE. So **(d) an archive with a prepended fake central directory gives both parsers the same EOCD and two different central directories, reachable while the locators agree.** Reproduced read-only: `smudge.db` at 200,000 B and `images/a.png` at 100,000 B with the prefix's size fields rewritten to `1` — identical EOCD offsets, Smudge reporting 1-byte entries, jszip inflating the real 200,000 and 100,000. That defeats the decompression-bomb gate outright, since `checkDeclaredSizes(sizes, buf.length, limits)` is computed entirely from Smudge's side: three declared bytes validate trivially, and step 8 then materialises the real entries — after step 7 has already moved the live data dir aside. A future author sizing the single-parser work against (a)(b)(c) alone would under-scope it.
+  Do **not** patch this with the obvious interim guard (`eocdOffset !== centralDirOffset + centralDirSize`): that inequality is exactly the prepended-data shape jszip supports on purpose, so the guard refuses archives the extraction parser loads — the same trade the `fe7acdb7` revert rejected, one case over.
   The name cross-check at step 6 (each validated name must resolve to a `zip.files` entry, bare or force-slashed, else abort) means a disagreement cannot write outside the validated path set. What it can still produce is **content substitution** (the bytes jszip's key maps to under jszip's directory, written to the path Smudge validated), **size substitution** (the byte budget is measured against Smudge's `declaredTotal`), and **silent omission** of entries jszip sees and Smudge's directory does not. Related to `fa8e879a`, which files the RAM-inflation half of the same step-6 gap.
 - **Suggested fix:** Collapse to one parser. `JSZip.loadAsync` parses the central directory **without inflating anything** — entry metadata, including each entry's declared uncompressed size, is available off the loaded entries before any `.async()` call. So the order can become: load once with jszip, read declared sizes from its entries, run the existing `validateEntryPaths` / `checkDeclaredSizes` / free-space gates against *those*, then extract. The decompression-bomb defence is preserved (nothing is inflated until the gates pass) and the differential becomes impossible by construction rather than by hand-maintained agreement. This also closes `e8ba6c7b` as a side effect and removes the reason `findEocdOffset` exists in production at all — it would remain only as a test helper, or be deleted.
 - **Why not now:** it restructures the step order of the one function that moves a user's data dir aside, and it changes which parser's view of the archive every safety gate is computed from. That deserves its own branch with the F-14 forged-archive and bomb tests re-pointed at the new source of truth, not a slot in a review-response session.
 - **Confidence:** High — every divergence above was measured, not read.
-- **Found by:** review 2026-08-23 follow-up (I3 verification), `claude-opus-5[1m]`
+- **Found by:** review 2026-08-23 follow-up (I3 verification), `claude-opus-5[1m]`; divergence (d) by review 2026-08-23 round 2 (I2), Security lens
 - **First seen:** 2026-08-23 on branch `ovid/backlog` at `55edd3e1`
-- **Last seen:** 2026-08-23 on branch `ovid/backlog` at `55edd3e1`
+- **Last seen:** 2026-08-23 on branch `ovid/backlog` at `b74354de`
 - **Severity:** Important
 ---
 
@@ -482,7 +484,76 @@
 - **First seen:** 2026-08-23 on branch `ovid/backlog` at `55edd3e1`
 - **Last seen:** 2026-08-23 on branch `ovid/backlog` at `55edd3e1`
 - **Severity:** Suggestion
+## `8fc27b79` — `handleUpdateProjectTitle`'s committed-recovery merge installs whatever project the released slug now resolves to
+- **File (at first sighting):** `packages/client/src/hooks/useChapterMetadata.ts` (`handleUpdateProjectTitle`, the `possiblyCommitted` recovery arm)
+- **Symbol:** `handleUpdateProjectTitle`
+- **Bug class:** Error Handling
+- **Description:** The 2xx-`BAD_JSON` recovery arm re-GETs the project by the ENTRY-CAPTURED slug — the slug the rename may have just released — and merges the result under `if (!isStaleProject())` alone, with no `refreshed.id === projectId` compare (`projectId` is captured at entry and never used again). Per CLAUDE.md §"Slugs are mutable and reclaimable", another live project can hold that slug and answer 200. The arm then installs a stranger's snapshot AND writes `projectSlugRef.current = refreshed.slug`, which the OOSI1 comment above it calls session-permanent; every later slug-addressed write targets the stranger. The sibling site in `useChapterCrud.handleCreateChapter` got this check on 2026-08-23 (S14); this one did not.
+- **Suggested fix:** Mirror the sibling: `if (!isStaleProject() && refreshed.id === projectId) { ... }`, and route the mismatch to the existing 404 arm's treatment (`onRequestEditorLockRef` with `updateTitleProjectSlugLost`). Note the `projectSlugRef.current` write sits outside the `setProject` updater, so `e0b41bcc`'s inside-updater fix does not cover it — settle both axes at this site together.
+- **Confidence:** Medium
+- **Found by:** Error Handling & Edge Cases, Contract & Integration, Security (`claude-opus-5[1m]`)
+- **First seen:** 2026-08-23 on branch `ovid/backlog` at `b74354de`
+- **Last seen:** 2026-08-23 on branch `ovid/backlog` at `b74354de`
+- **Severity:** Important
+
 ---
+
+## `52330775` — `handleUpdateProjectTitle`'s recovery-404 arm locks the editor with no drift guard
+- **File (at first sighting):** `packages/client/src/hooks/useChapterMetadata.ts` (`handleUpdateProjectTitle`, the recovery catch's 404 arm)
+- **Symbol:** `handleUpdateProjectTitle`
+- **Bug class:** Logic
+- **Description:** The recovery catch's `status === 404` arm calls `onRequestEditorLockRef.current?.(updateTitleProjectSlugLost)` unconditionally, while the success arm three lines above is guarded by `isStaleProject()`. `titleRecoveryAbortRef` is aborted only on unmount and on the next rename, never on project change, so a late 404 from project A's recovery GET puts A's persistent, non-dismissible lock banner on project B and short-circuits B's auto-save via `handleSaveLockGated` until refresh. The banner's premise is false on B: `projectSlugRef` has already advanced to B's live slug, so no slug was lost. Last unguarded arm in the function.
+- **Suggested fix:** `if (isStaleProject()) return undefined;` immediately after the `devWarn`. The `devWarn` itself stays unguarded — it is dev-only and its signal check already silences aborts.
+- **Confidence:** Medium
+- **Found by:** Logic & Correctness (`claude-opus-5[1m]`)
+- **First seen:** 2026-08-23 on branch `ovid/backlog` at `b74354de`
+- **Last seen:** 2026-08-23 on branch `ovid/backlog` at `b74354de`
+- **Severity:** Suggestion
+
+---
+
+## `e9b82917` — `switchToView` writes banners and view mode after its flush await with no cross-project drift guard
+- **File (at first sighting):** `packages/client/src/pages/EditorPage.tsx` (`switchToView`, every write after `await editorRef.current?.flushSave()`)
+- **Symbol:** `switchToView`
+- **Bug class:** Concurrency
+- **Description:** Every write after `await editorRef.current?.flushSave()` is unconditional: `setActionError` on both failure arms, `safeSetEditable(true)` on three, and `setTrashOpen`/`setViewMode`/`setDashboardRefreshKey` on success. The route is `/projects/:slug` with no `key`, so an A-to-B navigation keeps `EditorPage` mounted — the premise `makeStaleProjectGuard` exists for, and which nine sibling async handlers honour. Typing in A, clicking Preview, then navigating to B during save backoff puts A's `viewSwitchSaveFailed` banner over B (nothing clears `actionError` on project change), or flips B into preview for a click made on A. `viewSwitchInFlightRef` also stays latched across the navigation, so B's first view-switch click is refused for an operation belonging to A.
+- **Suggested fix:** Build `makeStaleProjectGuard(projectRef, projectSlugRef)` at `switchToView` entry and bail before the post-await banner and view-mode writes, matching the sibling handlers. Clearing the latch in the `finally` is already correct; the guard only needs to suppress the writes.
+- **Confidence:** Medium
+- **Found by:** Concurrency & State (`claude-opus-5[1m]`)
+- **First seen:** 2026-08-23 on branch `ovid/backlog` at `b74354de`
+- **Last seen:** 2026-08-23 on branch `ovid/backlog` at `b74354de`
+- **Severity:** Suggestion
+
+---
+
+## `ebdb1c53` — decompression-bomb ratio is computed against `buf.length`, so trailing padding dilutes it away
+- **File (at first sighting):** `packages/server/src/backup/backup-core.ts` (`runRestore` step 2, consuming `checkDeclaredSizes` in `backup-zip-format.ts`)
+- **Symbol:** `runRestore`
+- **Bug class:** Error Handling
+- **Description:** `runRestore` step 2 calls `checkDeclaredSizes(sizes, buf.length, limits)`, and the ratio arm tests `total / compressedTotal > maxRatio`. `compressedTotal` is the WHOLE FILE LENGTH, not the sum of the entries' compressed sizes — `walkCentralDirectory` never reads CEN+20. Appending N bytes of padding after the EOCD, or a large archive comment, lowers the computed ratio without touching any entry, so `maxRatio: 10` is bypassable: a 100 KB bomb padded to ~200 MiB clears the ratio arm entirely. Only `maxUncompressed` (2 GiB) still bounds it, and step 8 materialises each entry in RAM via `file.async("nodebuffer")` before writing. Trailing-byte tolerance is now a pinned, required capability (new test + `findEocdOffset` doc comment), which is what makes the padding free.
+- **Suggested fix:** Sum the per-entry compressed sizes from the central directory (CEN+20, alongside the CEN+24 read `walkCentralDirectory` already does) and pass that as `compressedTotal`, so padding, comments and the central directory itself cannot dilute the ratio. Keep `buf.length` only as an upper sanity bound. Note this interacts with `3d5f0a91`: declared sizes are themselves forgeable while the two parsers disagree.
+- **Confidence:** Medium
+- **Found by:** Error Handling & Edge Cases (`claude-opus-5[1m]`)
+- **First seen:** 2026-08-23 on branch `ovid/backlog` at `b74354de`
+- **Last seen:** 2026-08-23 on branch `ovid/backlog` at `b74354de`
+- **Severity:** Important
+
+---
+
+## `88502499` — hand-copied `ApiRequestError` test stubs have drifted from the real 4-arg class
+- **File (at first sighting):** `packages/client/src/__tests__/App.test.tsx` (and `KeyboardShortcuts.test.tsx`, `StatusBar.test.tsx`; 19 files declare their own stub)
+- **Symbol:** `<file-scope>`
+- **Bug class:** Contract
+- **Description:** The real class is `(message, status, code?, extras?)` (`packages/client/src/api/client.ts`). 19 client test files declare their own stub. `ChapterTitle.test.tsx` was repaired 2026-08-23 to add `code`; `App.test.tsx`, `KeyboardShortcuts.test.tsx` and `StatusBar.test.tsx` still stop at `(message, status)`. Every error those suites construct therefore maps through `mapApiError` to the scope FALLBACK — the code-keyed arms (`NETWORK`, `INVALID_HOST`, `committedCodes`) are unreachable, and deleting one of them would leave those suites green. No stub carries `extras` at all, so scope `extras` (e.g. the 409 referencing-chapter list) is untestable through them. `5e6c7a92` fixed one instance; this is the class.
+- **Suggested fix:** Export one stub factory from `packages/client/src/__tests__/helpers/` matching the real 4-arg signature and point the copies at it, so the next constructor-signature change is one edit rather than nineteen.
+- **Confidence:** Medium
+- **Found by:** Contract & Integration (`claude-opus-5[1m]`)
+- **First seen:** 2026-08-23 on branch `ovid/backlog` at `b74354de`
+- **Last seen:** 2026-08-23 on branch `ovid/backlog` at `b74354de`
+- **Severity:** Suggestion
+
+---
+
 # Closed — cited, kept as addresses
 
 > **These entries are fixed.** They are here because live code, a test name, a

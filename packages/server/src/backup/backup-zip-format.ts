@@ -55,11 +55,41 @@ const ZIP64_SENTINEL = 0xffffffff;
  *      to generateAsync, and the backlog entry itself recorded the case as
  *      hypothetical ("our archives carry no comment").
  *
- *  The two parsers are not identical — jszip scans the whole buffer from
- *  `length - 4`, this one stops at `length - 22` and after 64 KiB — so an archive
- *  with an over-long comment loads in jszip and is refused here under ANY rule.
- *  Closing that gap means one parser, not a better second one; see the backlog.
- *  Until then, keep this rule matching jszip's on every archive both can reach. */
+ *  The two parsers are not identical, and the LOCATOR is the smaller half of
+ *  that. Two divergences, in increasing order of consequence:
+ *
+ *    1. Locator range. jszip scans the whole buffer from `length - 4`; this one
+ *       stops at `length - 22` and after 64 KiB. An archive with an over-long
+ *       comment loads in jszip and is refused here under ANY rule.
+ *    2. Central-directory ORIGIN, and this one is reachable while the locators
+ *       AGREE (I2, review 2026-08-23). jszip's `readEndOfCentral`
+ *       (zipEntries.js) computes
+ *       `extraBytes = endOfCentralDirOffset - (centralDirOffset + centralDirSize)`
+ *       and, when positive, sets `reader.zero = extraBytes` — the standard
+ *       handling for data prepended to a zip. `walkCentralDirectory` below
+ *       applies no such adjustment: it reads the EOCD's central-directory
+ *       offset as ABSOLUTE. So an archive with a prepended fake central
+ *       directory gives both parsers the same EOCD and two DIFFERENT central
+ *       directories. Reproduced read-only: `smudge.db` at 200,000 B and
+ *       `images/a.png` at 100,000 B, with the prefix's size fields rewritten to
+ *       1 — identical EOCD offsets, this parser reporting 1-byte entries, jszip
+ *       inflating the real 200,000 and 100,000.
+ *
+ *  Divergence 2 defeats the bomb gate outright, because `checkDeclaredSizes` is
+ *  computed entirely from this side: the archive validates three declared bytes
+ *  and passes trivially, and step 8 then materialises the real entries — after
+ *  step 7 has already moved the live data dir aside. Closing it means ONE
+ *  parser, not a better second one; see backlog `3d5f0a91`.
+ *
+ *  Do NOT reach for the obvious interim guard — refusing any archive where
+ *  `eocdOffset !== centralDirOffset + centralDirSize`. That inequality is
+ *  exactly the prepended-data shape jszip supports on purpose, so the guard
+ *  would refuse archives the extraction parser loads happily: the same trade
+ *  the fe7acdb7 revert above rejected, one case over. `make restore` is the
+ *  post-data-loss path; it must not be pickier than the library it hands the
+ *  bytes to. Matching jszip's `extraBytes` relocation would close it without
+ *  that cost, but that is the single-parser work, not a patch to this
+ *  function. */
 export function findEocdOffset(buf: Buffer): number {
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 0xffff); i--) {
     if (buf.readUInt32LE(i) === EOCD_SIG) return i;

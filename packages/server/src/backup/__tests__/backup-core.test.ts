@@ -371,6 +371,22 @@ describe("findEocdOffset — comment containing the EOCD signature (e8ba6c7b)", 
     // jszip extracts from another.
     expect(offset).toBeGreaterThan(-1);
     expect(offset + 22 + buf.readUInt16LE(offset + 20)).not.toBe(buf.length);
+
+    // S7 (review 2026-08-23): the two assertions above are "a record was
+    // found" and "it is not the true record" — neither of which is the
+    // invariant this test is named for. Agreement with jszip is the whole
+    // justification for leaving the bare signature scan unguarded, and nothing
+    // in the suite pinned it: a locator that picked some THIRD offset passed
+    // both.
+    //
+    // jszip's rule is `lastIndexOfSignature(CENTRAL_DIRECTORY_END)` —
+    // ArrayReader.js, a backward scan from `length - 4` with `zero` still 0 at
+    // that point. Buffer.lastIndexOf is a different implementation of the same
+    // rule, so this is a genuine cross-check rather than a second copy of the
+    // loop under test. Pinned to jszip 3.10.x; a version that changes the
+    // locator turns this red, which is the signal we want.
+    const EOCD_SIGNATURE = Buffer.from([0x50, 0x4b, 0x05, 0x06]);
+    expect(offset).toBe(buf.lastIndexOf(EOCD_SIGNATURE));
   });
 
   it("reports -1 for a buffer that is not a zip at all", () => {
