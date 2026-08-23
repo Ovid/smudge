@@ -1485,10 +1485,13 @@ describe("mapApiErrorMessage", () => {
 describe("cross-cutting rules apply to every scope", () => {
   // Backlog c8c9f95b: the Host middleware sits ahead of every route, so
   // when it fires it fires on every request the app makes at once. It
-  // reached no scope and no mapper arm, so all 37 surfaces showed their
+  // reached no scope and no mapper arm, so every surface showed its
   // own generic fallback — "Save failed. Try again.", "Failed to load
   // project" — each inviting a retry that can never succeed and none
-  // naming the cause. Cross-cutting, not per-scope: the code does not
+  // naming the cause. (S4, review 2026-08-23: this said "all 37 surfaces"
+  // where the ApiErrorScope union has 38, contradicting the sibling comment
+  // in apiErrorMapper.ts. The number is not what the paragraph needs, and
+  // the next scope added would have staled it again.) Cross-cutting, not per-scope: the code does not
   // vary in meaning by endpoint, which is the property the three
   // existing arms are keyed on.
   it.each(ALL_SCOPES)("INVALID_HOST names the cause for %s", (scope) => {

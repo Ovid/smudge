@@ -135,8 +135,20 @@ export const STRINGS = {
     // proxy configuration in the tree is the opposite one — Vite's
     // changeOrigin: true, which REWRITES Host to the target's — so the clause
     // was not describing anything that works here.
+    //
+    // S5 (review 2026-08-23 round 2): the copy used to close "normally
+    // http://localhost:3456 or http://127.0.0.1:3456". Port 3456 is Express,
+    // which mounts `/api/*` and nothing else — this same branch's README says
+    // so in as many words ("Opening 3456 directly reaches Express, which has no
+    // route for `/`"). So the copy sent a stranded writer to a blank page. The
+    // port is also not a constant of the deployment: SMUDGE_PORT overrides it,
+    // and in dev the page is served by Vite on a different port entirely.
+    //
+    // Name the HOST instead, which is the whole of what `isLoopbackHost`
+    // checks (`packages/server/src/config/loopback.ts`) and is true whatever
+    // the port and whatever serves the page.
     invalidHost:
-      "Smudge does not recognise this web address, so nothing on this page can load or save. Open Smudge at the address it was set up to use \u2014 normally http://localhost:3456 or http://127.0.0.1:3456.",
+      "Smudge does not recognise this web address, so nothing on this page can load or save. Smudge only answers to \u201clocalhost\u201d or \u201c127.0.0.1\u201d \u2014 reopen it at the address it was set up to use, keeping the same port.",
     loadChapterFailed: "Failed to load chapter",
     loadChapterFailedNetwork: "Failed to load chapter — check your connection and try again.",
     deleteChapterFailed: "Failed to delete chapter",

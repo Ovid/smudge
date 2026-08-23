@@ -76,8 +76,12 @@ one-feature rule, bounded as follows.
    follow-ups tagged by kind (`[chore]`, `[lint]`, `[typecheck]`, `[report]`).
 
 5. **A review-response round is part of the same branch,** not a new one. The
-   nine `[r1 …]` commits answering the 2026-08-23 review sit on `ovid/backlog`
-   under rule 4's follow-up clause. A round-N commit may reverse a round-0
+   `[r1 …]` and `[r2 …]` commits answering the two 2026-08-23 reviews sit on
+   `ovid/backlog` under rule 4's follow-up clause. (S2, review round 2: this
+   said "nine", counted once when the paragraph landed at `9194a04d` and stale
+   by the end of the same afternoon. A count of commits on the branch the
+   document lives on rots on every push, so it is not stated — the same reason
+   §Documentation Discipline rule 2 prefers a symbol to a line range.) A round-N commit may reverse a round-0
    commit on the same branch — `3460fc0a` reverts `fe7acdb7` — and that is the
    system working, not a scope violation: the review is what the branch is for.
 
@@ -117,13 +121,18 @@ eleven ids, exactly as a SHA-filling commit on an architecture session must.
 
 **It is not retagged.** The sibling document's own retag test permits amending
 "when it is the tip and nothing cites it", and by the time the review was
-answered neither half held: nine `[r1 …]` commits sit after it, so the retag
-means a rebase, and `55edd3e1` is cited sixteen times — in `backlog.md`'s
-`First seen` / `Last seen` fields on four entries, and in the filename of the
-review report itself
+answered neither half held: review-response commits sit after it, so the retag
+means a rebase, and `55edd3e1` is cited throughout `backlog.md`'s `First seen` /
+`Last seen` fields — across six entries — and in the filename of the review
+report itself
 (`paad/code-reviews/ovid-backlog-2026-08-23-10-29-10-55edd3e1.md`). A rebase
 would stale every one of them to buy a tag, which is the trade the sibling
-document declines four separate times for the same reason.
+document declines four separate times for the same reason. (S2, review round 2:
+this used to say "cited sixteen times ... on four entries". Both numbers were
+right at `9194a04d` and wrong by the branch tip. The argument never needed
+them — what it needs is that the citations exist and a rebase would stale them
+— so the exact tally is gone rather than re-pinned to a number that rots
+again.)
 
 The rule is stated here so the next session writes the tag the first time: a
 commit that records the closing of N entries **answers to those entries** and
