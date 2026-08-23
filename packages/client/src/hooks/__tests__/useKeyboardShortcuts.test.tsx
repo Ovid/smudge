@@ -3,6 +3,7 @@ import { renderHook, waitFor, fireEvent, act, cleanup } from "@testing-library/r
 import type { Chapter, ProjectWithChapters } from "@smudge/shared";
 import { useKeyboardShortcuts } from "../useKeyboardShortcuts";
 import { STRINGS } from "../../strings";
+import { expectConsole } from "../../__tests__/expectConsole";
 
 // S4 (agentic review 2026-08-19): unmount every rendered hook between tests.
 // RTL's own auto-cleanup does NOT run in this project — it registers an
@@ -326,5 +327,61 @@ describe("nav announcement dwell time (F-32 safety net)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// Backlog c4571a83: the Ctrl+Shift+P view toggle voided switchToView's
+// promise with a bare `.catch(() => {})`. switchToView surfaces its own
+// banner on every refusal it knows about and converts a flushSave throw
+// into banner + false, so it cannot reject today — which means a
+// rejection reaching this handler is a defect, not a user-facing
+// condition. The old swallow made that defect invisible and read as an
+// oversight to every review. It now warns.
+describe("Ctrl+Shift+P view toggle failure (backlog c4571a83)", () => {
+  function setupToggle(switchToView: () => Promise<boolean>) {
+    renderHook(() =>
+      useKeyboardShortcuts({
+        shortcutHelpOpen: false,
+        deleteTarget: null,
+        projectSettingsOpen: false,
+        exportDialogOpen: false,
+        viewMode: "editor",
+        activeChapter: CHAPTER_ONE,
+        project: PROJECT,
+        chapterWordCount: 0,
+        setShortcutHelpOpen: vi.fn(),
+        toggleSidebar: vi.fn(),
+        handleCreateChapter: vi.fn(),
+        handleSelectChapterWithFlush: vi.fn().mockResolvedValue(true),
+        setWordCountAnnouncement: vi.fn(),
+        setNavAnnouncement: vi.fn(),
+        switchToView,
+        togglePanel: vi.fn(),
+      }),
+    );
+    fireEvent.keyDown(document, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+  }
+
+  it("warns when switchToView rejects instead of swallowing the rejection", async () => {
+    const warn = expectConsole("warn");
+    const boom = new Error("setViewMode blew up");
+    setupToggle(vi.fn().mockRejectedValue(boom));
+
+    await waitFor(() => {
+      warn.calledWith("Ctrl+Shift+P view toggle failed:", boom);
+    });
+  });
+
+  it("stays silent when the toggle resolves normally", async () => {
+    expectConsole("warn").silent();
+    const switchToView = vi.fn().mockResolvedValue(true);
+    setupToggle(switchToView);
+
+    await waitFor(() => {
+      expect(switchToView).toHaveBeenCalledWith("preview");
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
   });
 });

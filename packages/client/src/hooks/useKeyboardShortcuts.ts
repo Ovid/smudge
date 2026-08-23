@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import type { Chapter, ProjectWithChapters } from "@smudge/shared";
 import { STRINGS } from "../strings";
 import { NAV_ANNOUNCEMENT_DURATION_MS } from "../constants";
+import { clientWarn } from "../errors";
 export type ViewMode = "editor" | "preview" | "dashboard";
 
 interface KeyboardShortcutDeps {
@@ -182,7 +183,19 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
       if (ctrl && e.shiftKey && e.code === "KeyP") {
         e.preventDefault();
         const target = viewModeRef.current === "preview" ? "editor" : "preview";
-        switchToViewRef.current(target).catch(() => {});
+        // Backlog c4571a83: not a bare swallow. switchToView answers
+        // every refusal it knows about with its own banner
+        // (mutationBusy, lockedRefusal, viewSwitchSaveFailed) and
+        // converts a flushSave throw into banner + `false`, so it has
+        // no rejecting path today. A rejection arriving here is
+        // therefore a defect in switchToView, not a condition to
+        // explain to the writer — the sibling arrow-key handler's
+        // live-region announcement would be inventing a user-facing
+        // story for something that cannot happen. Warn so the defect is
+        // visible; the void keeps it off the unhandled-rejection path.
+        void switchToViewRef.current(target).catch((err: unknown) => {
+          clientWarn("Ctrl+Shift+P view toggle failed:", err);
+        });
         return;
       }
 
