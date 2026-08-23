@@ -13,7 +13,7 @@ export NODE_OPTIONS := --disable-warning=DEP0040 ${NODE_OPTIONS}
 # once per invocation — this reorders a probe that was always going to run.
 # Do NOT instead hang it off lint-check/format-check/typecheck; that one does
 # add a probe to every standalone lint run.
-all: ensure-native lint-check format-check typecheck cover e2e ## Full CI pass: lint-check, format-check, typecheck, test+coverage, e2e
+all: ensure-native lint-check format-check typecheck cover e2e ## Full CI pass: ensure-native, lint-check, format-check, typecheck, test+coverage, e2e
 
 # better-sqlite3 ships a precompiled .node binary keyed on
 # {platform, arch, node-abi}. A dev machine that runs both natively (macOS)

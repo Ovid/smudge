@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
-import { createRef } from "react";
+import { createRef, type ComponentProps } from "react";
 import type { Chapter, ProjectWithChapters } from "@smudge/shared";
 import { EditorMainContent } from "./EditorMainContent";
 import { STRINGS } from "../strings";
@@ -25,7 +25,23 @@ vi.mock("./Sidebar", () => ({ Sidebar: () => <aside data-testid="sidebar" /> }))
 vi.mock("./TrashView", () => ({ TrashView: () => <div data-testid="trash-view" /> }));
 vi.mock("./PreviewMode", () => ({ PreviewMode: () => <div data-testid="preview-view" /> }));
 vi.mock("./DashboardView", () => ({ DashboardView: () => <div data-testid="dashboard-view" /> }));
-vi.mock("./Editor", () => ({ Editor: () => <div data-testid="editor-view" /> }));
+// S8 (review 2026-08-23): this stub RECORDS the props it was handed. The
+// mount-time `editable` prop is one of the two routes machine intent reaches
+// TipTap (CLAUDE.md §"Machine intent reaches TipTap by two routes"), and the
+// other route -- the imperative setEditable handle -- cannot cover a mount that
+// happens while the machine already intends editable:false, because the
+// reconcile effect has no dep change to re-run on. Deleting
+// `editable={editorEditable}` from EditorMainContent left every test in this
+// file and editorEntryPointSurface.test.ts green; only one distant integration
+// case in EditorPageFeatures.test.tsx failed. The guarantee belongs next to the
+// component that owns the pass-through.
+const editorProps: { last: Record<string, unknown> | null } = { last: null };
+vi.mock("./Editor", () => ({
+  Editor: (props: Record<string, unknown>) => {
+    editorProps.last = props;
+    return <div data-testid="editor-view" />;
+  },
+}));
 vi.mock("./EditorFooter", () => ({ EditorFooter: () => <div data-testid="footer" /> }));
 vi.mock("./ReferencePanel", () => ({ ReferencePanel: () => null }));
 vi.mock("./SnapshotPanel", () => ({ SnapshotPanel: () => null }));
@@ -40,6 +56,9 @@ vi.mock("./OuttakesPanel", () => ({ OuttakesPanel: () => null }));
 // and the queries below match across tests. (Same note as
 // hooks/__tests__/useKeyboardShortcuts.test.tsx.)
 afterEach(cleanup);
+afterEach(() => {
+  editorProps.last = null;
+});
 
 const CHAPTER: Chapter = {
   id: "ch-1",
@@ -72,10 +91,13 @@ function makeProject(chapters: Chapter[]): ProjectWithChapters {
 
 const LOCK_MESSAGE = "The editor is locked. Refresh to continue.";
 
-/* eslint-disable @typescript-eslint/no-explicit-any -- placement fixture: the
-   ~60 collaborator props are irrelevant to where the banner renders, and
-   spelling each one out would obscure the four that select the view branch. */
-function baseProps(): any {
+// S16 (review 2026-08-23): typed, not `any`. As an `any` this fixture was a
+// second, unchecked copy of a ~60-key prop list that
+// editorEntryPointSurface.test.ts pins as a forcing pause — spreading it into
+// the component suppressed every prop check, so it could silently stop
+// selecting the branches it claims to test (a renamed selector prop would just
+// become an ignored extra key). Typing it means the compiler fails instead.
+function baseProps(): ComponentProps<typeof EditorMainContent> {
   return {
     sidebarOpen: true,
     sidebarWidth: 260,
@@ -149,7 +171,6 @@ function baseProps(): any {
     findReplaceTriggerRef: createRef<HTMLButtonElement>(),
   };
 }
-/* eslint-enable @typescript-eslint/no-explicit-any */
 
 // The four props below are the whole ternary: each row picks exactly one
 // arm. `marker` is the stub that proves we landed on that arm and not
@@ -187,5 +208,46 @@ describe("EditorMainContent — lock banner renders above every view branch (8ff
     render(<EditorMainContent {...baseProps()} {...overrides} editorLockedMessage={null} />);
     expect(screen.queryByText(LOCK_MESSAGE)).toBeNull();
     expect(screen.queryByRole("button", { name: STRINGS.editor.refreshButton })).toBeNull();
+  });
+});
+
+// S8 (review 2026-08-23). Two gaps this file's fixture left open.
+//
+// First, nothing here asserted that the machine's `editable` intent actually
+// reaches the Editor. Deleting `editable={editorEditable}` from
+// EditorMainContent.tsx left all ten tests above green — and left
+// editorEntryPointSurface.test.ts green too, because that file snapshots prop
+// NAMES, not their use. Only one integration case in EditorPageFeatures.test.tsx
+// caught it. CLAUDE.md calls this pass-through load-bearing and says not to
+// simplify it away; the tripwire now sits beside it.
+//
+// Second, every render above pairs a live lock with `editorEditable: true` — a
+// combination the reducer cannot produce, since COMMITTED_UNRELOADED returns
+// `{ editable: false, lock }` in one transition. So the fixture was testing the
+// banner against a state that never occurs. The locked case below uses the
+// pairing the machine actually emits.
+describe("EditorMainContent — mount-time editability reaches the Editor (F-36, S8)", () => {
+  it("passes editable=false through when the machine intends read-only", () => {
+    render(<EditorMainContent {...baseProps()} editorEditable={false} />);
+    expect(screen.getByTestId("editor-view")).toBeInTheDocument();
+    expect(editorProps.last?.editable).toBe(false);
+  });
+
+  it("passes editable=true through when the machine intends writable", () => {
+    render(<EditorMainContent {...baseProps()} editorEditable={true} editorLockedMessage={null} />);
+    expect(editorProps.last?.editable).toBe(true);
+  });
+
+  // The pairing the reducer actually emits for a committed-but-unreloaded
+  // mutation: banner up AND editor read-only, together, in one transition. A
+  // mount in this state is the F-36 case — it happens when a mutation is
+  // started from a surface with no editor mounted (snapshot view), so the
+  // reconcile effect has no dep change to fire on and the prop is the only
+  // thing carrying the intent in.
+  it("renders the lock banner and a read-only editor together", () => {
+    render(<EditorMainContent {...baseProps()} editorEditable={false} />);
+    expect(screen.getByText(LOCK_MESSAGE)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: STRINGS.editor.refreshButton })).toBeInTheDocument();
+    expect(editorProps.last?.editable).toBe(false);
   });
 });

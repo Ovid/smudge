@@ -85,12 +85,12 @@ specifier, remove the `NODE_OPTIONS` line from the Makefile. Tracked in
 | `make e2e-clean` | Wipe the isolated e2e data dir (`os.tmpdir()/smudge-e2e-data-<UID>/`) so the next `make e2e` starts fresh — refuses to wipe while a live `make e2e` is running |
 | `make lint` | ESLint with autofix |
 | `make format` | Prettier write |
-| `make all` | `lint` + `format-check` + `typecheck` + `cover` + `e2e` — the CI gate |
+| `make all` | `ensure-native` + `lint-check` + `format-check` + `typecheck` + `cover` + `e2e` — the CI gate. Note `lint-check`, not `lint`: the gate must not autofix. |
 | `make ensure-native` | Probe better-sqlite3's `.node`; rebuild from source on dlopen failure |
 | `make clean` | Delete the dev SQLite database |
 | `make help` | List all targets |
 
-`make ensure-native` is a prerequisite of `dev`/`test`/`cover`/`e2e`,
+`make ensure-native` is a prerequisite of `all`/`dev`/`test`/`cover`/`e2e`,
 so you generally don't invoke it directly. It exists because
 better-sqlite3 ships a precompiled `.node` keyed on
 {platform, arch, node-abi}: switching between a macOS host and a

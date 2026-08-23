@@ -149,7 +149,7 @@ npm install                          # Install all workspace dependencies
 make test                            # Run full test suite (fast, no coverage)
 make lint                            # Lint with autofix
 make format                          # Format code
-make all                             # Full CI pass: lint + format + typecheck + coverage + e2e
+make all                             # Full CI pass: ensure-native + lint-check + format-check + typecheck + coverage + e2e
 make cover                           # Run tests with coverage enforcement
 make e2e                             # Run Playwright e2e tests (starts dev servers)
 make e2e-clean                       # Wipe the isolated e2e data dir (next `make e2e` starts fresh)
@@ -189,7 +189,7 @@ second line of defence.
 to rm, and the about-to-bind server then migrates against an empty DB.
 Wait for `make e2e` to finish (or kill it) before running cleanup.
 
-**`make ensure-native`** is a prerequisite of `make test/cover/e2e/dev`; you rarely invoke it directly. It probes whether better-sqlite3's `.node` binary loads under the active platform/Node ABI, and on failure rebuilds from source in place (no remote `.node` binary fetched). The rebuild path needs a working C++ toolchain — `build-essential` on Linux, Xcode Command Line Tools on macOS, plus `python3` for node-gyp. Common reason to need it: switching between host (macOS) and a Linux container/VM that share `node_modules` via a bind mount, leaving a wrong-platform binary in place. Direct `npm test` / `npm test -w packages/{shared,server,client}` / `npx playwright test` invocations bypass this check; prefer the `make` entry points after a host↔guest crossing.
+**`make ensure-native`** is a prerequisite of `make all/test/cover/e2e/dev`; you rarely invoke it directly. It is the **first** prerequisite of `make all` (backlog `b7e3d042`): Make resolves prerequisites left to right, so before the reorder a contributor with a wrong-platform binding burned lint, format-check and typecheck before `cover` reached the probe. It probes whether better-sqlite3's `.node` binary loads under the active platform/Node ABI, and on failure rebuilds from source in place (no remote `.node` binary fetched). The rebuild path needs a working C++ toolchain — `build-essential` on Linux, Xcode Command Line Tools on macOS, plus `python3` for node-gyp. Common reason to need it: switching between host (macOS) and a Linux container/VM that share `node_modules` via a bind mount, leaving a wrong-platform binary in place. Direct `npm test` / `npm test -w packages/{shared,server,client}` / `npx playwright test` invocations bypass this check; prefer the `make` entry points after a host↔guest crossing.
 
 **`make dev` auto-backs up.** Each `make dev` writes a rotated `backups/smudge-auto-<time>.zip` of the existing DB+images before starting (best-effort — never blocks the server). Keeps the newest `SMUDGE_BACKUP_KEEP` (default 10); `SMUDGE_SKIP_AUTO_BACKUP=1` skips it. Manual `make backup` archives are never auto-pruned. See `docs/backup.md`. These are operator tools run from a source checkout, an interim stopgap until Phase 8b.
 
@@ -349,12 +349,19 @@ break. Do not "simplify away" the prop pass-through.
 **Unified API error mapping.** All client code that surfaces a user-visible
 message from an API error must route through `mapApiError(err, scope)` in
 `packages/client/src/errors/`. The mapper returns `MappedError<S> = { message,
-possiblyCommitted, transient, extras? }`; the `<S>` phantom parameter ties
-the `extras` shape to the scope, accessible via `ScopeExtras<S>`. The mapper
-is the single owner of code/status-to-string translation and of the cross-
-cutting rules (ABORTED is silent, 2xx BAD_JSON is `possiblyCommitted: true`
+possiblyCommitted, transient, terminal, extras? }`; the `<S>` phantom parameter
+ties the `extras` shape to the scope, accessible via `ScopeExtras<S>`. **`terminal`
+is not optional and is the field that changes behaviour most** (S10, review
+2026-08-23, which found it missing from this paragraph): it is what stops the
+save-retry ladder and locks the editor, sourced from the scope's
+`terminalCodes` / `terminalStatuses`, and `useProjectEditor.handleSave` reads
+`mapped.terminal` instead of hand-coding a status check. The mapper
+is the single owner of code/status-to-string translation and of the four cross-
+cutting rules: ABORTED is silent; 2xx BAD_JSON is `possiblyCommitted: true`
 when the scope declares `committed:` copy and `false` for read scopes that do
-not, NETWORK is `transient`). The `committedCodes` scope field extends
+not; NETWORK is `transient`; and a cross-cutting `INVALID_HOST` arm returns
+non-transient, non-committed, terminal copy because the `Host` allowlist sits
+ahead of every route, so nothing reached one. The `committedCodes` scope field extends
 `possiblyCommitted: true` beyond the 2xx-BAD_JSON case to specific server
 codes (e.g. `UPDATE_READ_FAILURE`, `READ_AFTER_CREATE_FAILURE`,
 `RESTORE_READ_FAILURE`) where the write may or may not have landed. Raw

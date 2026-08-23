@@ -57,6 +57,22 @@ export const MAX_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024;
 export const MAX_IMAGE_UPLOAD_LABEL = `${MAX_IMAGE_UPLOAD_BYTES / 1024 / 1024} MB`;
 
 /**
+ * Error code for the server's `Host`-allowlist rejection (DNS-rebinding
+ * defence). Shared because it is a cross-package wire contract and was carried
+ * as two unlinked string literals — the throw in `app.ts` and the arm in
+ * `apiErrorMapper.ts` — in a file whose whole purpose is that "the client can
+ * discriminate on these without string-literal drift" (S9, review 2026-08-23).
+ * Both sides' tests constructed the literal themselves, so renaming the server
+ * code would have left both suites green and the client arm dead — and this arm
+ * is the one that fires on EVERY request at once, which is exactly when a dead
+ * arm is least survivable.
+ *
+ * Not folded into a `*_ERROR_CODES` group: it is emitted by middleware that sits
+ * ahead of every route, not by one domain's endpoints.
+ */
+export const INVALID_HOST_CODE = "INVALID_HOST";
+
+/**
  * Error codes emitted by the server in the { error: { code, message } }
  * envelope for 400 responses from search/replace endpoints. Shared so the
  * client can discriminate on these without string-literal drift.

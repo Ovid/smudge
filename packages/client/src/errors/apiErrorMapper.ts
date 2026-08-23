@@ -1,3 +1,4 @@
+import { INVALID_HOST_CODE } from "@smudge/shared";
 import { ApiRequestError } from "../api/client";
 import { SCOPES, type ApiErrorScope, type ScopeEntry } from "./scopes";
 import { clientError } from "./clientLog";
@@ -130,7 +131,7 @@ export function _resolveErrorInternal(err: unknown, scope: ScopeEntry): MappedEr
   // in chapter.save's terminalStatuses and must not be — an ordinary
   // VALIDATION_ERROR 400 is not terminal — so the terminality is
   // declared here, with the code that earns it.
-  if (err.code === "INVALID_HOST") {
+  if (err.code === INVALID_HOST_CODE) {
     return {
       message: STRINGS.error.invalidHost,
       // Nothing reached a route, so no write can have landed.

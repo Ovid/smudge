@@ -49,7 +49,7 @@ npm install                          # Install all workspace dependencies
 make test                            # Run full test suite (fast, no coverage)
 make lint                            # Lint with autofix
 make format                          # Format code
-make all                             # Full CI pass: lint + format + typecheck + coverage + e2e
+make all                             # Full CI pass: ensure-native + lint-check + format-check + typecheck + coverage + e2e
 make cover                           # Run tests with coverage enforcement
 make e2e-clean                       # Wipe the isolated e2e data dir (next `make e2e` starts fresh)
 make ensure-native                   # Verify better-sqlite3 native binding; rebuild from source on dlopen failure
@@ -69,7 +69,7 @@ make build                           # Build client for production
 make help                            # Show all available make targets
 ```
 
-`make ensure-native` is a prerequisite of `dev`/`test`/`cover`/`e2e`. It probes whether better-sqlite3's `.node` binary loads under the active platform/Node ABI; on dlopen failure it rebuilds from source in place (no remote `.node` binary is fetched). The rebuild path needs a working C++ toolchain (`build-essential` on Linux, Xcode Command Line Tools on macOS) and `python3` for node-gyp. Common need: switching between a macOS host and a Linux container/VM that share `node_modules` via a bind mount.
+`make ensure-native` is a prerequisite of `all`/`dev`/`test`/`cover`/`e2e` — and it is the FIRST prerequisite of `all`, so a wrong-platform binding surfaces before lint/format/typecheck burn time. It probes whether better-sqlite3's `.node` binary loads under the active platform/Node ABI; on dlopen failure it rebuilds from source in place (no remote `.node` binary is fetched). The rebuild path needs a working C++ toolchain (`build-essential` on Linux, Xcode Command Line Tools on macOS) and `python3` for node-gyp. Common need: switching between a macOS host and a Linux container/VM that share `node_modules` via a bind mount.
 
 ## Key Architecture Decisions
 
