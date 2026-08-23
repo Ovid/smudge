@@ -68,6 +68,14 @@ export const STRINGS = {
     loadProjectFailed: "Failed to load project",
     loadProjectFailedNetwork: "Failed to load project — check your connection and try again.",
     createFailed: "Failed to create project",
+    // I1 (review 2026-08-23): a bare 5xx used to fall through to
+    // createFailed, which names no recovery and reads like a click-again
+    // problem. project.create is a POST that mints a new row per call, so the
+    // insert may have committed — send the writer to a refresh, not to the
+    // button. Same treatment as the four sibling non-idempotent scopes; pinned
+    // by the non-idempotent-scope sweep in apiErrorMapper.test.ts.
+    createFailedServer:
+      "Failed to create project \u2014 the server is having trouble. The project may still have been created; refresh the project list before creating another.",
     projectTitleExists: "A project with this title already exists. Choose a different title.",
     // I12 (review 2026-04-24): network: overrides for mutation scopes
     // so NETWORK errors surface a "check your connection" hint instead
@@ -181,6 +189,10 @@ export const STRINGS = {
       "Unable to load settings — check your connection. Close and reopen the dialog to retry.",
     loadOuttakesFailed: "Failed to load outtakes",
     createOuttakeFailed: "Failed to save outtake",
+    // I1 (review 2026-08-23): see createFailedServer above — same rule, same
+    // sweep. Capture POSTs a new outtake row per call.
+    createOuttakeFailedServer:
+      "Failed to save outtake \u2014 the server is having trouble. The outtake may still have been saved; refresh the outtakes drawer before sending another.",
     createOuttakeTooLarge: "Outtake is too large to save. Capture a smaller selection.",
     // S3 (agentic-review 2026-08-05): the create endpoint's only 404 producer is
     // "Project not found." — the project was soft-deleted while the editor was
@@ -483,6 +495,12 @@ export const STRINGS = {
       "Failed to load references for this image — check your connection and try again.",
     retryButton: "Retry",
     uploadFailedGeneric: "Upload failed. Check your connection and try again.",
+    // I1 (review 2026-08-23): see error.createFailedServer — same rule, same
+    // sweep. This is the scope F-12 exists for: an upload writes a file AND a
+    // row outside a transaction, so a bare 5xx can leave both behind and a
+    // retry mints a duplicate of each.
+    uploadFailedServer:
+      "Upload failed \u2014 the server is having trouble. The image may still have been uploaded; refresh the image gallery before uploading again.",
     uploadInvalidFile:
       "We couldn't upload that file. Check that it's a supported image type (PNG, JPG, GIF, or WebP) and that the file isn't empty.",
     uploadProjectGone: "This project has been deleted. Uploads aren't available.",
@@ -577,6 +595,11 @@ export const STRINGS = {
     duplicateSkipped: "Content unchanged since last snapshot.",
     createFailed: "Unable to create snapshot. Save your unsaved changes and try again.",
     createFailedGeneric: "Unable to create snapshot. Try again.",
+    // I1 (review 2026-08-23): see error.createFailedServer — same rule, same
+    // sweep. createFailedGeneric's "Try again" is safe only for the definite
+    // failures it still covers; a 5xx is not one of them.
+    createFailedServerError:
+      "Unable to create snapshot \u2014 the server is having trouble. The snapshot may still have been created; refresh the snapshot list before creating another.",
     // F-34: without this, an over-cap label got createFailedGeneric — copy that
     // names no cause and invites a retry that reproduces the failure forever.
     // Phrasing follows updateOuttakeLabelRejected deliberately: an INCLUSIVE

@@ -549,24 +549,29 @@ describe("I4 — non-idempotent scopes never invite a 5xx retry", () => {
     "outtake.create",
   ];
 
-  it.each(NON_IDEMPOTENT)("%s maps no 5xx status to retry-inviting copy", (scopeName) => {
+  // I1 (review 2026-08-23): these two sweeps used to read `entry.byStatus`
+  // directly and `continue` below 500. Only chapter.create declared a 5xx row,
+  // so for the other four scopes the loop body never ran and both tests passed
+  // having asserted nothing — green on exactly the condition they were written
+  // to catch. A scope with no 5xx row does not escape the rule; it falls
+  // through to `scope.fallback`, which is where the retry-inviting copy
+  // actually lived. Resolve the error the way production does instead, so the
+  // arm under test is whichever arm the status really reaches.
+  const SERVER_STATUSES = [500, 502, 503, 504];
+  const CASES = NON_IDEMPOTENT.flatMap((scopeName) =>
+    SERVER_STATUSES.map((status) => [scopeName, status] as const),
+  );
+
+  it.each(CASES)("%s maps %d to copy that does not invite a retry", (scopeName, status) => {
     const entry = SCOPES[scopeName] as ScopeEntry;
-    for (const [status, copy] of Object.entries(entry.byStatus ?? {})) {
-      if (Number(status) < 500) continue;
-      expect(copy, `${scopeName}.byStatus[${status}] tells the user to retry`).not.toMatch(
-        /try again/i,
-      );
-    }
+    const { message } = resolveError(new ApiRequestError("boom", status), entry);
+    expect(message, `${scopeName} @ ${status} tells the user to retry`).not.toMatch(/try again/i);
   });
 
-  it.each(NON_IDEMPOTENT)("%s 5xx copy tells the user to refresh instead", (scopeName) => {
+  it.each(CASES)("%s maps %d to copy that tells the user to refresh", (scopeName, status) => {
     const entry = SCOPES[scopeName] as ScopeEntry;
-    for (const [status, copy] of Object.entries(entry.byStatus ?? {})) {
-      if (Number(status) < 500) continue;
-      expect(copy, `${scopeName}.byStatus[${status}] gives no recovery instruction`).toMatch(
-        /refresh/i,
-      );
-    }
+    const { message } = resolveError(new ApiRequestError("boom", status), entry);
+    expect(message, `${scopeName} @ ${status} gives no recovery instruction`).toMatch(/refresh/i);
   });
 });
 
@@ -602,9 +607,12 @@ describe("SCOPES — project.create", () => {
     const err = new ApiRequestError("exists", 409, "PROJECT_TITLE_EXISTS");
     expect(resolveError(err, scope).message).toBe(STRINGS.error.projectTitleExists);
   });
-  it("500 → createFailed (fallback)", () => {
+  // I1 (review 2026-08-23): this asserted the FALLBACK on a 500. That was the
+  // defect, not the contract — project.create is a non-idempotent POST, so its
+  // 5xx copy must route the user to a refresh rather than back to the button.
+  it("500 → createFailedServer (non-idempotent 5xx row)", () => {
     const err = new ApiRequestError("boom", 500, "INTERNAL_ERROR");
-    expect(resolveError(err, scope).message).toBe(STRINGS.error.createFailed);
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.createFailedServer);
   });
 });
 
@@ -630,9 +638,12 @@ describe("SCOPES — image.upload", () => {
     const err = new ApiRequestError("big", 400, "PAYLOAD_TOO_LARGE");
     expect(resolveError(err, scope).message).toBe(STRINGS.imageGallery.fileTooLarge);
   });
-  it("500 → uploadFailedGeneric (fallback)", () => {
+  // I1 (review 2026-08-23): see project.create above. A bare 500 (no
+  // READ_AFTER_INSERT_FAILURE code) used to land on uploadFailedGeneric, whose
+  // "try again" mints the duplicate file + row F-12 exists to prevent.
+  it("500 → uploadFailedServer (non-idempotent 5xx row)", () => {
     const err = new ApiRequestError("boom", 500, "INTERNAL_ERROR");
-    expect(resolveError(err, scope).message).toBe(STRINGS.imageGallery.uploadFailedGeneric);
+    expect(resolveError(err, scope).message).toBe(STRINGS.imageGallery.uploadFailedServer);
   });
   // I1 (2026-04-24 review): server emits 400 VALIDATION_ERROR for missing
   // file, unsupported MIME, MIME/content mismatch, and empty file. Without
@@ -1071,11 +1082,14 @@ describe("image.delete extrasFrom — drop-only-malformed (4b.3c.1 S8)", () => {
 describe("SCOPES — outtake.* scopes", () => {
   const cases: Array<[ApiErrorScope, string]> = [
     ["outtake.list", STRINGS.error.loadOuttakesFailed],
-    ["outtake.create", STRINGS.error.createOuttakeFailed],
+    // I1 (review 2026-08-23): outtake.create is the one non-idempotent scope in
+    // this group, so its 500 now resolves through a byStatus row rather than
+    // the fallback the other three still use.
+    ["outtake.create", STRINGS.error.createOuttakeFailedServer],
     ["outtake.update", STRINGS.error.updateOuttakeFailed],
     ["outtake.delete", STRINGS.error.deleteOuttakeFailed],
   ];
-  it.each(cases)("%s maps a 500 to its fallback string", (scope, fallback) => {
+  it.each(cases)("%s maps a 500 to its 5xx copy", (scope, fallback) => {
     const err = new ApiRequestError("boom", 500, "INTERNAL_ERROR");
     expect(mapApiError(err, scope).message).toBe(fallback);
   });

@@ -194,7 +194,11 @@ describe("ImageGallery", () => {
     });
   });
 
-  it("announces generic error when upload fails with ApiRequestError", async () => {
+  // I1 (review 2026-08-23): a 500 here used to show uploadFailedGeneric, whose
+  // "try again" invites the retry that mints a duplicate file + row (F-12).
+  // image.upload now carries 5xx byStatus rows like every other non-idempotent
+  // scope, so the writer is sent to the gallery instead.
+  it("announces the server-trouble error when upload fails with a 500", async () => {
     const user = userEvent.setup();
     vi.mocked(api.images.upload).mockRejectedValue(new ApiRequestError("Server error", 500));
 
@@ -205,7 +209,7 @@ describe("ImageGallery", () => {
     await user.upload(fileInput, file);
 
     await waitFor(() => {
-      expect(screen.getByText(S.uploadFailedGeneric)).toBeInTheDocument();
+      expect(screen.getByText(S.uploadFailedServer)).toBeInTheDocument();
     });
   });
 
