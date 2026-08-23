@@ -3952,6 +3952,38 @@ describe("useProjectEditor", () => {
     warn.calledWith("Failed to update project title:", expect.any(ApiRequestError));
   });
 
+  // Backlog 7f2c1e08: the recovery catch fires onRequestEditorLock on a
+  // 404 and does nothing at all on NETWORK / 500 / BAD_JSON. The
+  // originating error is warned by the outer catch, so a developer sees
+  // the flow — but the recovery GET's own failure reason is dropped,
+  // leaving "the rename may have committed and the refresh also failed"
+  // indistinguishable from "the rename may have committed". Its two
+  // siblings (handleStatusChange, handleCreateChapter) both devWarn.
+  it("handleUpdateProjectTitle warns when the recovery GET fails for a non-404 reason", async () => {
+    const warn = expectConsole("warn");
+    vi.mocked(api.projects.update).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject) // initial load
+      .mockRejectedValueOnce(new ApiRequestError("boom", 500, "INTERNAL_ERROR")); // recovery 500
+
+    const onRequestEditorLock = vi.fn();
+    const { result } = renderHook(() => useProjectEditor("test-project", { onRequestEditorLock }));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleUpdateProjectTitle("Renamed");
+    });
+
+    // A non-404 does not move the slug, so no lock — that part is correct
+    // and stays. What was missing is any record of the recovery failure.
+    expect(onRequestEditorLock).not.toHaveBeenCalled();
+    warn.calledWith("Failed to update project title:", expect.any(ApiRequestError));
+    warn.calledWith("handleUpdateProjectTitle recovery GET failed:", expect.any(ApiRequestError));
+  });
+
   it("handleUpdateProjectTitle surfaces committed copy + refreshes on 2xx BAD_JSON (I3)", async () => {
     // Without a committed: branch, a 2xx BAD_JSON response to the rename
     // PATCH left projectSlugRef pointing at the old slug while the server

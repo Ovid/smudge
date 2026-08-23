@@ -172,6 +172,20 @@ export function useChapterMetadata(deps: ChapterMetadataDeps) {
             // committed banner below (auto-save still works because the
             // slug didn't move; next attempt will succeed or surface its
             // own error).
+            // Backlog 7f2c1e08: name the recovery GET's own failure.
+            // The outer catch already warned the originating error, so
+            // the flow was visible — but "the refresh also failed" was
+            // not, which is the part that says the sidebar and
+            // projectSlugRef may now disagree with the server. The
+            // per-call signal gates the warn so a supersede or unmount
+            // stays silent (CLAUDE.md zero-warnings). Matches the
+            // sibling recovery catches in handleStatusChange and
+            // handleCreateChapter.
+            devWarn(
+              "handleUpdateProjectTitle recovery GET failed",
+              recoveryController.signal,
+              recoveryErr,
+            );
             if (isApiError(recoveryErr) && recoveryErr.status === 404) {
               onRequestEditorLockRef.current?.(STRINGS.error.updateTitleProjectSlugLost);
             }
