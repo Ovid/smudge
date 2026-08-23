@@ -466,6 +466,21 @@
 - **Last seen:** 2026-08-23 on branch `ovid/backlog` at `55edd3e1`
 - **Severity:** Suggestion
 ---
+
+## `7a1e33b0` — five hand-copied inside-updater identity re-tests, in five spellings
+
+- **File (at first sighting):** `packages/client/src/hooks/useChapterCrud.ts` (`handleCreateChapter` success arm, `handleCreateChapter` recovery arm, `handleReorderChapters`), `packages/client/src/hooks/useTrashManager.ts` (`handleRestore` success arm, `handleRestore` recovery arm), `packages/client/src/pages/EditorPage.tsx`
+- **Symbol:** the `setProject((prev) => prev && prev.id === … ? … : prev)` idiom
+- **Bug class:** Duplication (drift risk)
+- **Description:** The inside-updater project-identity re-test now exists at five call sites in five different spellings — some compare against a value captured at handler entry, some against the snapshot's own id, some `prev &&` and some `prev?.`, and two of them were added by the 2026-08-23 backlog branch. Each is defended by its own multi-line comment explaining the same window. This is the shape `staleProjectGuard.ts` already has a recorded lesson about: its own header records that the OUTER guard "existed at nine sites, four of them at the WEAKER id-only strength", and concludes "nine copies is how four of them drifted to the weaker form unnoticed". The inner re-test is now walking the same path — the 2026-08-23 review found one site (`useChapterCrud`'s recovery arm) comparing against the entry-captured id where `useTrashManager` compares against the snapshot's id, an inconsistency neither site's comment acknowledged.
+- **Suggested fix:** one exported predicate beside `makeStaleProjectGuard`, e.g. `sameProject(expectedId)` returning `(prev: ProjectWithChapters | null) => boolean`, so each call site reads `setProject((prev) => (sameProject(projectId)(prev) ? next : prev))` and the five comment blocks collapse into one doc comment on the helper. The helper is smaller than any one of the comments currently defending a copy. Take the opportunity to settle the entry-captured-id vs snapshot-id question in one place while doing it — the answer is "both", and `useChapterCrud`'s recovery arm now shows the shape (`!isStaleProject() && refreshed.id === projectId`).
+- **Why not now:** it is a pure refactor across three files and five call sites in the save-coordination path, which is a separate change from any bug fix under CLAUDE.md §Pull Request Scope's one-feature rule. It also wants the `9c2ad4e1` decision (replace vs merge for the confirmed-status map) settled first, since two of the five sites sit immediately beside that write.
+- **Confidence:** Medium — the duplication is certain; the claim that it will drift is an extrapolation from the outer guard's recorded history, which is strong but is history, not measurement.
+- **Found by:** review 2026-08-23 S15 (Concurrency & State), `claude-opus-5[1m]`
+- **First seen:** 2026-08-23 on branch `ovid/backlog` at `55edd3e1`
+- **Last seen:** 2026-08-23 on branch `ovid/backlog` at `55edd3e1`
+- **Severity:** Suggestion
+---
 # Closed — cited, kept as addresses
 
 > **These entries are fixed.** They are here because live code, a test name, a

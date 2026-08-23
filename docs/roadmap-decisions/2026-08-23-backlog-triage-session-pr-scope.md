@@ -106,6 +106,30 @@ is not amended in place, per finding I11's instruction not to amend rule 1
 again, and because rewriting a decision log after the fact is the failure mode
 both documents exist to prevent.
 
+## Recorded rather than fixed: the untagged tip commit (finding S3)
+
+`55edd3e1 docs(backlog): mark the eleven entries closed this session` is
+untagged, answers to eleven entries, and names none of them in its subject.
+Rule 5 of the sibling document allows at most one untagged commit per session
+and only at the **base** of the branch; this one was at the tip. Under rule 2's
+placeholder-then-fill clause it should have been a rule-2 commit naming its
+eleven ids, exactly as a SHA-filling commit on an architecture session must.
+
+**It is not retagged.** The sibling document's own retag test permits amending
+"when it is the tip and nothing cites it", and by the time the review was
+answered neither half held: nine `[r1 …]` commits sit after it, so the retag
+means a rebase, and `55edd3e1` is cited sixteen times — in `backlog.md`'s
+`First seen` / `Last seen` fields on four entries, and in the filename of the
+review report itself
+(`paad/code-reviews/ovid-backlog-2026-08-23-10-29-10-55edd3e1.md`). A rebase
+would stale every one of them to buy a tag, which is the trade the sibling
+document declines four separate times for the same reason.
+
+The rule is stated here so the next session writes the tag the first time: a
+commit that records the closing of N entries **answers to those entries** and
+takes their ids, even though it touches nothing but markdown. Decide the tag
+from what the commit answers to, not from what it touched.
+
 ## Consequences
 
 - `CLAUDE.md` §Pull Request Scope points at this document alongside its sibling.

@@ -4,6 +4,7 @@ import { createRef, type ComponentProps } from "react";
 import type { Chapter, ProjectWithChapters } from "@smudge/shared";
 import { EditorMainContent } from "./EditorMainContent";
 import { STRINGS } from "../strings";
+import type { ViewMode } from "../hooks/useKeyboardShortcuts";
 
 // Backlog 8ff156ec, residual. The persistent read-only lock banner carries
 // the Refresh button, which is one of only two documented ways a writer
@@ -184,23 +185,56 @@ const VIEW_BRANCHES = [
   ["active editor", {}, "editor-view"],
 ] as const;
 
+// S7 (review 2026-08-23): every ViewMode must appear in the table above.
+// VIEW_BRANCHES is a hand-maintained literal, so a NEW view mode could be added
+// to the component's ternary and silently go untested here. This is a
+// compile-time link, not a runtime one: adding a fourth ViewMode without a row
+// makes `viewModeCoverage` fail to typecheck. It cannot force a row for a
+// non-ViewMode branch (trash, no-chapters), which are selected by other props.
+const viewModeCoverage: Record<ViewMode, true> = {
+  editor: true,
+  preview: true,
+  dashboard: true,
+};
+const TABLE_VIEW_MODES = new Set<string>(
+  VIEW_BRANCHES.map(([, overrides]) => ("viewMode" in overrides ? overrides.viewMode : "editor")),
+);
+
 describe("EditorMainContent — lock banner renders above every view branch (8ff156ec)", () => {
+  it("has a table row for every ViewMode (S7)", () => {
+    for (const mode of Object.keys(viewModeCoverage)) {
+      expect(TABLE_VIEW_MODES.has(mode), `VIEW_BRANCHES has no row for viewMode "${mode}"`).toBe(
+        true,
+      );
+    }
+  });
+
   it.each(VIEW_BRANCHES)(
     "shows the lock banner and its Refresh escape on the %s branch",
     (_label, overrides, marker) => {
-      render(<EditorMainContent {...baseProps()} {...overrides} />);
+      const { container } = render(<EditorMainContent {...baseProps()} {...overrides} />);
 
       // We are on the branch we think we are on.
-      if (marker) {
-        expect(screen.getByTestId(marker)).toBeInTheDocument();
-      } else {
-        expect(screen.getByText(STRINGS.project.emptyChapters)).toBeInTheDocument();
-      }
+      const viewEl = marker
+        ? screen.getByTestId(marker)
+        : screen.getByText(STRINGS.project.emptyChapters);
+      expect(viewEl).toBeInTheDocument();
 
-      expect(screen.getByText(LOCK_MESSAGE)).toBeInTheDocument();
+      const banner = screen.getByText(LOCK_MESSAGE);
+      expect(banner).toBeInTheDocument();
       expect(
         screen.getByRole("button", { name: STRINGS.editor.refreshButton }),
       ).toBeInTheDocument();
+
+      // S7: PLACEMENT, not just presence — which is the whole point of this
+      // file. getByText finds the banner anywhere in the tree, so moving it
+      // inside one arm of the ternary (the regression this file exists to
+      // catch) left all ten cases green. Two assertions pin it: the banner
+      // precedes the view content in document order, and it is not a
+      // descendant of it.
+      expect(banner.compareDocumentPosition(viewEl) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(viewEl.contains(banner)).toBe(false);
+      expect(container).toContainElement(banner);
     },
   );
 

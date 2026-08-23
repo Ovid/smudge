@@ -225,6 +225,15 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
         // three of its callers, so it is filed as backlog `9c2ad4e1` rather
         // than done here.
         //
+        // S6 (review 2026-08-23): this window may not be reachable today.
+        // `useProjectEditor`'s render body writes `projectSlugRef.current = slug`
+        // synchronously before the load effect dispatches, so on a real
+        // A-to-B navigation `makeStaleProjectGuard` check 2 fires first and the
+        // handler bails before any of this runs. Treat the guards as
+        // defence-in-depth against a future producer that advances the two refs
+        // in a different order, not as a fix for a defect anyone has observed.
+        // They cost one comparison; the failure they prevent is silent.
+        //
         // The asymmetry is deliberate and bounded: in the queue-drain window
         // the sidebar now stays correct (project B's list is untouched) while
         // the editor may briefly hold A's chapter — confusing, and it clears
