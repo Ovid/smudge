@@ -373,7 +373,14 @@ describe("Ctrl+Shift+P view toggle failure (backlog c4571a83)", () => {
   });
 
   it("stays silent when the toggle resolves normally", async () => {
-    expectConsole("warn").silent();
+    // Review 2026-08-23 (I5): the handle is hoisted and .silent() is asserted
+    // LAST, matching the sibling above. expectConsole's matchers are not
+    // deferred registrations — .silent() runs `expect(spy).not.toHaveBeenCalled()`
+    // synchronously at its call site. Asserting it before setupToggle fires the
+    // keydown checked a spy that was one statement old and provably had zero
+    // calls, so everything after it was unguarded and the success path could
+    // start warning without anything going red.
+    const warn = expectConsole("warn");
     const switchToView = vi.fn().mockResolvedValue(true);
     setupToggle(switchToView);
 
@@ -383,5 +390,6 @@ describe("Ctrl+Shift+P view toggle failure (backlog c4571a83)", () => {
     await act(async () => {
       await Promise.resolve();
     });
+    warn.silent();
   });
 });
