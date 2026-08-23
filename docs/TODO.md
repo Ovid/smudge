@@ -1,4 +1,4 @@
-Need import/export roundtrip tests for Smudge.
+- Backlog entries are ignored
 
 - MathJax?
 
