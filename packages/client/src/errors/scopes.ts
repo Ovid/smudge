@@ -245,7 +245,17 @@ export const SCOPES = {
     // render and click. Sibling image.upload has the same 404 branch
     // (uploadProjectGone); chapter.create was missing it and surfaced
     // the generic "Failed to create chapter" that invites retry.
-    byStatus: { 404: STRINGS.error.createChapterProjectGone },
+    // Backlog 3c4e8f72: the 5xx set mirrors chapter.save's I3 (bare 500)
+    // and S7 (reverse-proxy 502/503/504). Without it those statuses fell
+    // through to the createChapterFailed fallback, which reads like a
+    // client-side problem the user can fix by clicking again.
+    byStatus: {
+      404: STRINGS.error.createChapterProjectGone,
+      500: STRINGS.error.createChapterFailedServer,
+      502: STRINGS.error.createChapterFailedServer,
+      503: STRINGS.error.createChapterFailedServer,
+      504: STRINGS.error.createChapterFailedServer,
+    },
     // S8 (review 2026-04-24): the server inserted the row but could
     // not re-read it — treat as committed so consumers surface the
     // committed UX and avoid duplicate-create retries.

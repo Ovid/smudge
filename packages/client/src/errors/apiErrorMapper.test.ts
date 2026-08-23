@@ -493,6 +493,29 @@ describe("SCOPES — chapter.reorder", () => {
   });
 });
 
+describe("SCOPES — chapter.create", () => {
+  const scope = SCOPES["chapter.create"];
+  // Backlog 3c4e8f72: chapter.save maps 500/502/503/504 to a
+  // server-trouble copy (I3 + S7); chapter.create mapped neither, so a
+  // bare 500 or a reverse-proxy 502/503/504 fell through to the generic
+  // "Failed to create chapter" fallback, which invites a retry without
+  // saying the server is the problem. Same UX gap, sibling scope.
+  it.each([
+    [500, "INTERNAL_ERROR"],
+    [502, undefined],
+    [503, undefined],
+    [504, undefined],
+  ])("%i → createChapterFailedServer (byStatus)", (status, code) => {
+    const err = new ApiRequestError("boom", status as number, code as string | undefined);
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.createChapterFailedServer);
+  });
+  // Fallback path stays reachable for a 5xx the scope does not map.
+  it("599 with no code → createChapterFailed (fallback)", () => {
+    const err = new ApiRequestError("unknown 5xx", 599);
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.createChapterFailed);
+  });
+});
+
 describe("I4 — 2xx BAD_JSON on mutation scopes sets possiblyCommitted=true", () => {
   // Each mutation scope must surface the ambiguous-commit UX on 2xx
   // BAD_JSON. Missing this routes the user through the normal error

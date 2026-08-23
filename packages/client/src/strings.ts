@@ -85,6 +85,12 @@ export const STRINGS = {
     restoreChapterFailedNetwork: "Failed to restore chapter — check your connection and try again.",
     settingsUpdateFailedNetwork: "Unable to save settings — check your connection and try again.",
     createChapterFailed: "Failed to create chapter",
+    // Backlog 3c4e8f72: sibling copy to editor.saveFailedServer. A bare
+    // 500, or a reverse-proxy 502/503/504, is the server's problem — the
+    // generic createChapterFailed invited an immediate retry without
+    // saying so.
+    createChapterFailedServer:
+      "Failed to create chapter \u2014 the server is having trouble. Try again in a moment.",
     createChapterResponseUnreadable:
       "The chapter may have been created, but the server response was unreadable. Refresh to see the current chapter list.",
     createChapterReadAfterFailure:
