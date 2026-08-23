@@ -32,19 +32,37 @@ const ZIP64_SENTINEL = 0xffffffff;
  *  the security-critical bomb tests parse archives with the SAME logic as
  *  production — the byte offsets cannot drift apart (S9).
  *
- *  Backlog e8ba6c7b: a bare signature match is not enough. The scan runs
- *  backward, so the first signature it meets is the LAST one in the file — and
- *  the archive comment is the last thing in the file. A comment whose bytes
- *  happen to contain 0x06054b50 therefore shadowed the true record, and the
- *  archive was refused. The EOCD's own comment-length field discriminates: for
- *  the real record, `offset + 22 + commentLen` lands exactly on end-of-buffer,
- *  because everything after the record IS the comment. A decoy sitting inside
- *  that comment reads an arbitrary length there and (all but certainly) misses.
- *  `i <= buf.length - 22` bounds the readUInt16LE at `i + 20`. */
+ *  DELIBERATELY a bare signature match, and specifically NOT validated against
+ *  the record's own comment-length field. Backlog e8ba6c7b asked for that guard
+ *  (accept only when `i + 22 + buf.readUInt16LE(i + 20) === buf.length`) to stop
+ *  a comment containing 0x06054b50 from shadowing the true record. It shipped in
+ *  fe7acdb7 and was reverted the same day, because measurement showed it trades
+ *  a real capability for a theoretical one:
+ *
+ *    - It refuses every archive carrying trailing bytes after the comment —
+ *      block padding, a transfer that rounded up, a zip at the head of a larger
+ *      file. Measured at +1/+4/+17/+18/+22/+30/+1000 bytes: `JSZip.loadAsync`
+ *      loads all of them, the guard returns -1 for all of them. `make restore`
+ *      is the post-data-loss path; it must not be pickier than the library it
+ *      hands the bytes to.
+ *    - It rescues nothing. On the decoy archive the guard was written for,
+ *      jszip's own locator (`lastIndexOfSignature`, zipEntries.js
+ *      `readEndOfCentral` — no comment-length validation either) still selects
+ *      the decoy and `loadAsync` throws "End of data reached". runRestore parses
+ *      each archive TWICE, with Smudge's parser at step 1 and jszip's at step 6,
+ *      so a locator fix at step 1 cannot make step 6 succeed.
+ *    - Smudge cannot even produce the shape: runBackup never passes a `comment`
+ *      to generateAsync, and the backlog entry itself recorded the case as
+ *      hypothetical ("our archives carry no comment").
+ *
+ *  The two parsers are not identical — jszip scans the whole buffer from
+ *  `length - 4`, this one stops at `length - 22` and after 64 KiB — so an archive
+ *  with an over-long comment loads in jszip and is refused here under ANY rule.
+ *  Closing that gap means one parser, not a better second one; see the backlog.
+ *  Until then, keep this rule matching jszip's on every archive both can reach. */
 export function findEocdOffset(buf: Buffer): number {
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 0xffff); i--) {
-    if (buf.readUInt32LE(i) !== EOCD_SIG) continue;
-    if (i + 22 + buf.readUInt16LE(i + 20) === buf.length) return i;
+    if (buf.readUInt32LE(i) === EOCD_SIG) return i;
   }
   return -1;
 }

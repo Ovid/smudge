@@ -331,41 +331,64 @@ it("readCentralDirectorySizes throws DecompressionBombError (not RangeError) for
   expect(() => readCentralDirectorySizes(corrupted)).toThrow(DecompressionBombError);
 });
 
-// Backlog e8ba6c7b: findEocdOffset scanned backward and returned the FIRST
-// 0x06054b50 it met — which, scanning backward, is the LAST one in the file.
-// A zip comment containing those four bytes sits after the true EOCD, so it
-// shadowed it and the archive was refused (safe failure, but a refusal of a
-// perfectly valid archive). The EOCD's own comment-length field discriminates:
-// for the real record, offset + 22 + commentLen lands exactly on end-of-buffer.
+// Backlog e8ba6c7b asked findEocdOffset to skip a 0x06054b50 that appears
+// inside the archive comment, by requiring the candidate's declared comment
+// length to reach exactly end-of-buffer. That guard shipped (fe7acdb7) and was
+// reverted the same day: it refused archives with trailing bytes (pinned by
+// "restores an archive that carries trailing bytes after the EOCD comment"
+// above) while rescuing none, because jszip mis-locates the same decoy.
+//
+// These tests pin the SECOND half of that finding, which is the half a future
+// author will not think to check: the fix is impossible at this layer. The
+// locator can be made to find the true record, and the archive is still
+// unrestorable, because a different parser does the extraction.
 describe("findEocdOffset — comment containing the EOCD signature (e8ba6c7b)", () => {
-  // "PK\u0005\u0006" is the EOCD signature as bytes; the padding pushes the
-  // decoy far enough from the end that the backward scan reaches it first.
-  const DECOY_COMMENT = "PK\u0005\u0006" + "A".repeat(40);
+  // The EOCD signature as bytes, then padding that pushes the decoy far enough
+  // from the end that the backward scan reaches it first.
+  const DECOY_COMMENT = `PK${String.fromCharCode(5, 6)}${"A".repeat(40)}`;
 
-  it("returns the true EOCD, not the decoy inside the comment", async () => {
-    const zip = new JSZip();
-    zip.file("a.txt", "hello");
-    const buf = await zip.generateAsync({ type: "nodebuffer", comment: DECOY_COMMENT });
-
-    const offset = findEocdOffset(buf);
-    expect(offset).toBeGreaterThan(-1);
-    // The defining property of the real record: its declared comment length
-    // reaches exactly end-of-buffer.
-    expect(offset + 22 + buf.readUInt16LE(offset + 20)).toBe(buf.length);
-  });
-
-  it("still parses the central directory of an archive with such a comment", async () => {
+  async function decoyArchive() {
     const zip = new JSZip();
     zip.file("a.txt", "hello");
     zip.file("b.txt", "world");
-    const buf = await zip.generateAsync({ type: "nodebuffer", comment: DECOY_COMMENT });
+    return zip.generateAsync({ type: "nodebuffer", comment: DECOY_COMMENT });
+  }
+
+  it("jszip refuses the archive, so no locator change here can restore it", async () => {
+    const buf = await decoyArchive();
+    // The extraction parser (runRestore step 6) mis-locates the decoy exactly
+    // as this module's locator does, and gives up. THIS is why e8ba6c7b cannot
+    // be closed by editing findEocdOffset: fixing step 1 leaves step 6 failing.
+    await expect(JSZip.loadAsync(buf)).rejects.toThrow(/End of data reached/);
+  });
+
+  it("locates the decoy, matching jszip's choice rather than diverging from it", async () => {
+    const buf = await decoyArchive();
+    const offset = findEocdOffset(buf);
+    // Not the true record — and deliberately so. Agreeing with the extraction
+    // parser is worth more than being right alone: a locator that picked the
+    // true record here would have Smudge validate one central directory while
+    // jszip extracts from another.
+    expect(offset).toBeGreaterThan(-1);
+    expect(offset + 22 + buf.readUInt16LE(offset + 20)).not.toBe(buf.length);
+  });
+
+  it("reports -1 for a buffer that is not a zip at all", () => {
+    expect(findEocdOffset(Buffer.alloc(200, 0x41))).toBe(-1);
+  });
+
+  it("reports -1 for a buffer shorter than an EOCD record", () => {
+    expect(findEocdOffset(Buffer.alloc(21, 0x41))).toBe(-1);
+  });
+
+  it("still walks the central directory of an ordinary commented archive", async () => {
+    const zip = new JSZip();
+    zip.file("a.txt", "hello");
+    zip.file("b.txt", "world");
+    const buf = await zip.generateAsync({ type: "nodebuffer", comment: "an ordinary comment" });
 
     const paths = [...walkCentralDirectory(buf)].map((e) => e.path).sort();
     expect(paths).toEqual(["a.txt", "b.txt"]);
-  });
-
-  it("still reports -1 for a buffer that is not a zip at all", () => {
-    expect(findEocdOffset(Buffer.alloc(200, 0x41))).toBe(-1);
   });
 });
 
@@ -452,6 +475,39 @@ it("runRestore round-trips after wiping the data dir; old data is moved aside", 
   expect(movedAsideTo).toContain(".before-restore-");
   // movedAsideTo is a sibling of dataDir — afterEach handles cleanup via the
   // move-aside sibling scan registered against dataDir
+});
+
+// Review 2026-08-23 (I1): a backup that has picked up trailing bytes — block
+// padding from an archiving tool, a transfer that rounded up, a zip embedded at
+// the head of a larger file — must still restore. jszip locates the record and
+// loads such an archive without complaint, so a locator that refuses it makes
+// Smudge strictly less capable than the library it hands the bytes to, on the
+// one path an operator reaches for after losing data.
+//
+// This drives the WHOLE restore, not findEocdOffset in isolation: the parser
+// that validates and the parser that extracts are different code (backup-core
+// step 1 vs step 6), and a locator change can only be judged at the layer where
+// both run.
+it("restores an archive that carries trailing bytes after the EOCD comment", async () => {
+  const { dataDir } = await makeFixture();
+  const archive = await makeArchive(dataDir);
+  await writeFile(archive, Buffer.concat([await readFile(archive), Buffer.alloc(16, 0)]));
+
+  const db = new Database(join(dataDir, "smudge.db"));
+  db.prepare("INSERT INTO t (v) VALUES (?)").run("after-backup");
+  db.close();
+
+  await runRestore({
+    archivePath: archive,
+    dataDir,
+    confirmToken: basename(archive),
+    probePort: async () => false,
+    now: () => new Date(2026, 4, 26, 13, 0, 0),
+  });
+
+  const restored = new Database(join(dataDir, "smudge.db"), { readonly: true });
+  expect(restored.prepare("SELECT COUNT(*) c FROM t").get()).toEqual({ c: 1 });
+  restored.close();
 });
 
 it("refuses if the server is running (port probe true)", async () => {

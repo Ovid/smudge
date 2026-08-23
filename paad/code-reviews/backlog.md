@@ -322,7 +322,11 @@
 - **Description:** The end-of-central-directory backward scan stops at the first `0x06054b50`; a zip comment containing those bytes after the true EOCD causes a mis-parse. Safe-failure — a valid archive is *refused* (DecompressionBombError), never clobbered — and low likelihood (our archives carry no comment; image names are UUIDs). Review S4 (operational-backup-stopgap). NOTE: not part of the enumerated "cheap suggestions" set addressed in the 4b.14 review pass; explicitly descoped, recorded here.
 - **Suggested fix:** In `findEocdOffset`, validate the candidate EOCD's comment-length field (`buf.readUInt16LE(i + 20)`) reaches exactly end-of-buffer (`i + 22 + commentLen === buf.length`) before accepting it; continue scanning otherwise. Now a ~3-line guard since the parser is centralized (S9).
 - **Re-verified 2026-08-23 (backlog triage): still open, unchanged, and it is the cheapest real fix left in this file.** `findEocdOffset` has moved to `packages/server/src/backup/backup-zip-format.ts` (the parser was centralized there, which is what S9 anticipated), and its body is still the bare backward scan returning the first `0x06054b50` with no comment-length validation. The suggested guard drops in as written. Two notes for whoever takes it. First, the scan runs backward from the end, so the *first* signature it meets is the last one in the file — a comment containing those bytes shadows the true EOCD only when it sits after it, which is exactly the case the length check discriminates. Second, `findEocdOffset` is exported specifically so the decompression-bomb tests parse with production's own logic, so the new guard is covered by those tests the moment it lands; add one positive case (an archive with a comment whose bytes contain the signature, which must still parse) so the guard is not merely present but pinned.
-- **FIXED 2026-08-23 by `fe7acdb7`.** The guard is the suggested one: accept a candidate only when `i + 22 + buf.readUInt16LE(i + 20) === buf.length`. Measured on a real jszip archive whose comment contains the signature — the old scan returned offset 113, the true record sat at 91, and `walkCentralDirectory` threw "central directory read overrun at entry 0". Three tests: the decoy is skipped, the archive's central directory still parses, and a non-zip buffer still returns -1. The positive case the entry asked for is the second of those.
+- **ATTEMPTED AND REVERTED 2026-08-23 (`fe7acdb7`, reverted same day). STILL OPEN — and not fixable at this layer.** The suggested guard shipped, then came out again after review 2026-08-23 (I1/I2/I3) measured it. Three findings, all by execution, all of which the next person to pick this up needs:
+  1. **The guard refused working archives.** Any trailing bytes after the comment — block padding, a transfer that rounded up, a zip at the head of a larger file — made every candidate fail the equality, so `findEocdOffset` returned -1 and `walkCentralDirectory` threw `DecompressionBombError("not a valid zip (no EOCD)")`. Measured at +1/+4/+17/+18/+22/+30/+1000 bytes: `JSZip.loadAsync` loads all of them, the guard refuses all of them. `make restore` is the post-data-loss path; it must not be pickier than the library it hands the bytes to. Now pinned end-to-end by the `runRestore` test "restores an archive that carries trailing bytes after the EOCD comment".
+  2. **The guard rescued nothing.** `runRestore` parses each archive **twice with two independent parsers** — this module's locator at step 1 (validation) and `JSZip.loadAsync` at step 6 (extraction). jszip locates the EOCD with a bare backward `lastIndexOfSignature` and no comment-length validation of its own (`node_modules/jszip/lib/zipEntries.js` `readEndOfCentral`, `lib/reader/ArrayReader.js` `lastIndexOfSignature`), so it selects the same decoy and throws `End of data reached ... Corrupted zip ?`. The guard only moved the refusal from step 1 to step 6 and changed the message to blame corruption. Pinned by "jszip refuses the archive, so no locator change here can restore it".
+  3. **The case was hypothetical and remains unreachable for Smudge's own archives.** `runBackup` never passes a `comment` to `generateAsync`, exactly as this entry's original Description said ("our archives carry no comment"). The "real jszip archive" in the `fe7acdb7` commit message was a fixture the commit constructed.
+  **What would actually close it:** not a better locator. The two parsers cannot be brought into agreement by patching one of them — jszip scans the whole buffer from `length - 4`, this one stops at `length - 22` and after 64 KiB, so an archive with an over-long comment loads in jszip and is refused here under *any* rule (measured: a 70 000-char comment gives jszip offset 102 and a successful load, and -1 here). See the new entry below on collapsing to a single parser. Until that lands, keeping this locator's rule identical to jszip's is the property worth protecting, and the current bare-signature scan is what protects it.
 - **Confidence:** High
 - **Found by:** Logic & Correctness / Security (`claude-opus-4-8[1m]`)
 - **First seen:** 2026-06-04 on branch `operational-backup-stopgap` at `1aa1eec`
@@ -388,6 +392,58 @@
 - **Last seen:** 2026-08-23 on branch `ovid/architecture` at `cdc9c8a2`
 - **Severity:** Suggestion
 
+
+## `e0b41bcc` — `handleUpdateProjectTitle`'s committed-recovery `setProject(refreshed)` lacks the inside-updater identity re-test its two siblings now carry
+- **File (at first sighting):** `packages/client/src/hooks/useChapterMetadata.ts`
+- **Symbol:** `handleUpdateProjectTitle`
+- **Bug class:** Concurrency
+- **Description:** The committed-recovery arm calls `setProject(refreshed)` with a whole-project snapshot and no `prev.id` re-test inside the updater, unlike `useChapterCrud.handleCreateChapter` (both call sites, guarded 2026-08-23 by `a254d743`) and `useTrashManager` (`prev?.id === refreshed.id`). The outer `isStaleProject()` is evaluated when the handler resumes; the updater body runs later, when React drains the queue. This arm additionally rewrites `projectSlugRef.current = refreshed.slug`, which the OOSI1 comment directly above it calls session-permanent and the cause of silent cross-project writes. Reachability is the same open question as the sibling sites — see the residual note under `8b34a209` and the report's `[S6]`.
+- **Suggested fix:** `setProject((prev) => (prev?.id === refreshed.id ? refreshed : prev));` — and settle the reachability question once for all three sites rather than per site.
+- **Confidence:** Medium
+- **Found by:** Logic & Correctness (`claude-opus-5[1m]`)
+- **First seen:** 2026-08-23 on branch `ovid/backlog` at `55edd3e1`
+- **Last seen:** 2026-08-23 on branch `ovid/backlog` at `55edd3e1`
+- **Severity:** Suggestion
+
+## `872b6760` — `handleDeleteChapter`'s success path runs `setActiveChapter` with no drift guard, pinning project A's chapter under project B's URL
+- **File (at first sighting):** `packages/client/src/hooks/useChapterCrud.ts`
+- **Symbol:** `handleDeleteChapter`
+- **Bug class:** Concurrency
+- **Description:** `isStaleProject` is built at handler entry but consulted only in the two catch arms. The success path — the `setProject` filter and the `setActiveChapter(ch)` / `setChapterWordCount(...)` after the post-delete `api.chapters.get` — is unguarded, and `deleteChapterOp` aborts only on unmount or on a newer delete. An A-to-B navigation while the DELETE is in flight lets the secondary GET land A's chapter as active under B's URL; `loadProject` never calls `selectChapterSeq.start()`, so last-resolver wins and the next keystroke auto-saves against A's chapter id. Same hazard the OOSS1 comment describes for the create-recovery arm. The `setProject` is safe by accident (filtering B's chapters by A's chapter id matches nothing, as the catch-path comment already says); the `setActiveChapter` is not. Pre-existing.
+- **Suggested fix:** `if (isStaleProject()) return true;` immediately after the `if (s.aborted) return false;` that follows the DELETE. The guard object already exists at this site.
+- **Confidence:** Medium
+- **Found by:** Concurrency & State (`claude-opus-5[1m]`)
+- **First seen:** 2026-08-23 on branch `ovid/backlog` at `55edd3e1`
+- **Last seen:** 2026-08-23 on branch `ovid/backlog` at `55edd3e1`
+- **Severity:** Suggestion
+
+## `61659add` — CLAUDE.md §API Design cites `app.ts:41,45,46,50,52` and `images.routes.ts:39` for code that is at `:80,84,85,89,91` and `:100,103`
+- **File (at first sighting):** `CLAUDE.md`
+- **Symbol:** `<file-scope>`
+- **Bug class:** Contract
+- **Description:** "Five routers mount on `/api/projects` (`app.ts:41,45,46,50,52`)" — the count is right, the lines are not; the five mounts are at `app.ts:80,84,85,89,91` and the cited lines are middleware/comments. The images carve-out cites `images.routes.ts:39`, which is a `/**`; the `:projectId` mount and its `requireUuidParam` guard are at `:100,103`. A reader cannot verify a paragraph that records a binding decision (slug vs UUID for new project sub-resources). This is the failure §Documentation Discipline rule 2 was written about, in the file that carries the rule. Spot-checked and still correct, so not part of this entry: `outtakes.routes.ts:14,44`; `images.paths.ts:94-96`; `projects.service.ts:155`; `client.ts:605,619`; `useChapterMetadata.ts:103-118`.
+- **Suggested fix:** Cite symbols per rule 2 — e.g. "the five `app.use("/api/projects", ...)` mounts in `createApp`" and "`images.routes.ts`'s `router.use("/:projectId/images", requireUuidParam("projectId"))`" — rather than line ranges that the next edit above them invalidates.
+- **Confidence:** High
+- **Found by:** Contract & Integration (`claude-opus-5[1m]`)
+- **First seen:** 2026-08-23 on branch `ovid/backlog` at `55edd3e1`
+- **Last seen:** 2026-08-23 on branch `ovid/backlog` at `55edd3e1`
+- **Severity:** Suggestion
+---
+
+## `3d5f0a91` — `runRestore` parses every archive with two different parsers, and they cannot be made to agree
+
+- **File (at first sighting):** `packages/server/src/backup/backup-core.ts` (`runRestore` steps 1 and 6), `packages/server/src/backup/backup-zip-format.ts` (`findEocdOffset`)
+- **Symbol:** `runRestore`, `findEocdOffset`
+- **Bug class:** Contract / Security (differential parsing)
+- **Description:** `runRestore` reads the archive into one buffer and then parses it **twice, with two unrelated parsers**: Smudge's own central-directory walk at step 1 (which is what validates entry paths, declared sizes and free space) and `JSZip.loadAsync` at step 6 (which is what actually extracts). The two locate the end-of-central-directory record by different rules and **cannot be reconciled by editing Smudge's**, because the divergence is structural: jszip's `lastIndexOfSignature` scans the entire buffer starting at `length - 4`, while `findEocdOffset` starts at `length - 22` and stops after 64 KiB. Measured divergences: (a) a buffer under 22 bytes — jszip can locate a record, Smudge cannot; (b) a signature in the final 18 bytes — jszip sees it, Smudge structurally cannot; (c) **an archive with an over-long comment — jszip locates the record at offset 102 and `loadAsync` succeeds, while Smudge returns -1 and refuses, under the current rule and under every rule that has been tried** (verified with a 70 000-character comment; jszip's writer truncates the length field to 4 464 modulo 65 536, so a length-validating rule rejects it too).
+  The name cross-check at step 6 (each validated name must resolve to a `zip.files` entry, bare or force-slashed, else abort) means a disagreement cannot write outside the validated path set. What it can still produce is **content substitution** (the bytes jszip's key maps to under jszip's directory, written to the path Smudge validated), **size substitution** (the byte budget is measured against Smudge's `declaredTotal`), and **silent omission** of entries jszip sees and Smudge's directory does not. Related to `fa8e879a`, which files the RAM-inflation half of the same step-6 gap.
+- **Suggested fix:** Collapse to one parser. `JSZip.loadAsync` parses the central directory **without inflating anything** — entry metadata, including each entry's declared uncompressed size, is available off the loaded entries before any `.async()` call. So the order can become: load once with jszip, read declared sizes from its entries, run the existing `validateEntryPaths` / `checkDeclaredSizes` / free-space gates against *those*, then extract. The decompression-bomb defence is preserved (nothing is inflated until the gates pass) and the differential becomes impossible by construction rather than by hand-maintained agreement. This also closes `e8ba6c7b` as a side effect and removes the reason `findEocdOffset` exists in production at all — it would remain only as a test helper, or be deleted.
+- **Why not now:** it restructures the step order of the one function that moves a user's data dir aside, and it changes which parser's view of the archive every safety gate is computed from. That deserves its own branch with the F-14 forged-archive and bomb tests re-pointed at the new source of truth, not a slot in a review-response session.
+- **Confidence:** High — every divergence above was measured, not read.
+- **Found by:** review 2026-08-23 follow-up (I3 verification), `claude-opus-5[1m]`
+- **First seen:** 2026-08-23 on branch `ovid/backlog` at `55edd3e1`
+- **Last seen:** 2026-08-23 on branch `ovid/backlog` at `55edd3e1`
+- **Severity:** Important
 ---
 
 # Closed — cited, kept as addresses
