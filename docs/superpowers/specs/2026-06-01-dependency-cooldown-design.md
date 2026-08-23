@@ -62,6 +62,24 @@ artifact. This complements — does not replace — `integrity`: that hash binds
 content, this check binds the lockfile's *self-declared identity* to the artifact
 it points at.
 
+**Compile-from-source residual (backlog `05f9c8a4`).** Smudge's
+`make ensure-native` path can run `npm rebuild --build-from-source` for
+`better-sqlite3`, which compiles publisher-supplied C++ and runs it with the
+developer's privileges. Lockfile `integrity` hashes cannot detect a compromise
+here: they faithfully match the post-compromise tarball, because the tarball
+*is* what the publisher shipped. The 7-day quarantine above is the control that
+covers this — a compromised release must survive a week of public exposure
+before Smudge adopts it — and it is a better answer than pinning, because a pin
+freezes one package against one attack while the quarantine covers the whole
+tree and still lets security patches through after a week. `better-sqlite3` is
+therefore deliberately **not** pinned to an exact version.
+
+The residual that no control removes: the trust model is strictly better than
+`prebuild-install` (a compromise must ship source a human could read, not an
+opaque `.node` binary from a CDN) but it is **not** zero-trust. Building from
+source narrows the attack to one a code reviewer could in principle catch; it
+does not eliminate it.
+
 ## Policy
 
 > No package version present in `package-lock.json` may be younger than
