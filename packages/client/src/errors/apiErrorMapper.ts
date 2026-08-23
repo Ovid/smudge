@@ -1,6 +1,7 @@
 import { ApiRequestError } from "../api/client";
 import { SCOPES, type ApiErrorScope, type ScopeEntry } from "./scopes";
 import { clientError } from "./clientLog";
+import { STRINGS } from "../strings";
 
 // F-13: `ScopeEntry` now lives in scopes.ts (its natural home — the scope
 // registry `satisfies Record<ApiErrorScope, ScopeEntry>` there). Re-exported
@@ -107,6 +108,37 @@ export function _resolveErrorInternal(err: unknown, scope: ScopeEntry): MappedEr
       possiblyCommitted: false,
       transient: true,
       terminal: false,
+    };
+  }
+  // Backlog c8c9f95b: the server's Host allowlist (architecture finding
+  // F-02) rejects any request whose Host does not name the local
+  // machine, with 400 INVALID_HOST. That middleware sits ahead of every
+  // route, so when it fires it fires on every request the app makes at
+  // once — every surface showed its own generic fallback, each inviting
+  // a retry that can never succeed and none naming the cause.
+  //
+  // Cross-cutting rather than a byCode entry per scope, deliberately:
+  // INVALID_HOST does not vary in meaning by endpoint, which is exactly
+  // the property the three arms above are keyed on. Thirty-eight
+  // byCode entries would also make the thirty-ninth scope wrong by
+  // default.
+  //
+  // terminal: true is the load-bearing half. Without it, chapter.save's
+  // loop breaks on isClientError(400) with both flags false, so the
+  // editor never locks and no persistent warning appears: the writer
+  // keeps typing into an editor that will never save again. 400 is NOT
+  // in chapter.save's terminalStatuses and must not be — an ordinary
+  // VALIDATION_ERROR 400 is not terminal — so the terminality is
+  // declared here, with the code that earns it.
+  if (err.code === "INVALID_HOST") {
+    return {
+      message: STRINGS.error.invalidHost,
+      // Nothing reached a route, so no write can have landed.
+      possiblyCommitted: false,
+      // A wrong Host never fixes itself; "check your connection" would
+      // be the wrong advice.
+      transient: false,
+      terminal: true,
     };
   }
   // S8 (2026-04-23 review, acknowledged): byCode precedes byStatus.

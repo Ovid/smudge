@@ -1415,6 +1415,27 @@ describe("mapApiErrorMessage", () => {
 });
 
 describe("cross-cutting rules apply to every scope", () => {
+  // Backlog c8c9f95b: the Host middleware sits ahead of every route, so
+  // when it fires it fires on every request the app makes at once. It
+  // reached no scope and no mapper arm, so all 37 surfaces showed their
+  // own generic fallback — "Save failed. Try again.", "Failed to load
+  // project" — each inviting a retry that can never succeed and none
+  // naming the cause. Cross-cutting, not per-scope: the code does not
+  // vary in meaning by endpoint, which is the property the three
+  // existing arms are keyed on.
+  it.each(ALL_SCOPES)("INVALID_HOST names the cause for %s", (scope) => {
+    const err = new ApiRequestError("Request Host is not recognized.", 400, "INVALID_HOST");
+    expect(mapApiError(err, scope).message).toBe(STRINGS.error.invalidHost);
+  });
+  // A wrong Host never fixes itself, and nothing reached a route, so the
+  // write cannot have landed.
+  it.each(ALL_SCOPES)("INVALID_HOST is terminal, not transient, for %s", (scope) => {
+    const err = new ApiRequestError("Request Host is not recognized.", 400, "INVALID_HOST");
+    const mapped = mapApiError(err, scope);
+    expect(mapped.terminal).toBe(true);
+    expect(mapped.transient).toBe(false);
+    expect(mapped.possiblyCommitted).toBe(false);
+  });
   it.each(ALL_SCOPES)("ABORTED is silent for %s", (scope) => {
     expect(mapApiError(new ApiRequestError("aborted", 0, "ABORTED"), scope).message).toBeNull();
   });

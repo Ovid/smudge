@@ -102,6 +102,12 @@ export const STRINGS = {
     // away.
     createChapterProjectGone:
       "This project has been deleted. Navigate to Home to see the current project list.",
+    // Backlog c8c9f95b: the server's Host allowlist rejected the request.
+    // It sits ahead of every route, so this fires on every request at
+    // once — the writer sees a total, permanent failure of the app. Say
+    // the cause instead of inviting a retry that can never succeed.
+    invalidHost:
+      "Smudge does not recognise this web address, so nothing on this page can load or save. Open Smudge at the address it was set up to use \u2014 if it runs behind a proxy, that proxy must forward the original address.",
     loadChapterFailed: "Failed to load chapter",
     loadChapterFailedNetwork: "Failed to load chapter — check your connection and try again.",
     deleteChapterFailed: "Failed to delete chapter",
