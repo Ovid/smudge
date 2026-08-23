@@ -194,20 +194,44 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
         // in the sidebar and pointing subsequent edits at the wrong
         // project's chapter id.
         if (isStaleProject()) return;
-        // Backlog 8b34a209, residual: these two, and the
-        // confirmedStatusRef seed below, take the OUTER guard only. They
-        // are plain value sets with no updater body, so there is no
+        // Backlog 8b34a209, residual. FOUR writes take the OUTER guard
+        // only, not the inside-updater re-test: `setActiveChapter` and
+        // `setChapterWordCount` here, and — in the recovery arm below —
+        // `replaceConfirmedStatusesFromProject` plus its own
+        // `setActiveChapter`/`setChapterWordCount` pair. (I6, review
+        // 2026-08-23: this comment previously said "the confirmedStatusRef
+        // seed below", singular, naming only the success-path seed on the
+        // next line and silently dropping the recovery arm's whole-map
+        // replacement — the more damaging of the two. Per CLAUDE.md F-19
+        // the enumeration IS the mitigation, so an unenumerated residual
+        // had no mitigation.)
+        //
+        // They are plain value sets with no updater body, so there is no
         // drain-time hook where a `prev.id === projectId` re-test could
         // live — the guarantee the setProject call below gets is simply
-        // not available to them. Closing that would mean moving the
-        // active-chapter transition into a render-keyed effect, a
-        // structural change well past this fix. The asymmetry is
-        // deliberate and bounded: in the queue-drain window the sidebar
-        // now stays correct (project B's list is untouched) while the
-        // editor may briefly hold A's chapter — confusing, and it clears
-        // on the next project load, where before the window left a
-        // phantom chapter wedged in B's list that reorder and delete
-        // would then operate on.
+        // not available to them. Note that adding a second statement-time
+        // identity re-check just before them, the way useTrashManager does,
+        // does NOT close this: `projectRef.current` is a render-body mirror
+        // (useProjectEditor.ts, `projectRef.current = project`), so during
+        // the drain window it still reads the OLD project and any re-check
+        // against it passes exactly when it needs to fail. useTrashManager's
+        // inner re-check earns its keep as defence against a future `await`
+        // being inserted above it, which is a different hazard.
+        //
+        // What would actually close it is making the status write ADDITIVE
+        // instead of a whole-map replacement, so a snapshot that loses the
+        // race can only add unread keys rather than evict the live project's
+        // baselines. That changes the shared helper's semantics for all
+        // three of its callers, so it is filed as backlog `9c2ad4e1` rather
+        // than done here.
+        //
+        // The asymmetry is deliberate and bounded: in the queue-drain window
+        // the sidebar now stays correct (project B's list is untouched) while
+        // the editor may briefly hold A's chapter — confusing, and it clears
+        // on the next project load, where before the window left a phantom
+        // chapter wedged in B's list that reorder and delete would then
+        // operate on. The recovery arm's status-map replacement does NOT
+        // self-heal the same way; that is what `9c2ad4e1` covers.
         setActiveChapter(newChapter);
         setChapterWordCount(0);
         // Backlog 8b34a209: re-test identity INSIDE the updater. The
@@ -358,7 +382,19 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
               // A's pairs, setActiveChapter pins A's new chapter, and any
               // keystroke in that window auto-saves against A's chapter id
               // while the user is on B's URL.
-              if (!isStaleProject()) {
+              // S14 (review 2026-08-23): `refreshed.id === projectId` is a
+              // SEPARATE question from the drift guard, and both are needed.
+              // isStaleProject() asks "is the user still on the project this
+              // create started in"; this asks "is the snapshot that came back
+              // actually that project". They can disagree, because the recovery
+              // GET addresses the project by SLUG and a slug is not a stable
+              // address: CLAUDE.md §"Slugs are mutable and reclaimable" records
+              // that renaming a project away from slug S releases S to the next
+              // project whose title generates it. So the GET can answer 200 with
+              // a different project's snapshot while every id-based drift check
+              // still passes. Checking it here means the arm below never
+              // installs a stranger's chapters.
+              if (!isStaleProject() && refreshed.id === projectId) {
                 // Backlog 8b34a209 (absorbing a65acf76): same queue-drain
                 // window as the success path above, and worse here —
                 // `refreshed` is A's WHOLE snapshot, so an unguarded

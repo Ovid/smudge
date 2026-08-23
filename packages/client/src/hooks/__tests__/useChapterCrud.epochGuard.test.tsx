@@ -84,9 +84,16 @@ function setupOverProjectA() {
   const setActiveChapter = vi.fn();
   const setChapterWordCount = vi.fn();
   const replaceConfirmedStatusesFromProject = vi.fn();
+  // S5 (review 2026-08-23): the harness must be able to ADVANCE projectRef.
+  // Pinning it at A for the whole test let the guard be rewritten from the
+  // captured `projectId` to a live `projectRef.current?.id` read with every
+  // test still green — the exact wrong form staleProjectGuard.ts's S8 note
+  // records four sites drifting into. Handing the ref back is what kills it.
+  const refs: { projectRef?: { current: ProjectWithChapters | null } } = {};
 
   const { result } = renderHook(() => {
     const projectRef = useRef<ProjectWithChapters | null>(PROJECT_A);
+    refs.projectRef = projectRef;
     const projectSlugRef = useRef<string | undefined>(PROJECT_A.slug);
     const activeChapterRef = useRef<Chapter | null>(null);
     const confirmedStatusRef = useRef<Record<string, ChapterStatusValue | undefined>>({});
@@ -112,7 +119,14 @@ function setupOverProjectA() {
     return useChapterCrud(deps);
   });
 
-  return { result, setProject, setActiveChapter, setChapterWordCount };
+  return {
+    result,
+    setProject,
+    setActiveChapter,
+    setChapterWordCount,
+    replaceConfirmedStatusesFromProject,
+    refs,
+  };
 }
 
 /** Pulls the single updater function handed to setProject. */
@@ -203,6 +217,60 @@ describe("handleCreateChapter recovery path — inside-updater epoch guard (a65a
     const applied = capturedUpdater(setProject)(PROJECT_A);
     expect(applied?.id).toBe("proj-a");
     expect(applied?.chapters.map((c) => c.id)).toEqual(["ch-a-new"]);
+    warn.calledWith("Failed to create chapter:", expect.any(ApiRequestError));
+  });
+});
+
+// Review 2026-08-23. Two gaps in the block above, both in the recovery arm.
+describe("handleCreateChapter recovery path — snapshot identity (S14, S5)", () => {
+  function armRecoveryReturning(snapshot: ProjectWithChapters) {
+    vi.mocked(api.chapters.create).mockRejectedValue(
+      new ApiRequestError("unreadable", 200, "BAD_JSON"),
+    );
+    vi.mocked(api.projects.get).mockResolvedValue(snapshot);
+  }
+
+  // S14. The recovery GET is issued against `projectSlugRef.current`, and a
+  // slug is not a stable address: CLAUDE.md §"Slugs are mutable and
+  // reclaimable" records that renaming a project away from slug S releases S,
+  // and the next project whose title generates S takes it over. So the GET can
+  // answer with a DIFFERENT project than the one the create started in. The
+  // guard has to ask "is this snapshot the project I am on", which means
+  // comparing the snapshot's own id — not just re-checking that the ref still
+  // holds the id we captured, which is true in exactly this case.
+  it("does not install a snapshot belonging to a different project", async () => {
+    const warn = expectConsole("warn");
+    armRecoveryReturning(makeProject("proj-other", "project-a", [makeChapter("ch-x", "proj-other")]));
+    const { result, setProject, replaceConfirmedStatusesFromProject } = setupOverProjectA();
+
+    await act(async () => {
+      await result.current.handleCreateChapter(vi.fn());
+    });
+
+    expect(setProject).not.toHaveBeenCalled();
+    expect(replaceConfirmedStatusesFromProject).not.toHaveBeenCalled();
+    warn.calledWith("Failed to create chapter:", expect.any(ApiRequestError));
+  });
+
+  // S5. Kills the mutation the previous version of this file could not see:
+  // rewriting the updater's `prev.id === projectId` to a live
+  // `projectRef.current?.id` read. Advancing the ref to B makes the live-read
+  // form compare B against B and wrongly apply A's snapshot; the captured-id
+  // form compares B against A and bails. Without this the two forms are
+  // indistinguishable here, because the ref never moved.
+  it("bails on the id captured at entry, not on whatever the ref holds now", async () => {
+    const warn = expectConsole("warn");
+    armRecoveryReturning(makeProject("proj-a", "project-a", [NEW_CHAPTER_A]));
+    const { result, setProject, refs } = setupOverProjectA();
+
+    await act(async () => {
+      await result.current.handleCreateChapter(vi.fn());
+    });
+
+    // The user has landed on B and the ref has caught up; React now drains
+    // this updater with B as `prev`.
+    refs.projectRef!.current = PROJECT_B;
+    expect(capturedUpdater(setProject)(PROJECT_B)).toBe(PROJECT_B);
     warn.calledWith("Failed to create chapter:", expect.any(ApiRequestError));
   });
 });
