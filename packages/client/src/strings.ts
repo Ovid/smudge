@@ -114,8 +114,21 @@ export const STRINGS = {
     // It sits ahead of every route, so this fires on every request at
     // once — the writer sees a total, permanent failure of the app. Say
     // the cause instead of inviting a retry that can never succeed.
+    // Review 2026-08-23 (I8): the trailing clause used to read "if it runs
+    // behind a proxy, that proxy must forward the original address" — advice
+    // that guarantees the failure it is attached to. isLoopbackHost accepts
+    // only localhost, localhost., [::1] and 127.0.0.0/8, so a proxy that
+    // PRESERVES the browser's Host (smudge.example.com) produces exactly the
+    // header this check rejects, on every request at once. An operator who
+    // followed it would see the app still fully broken and reach for one of the
+    // two moves that dismantle the control: widen isLoopbackHost, or trust
+    // X-Forwarded-Host (app.ts deliberately reads the raw, un-spoofable
+    // req.headers.host). Either re-opens architecture finding F-02. The only
+    // proxy configuration in the tree is the opposite one — Vite's
+    // changeOrigin: true, which REWRITES Host to the target's — so the clause
+    // was not describing anything that works here.
     invalidHost:
-      "Smudge does not recognise this web address, so nothing on this page can load or save. Open Smudge at the address it was set up to use \u2014 if it runs behind a proxy, that proxy must forward the original address.",
+      "Smudge does not recognise this web address, so nothing on this page can load or save. Open Smudge at the address it was set up to use \u2014 normally http://localhost:3456 or http://127.0.0.1:3456.",
     loadChapterFailed: "Failed to load chapter",
     loadChapterFailedNetwork: "Failed to load chapter — check your connection and try again.",
     deleteChapterFailed: "Failed to delete chapter",
