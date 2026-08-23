@@ -100,7 +100,7 @@ vi.mock("../api/client", async () => {
         }),
         dashboard: vi.fn().mockResolvedValue({ chapters: [] }),
       },
-      chapters: { get: vi.fn(), update: vi.fn() },
+      chapters: { get: vi.fn(), update: vi.fn(), create: vi.fn() },
       chapterStatuses: { list: vi.fn().mockResolvedValue([]) },
       snapshots: { list: vi.fn().mockResolvedValue([]) },
       images: {
@@ -250,5 +250,98 @@ describe("EditorPage Ctrl+S flush", () => {
     await pressCtrlS();
 
     expect(screen.queryByText(STRINGS.editor.saveFailed)).toBeNull();
+  });
+});
+
+// Review 2026-08-23 (I4). The re-entrancy latch added for I7 closed
+// switch-vs-switch and nothing else. `switchToView` sets NEITHER
+// `mutation.isBusy()` nor `actionBusyRef`, so `isActionBusy()` read false for
+// the whole flush window — seconds, in the 2s/4s/8s save-backoff ladder. Every
+// sibling entry point guarded by isActionBusy() ran freely in that window, and
+// several of them (handleCreateChapter, handleDeleteChapter, the Ctrl+S flush)
+// call cancelInFlightSave() at the top. That severs the very PATCH the view
+// switch is awaiting: flushSave resolves false, the `if (!flushed)` arm tells
+// the writer their changes could not be saved for a save their own click
+// cancelled, and it re-enables the editor.
+//
+// The severe variant is Replace All in the still-open find-replace panel:
+// mutation.run() cancels the pending saves and takes its own
+// setEditable(false), and the view switch's `!flushed` arm then re-enables the
+// editor INSIDE the mutation's committed window — the window CLAUDE.md
+// save-pipeline invariant 2 exists to close.
+//
+// This suite is the right home because the fix is only observable while a
+// flush is genuinely suspended, and this file's Editor stand-in is the one
+// place `flushSave` can be held open.
+describe("EditorPage view-switch busy window", () => {
+  afterEach(() => cleanup());
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockControls.flushSave = null;
+    mockControls.handlePublished = false;
+    // Preview mode's TOC scroll tracking constructs one; jsdom has none.
+    global.IntersectionObserver = vi.fn().mockImplementation(() => ({
+      observe: vi.fn(),
+      unobserve: vi.fn(),
+      disconnect: vi.fn(),
+    })) as unknown as typeof IntersectionObserver;
+    vi.mocked(api.projects.get).mockResolvedValue(mockProject);
+    vi.mocked(api.chapters.get).mockResolvedValue(mockChapter);
+  });
+
+  it("refuses a sibling entry point while a view switch is mid-flush", async () => {
+    let releaseFlush: (v: boolean) => void = () => {};
+    mockControls.flushSave = () =>
+      new Promise<boolean>((resolve) => {
+        releaseFlush = resolve;
+      });
+
+    await renderLoadedEditor();
+
+    // Ctrl+Shift+P parks switchToView on the held flush.
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+      await Promise.resolve();
+    });
+
+    // A sibling entry point fired in that window must be refused, not run.
+    // Ctrl+Shift+N reaches handleCreateChapterGuarded, whose only gate is
+    // isActionBusy(); the keyboard route works whichever view is on screen.
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "N", code: "KeyN", ctrlKey: true, shiftKey: true });
+      await Promise.resolve();
+    });
+
+    expect(api.chapters.create).not.toHaveBeenCalled();
+    expect(screen.getByText(STRINGS.editor.mutationBusy)).toBeInTheDocument();
+
+    releaseFlush(true);
+    await act(async () => {
+      await Promise.resolve();
+    });
+  });
+
+  it("releases the busy window once the flush settles", async () => {
+    // The other half: the gate must not leak. A view switch that finished
+    // leaves every entry point usable again.
+    mockControls.flushSave = () => Promise.resolve(true);
+    vi.mocked(api.chapters.create).mockResolvedValue({ ...mockChapter, id: "ch-2" });
+
+    await renderLoadedEditor();
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "N", code: "KeyN", ctrlKey: true, shiftKey: true });
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(api.chapters.create).toHaveBeenCalled();
+    });
+    expect(screen.queryByText(STRINGS.editor.mutationBusy)).toBeNull();
   });
 });

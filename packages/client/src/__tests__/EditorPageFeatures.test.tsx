@@ -821,9 +821,12 @@ describe("EditorPage preview mode", () => {
 
   // Review 2026-08-23 (I7). switchToView had no re-entrancy guard of its own.
   // Its only entry gate is isActionBusy() -- mutation.isBusy() ||
-  // actionBusyRef.current -- and NEITHER is ever set by switchToView;
-  // actionBusyRef is written only by the find-replace and snapshot
-  // controllers. So two view switches could overlap.
+  // actionBusyRef.current -- and it set NEITHER; actionBusyRef was written only
+  // by the find-replace and snapshot controllers. So two view switches could
+  // overlap. (I4, same review: switchToView now RAISES actionBusyRef for its
+  // flush window, so that same isActionBusy() branch is what refuses the second
+  // press -- and the hole is closed in the other direction too, where a sibling
+  // entry point used to cancel the flush this one is awaiting.)
   //
   // Overlapping is not exotic, it is what a held key does: the handler has no
   // e.repeat check, and the two presses below run in ONE tick, which is

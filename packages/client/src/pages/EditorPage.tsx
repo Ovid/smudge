@@ -266,6 +266,13 @@ export function EditorPage() {
   // setActionError could land alongside the first click's trailing
   // setActionInfo("Replaced N occurrences"), leaving a contradictory
   // success+failure banner pair pinned to one logical operation.
+  //
+  // I4 (review 2026-08-23): `switchToView` raises it too, for the duration of
+  // its flushSave await. It is therefore not "the find-replace and snapshot
+  // controllers' ref" any more — it means "an editor-content operation is in
+  // flight, including trailing UI work", which is what all its readers were
+  // already asking. Exactly one owner raises it at a time: each writer refuses
+  // to start while isActionBusy() is true.
   const actionBusyRef = useRef(false);
   // S2 (dedup review 2026-07-26): three sites in the settings-refresh flow used
   // to read `mutation.isBusy() || isActionBusy()`, which is `A || (A || B)`.
@@ -711,32 +718,8 @@ export function EditorPage() {
     [handleReorderChapters, isActionBusy, setActionError, editorMachine],
   );
 
-  // I7 (review 2026-08-23): switchToView's own re-entrancy latch. isActionBusy()
-  // below cannot cover this — it reads mutation.isBusy() and actionBusyRef, and
-  // switchToView sets NEITHER, so before this ref two view switches could run
-  // concurrently. Key autorepeat produces that by construction (the Ctrl+Shift+P
-  // handler has no e.repeat check), and a double-click on the view nav does the
-  // same. The damage is in the overlap: press 2 makes press 1's save token
-  // stale, so press 1's flushSave resolves false even when its PATCH committed,
-  // and the `if (!flushed)` arm then shows a save-failed banner that is not true
-  // AND re-enables the editor while press 2's flush is still running — the
-  // window CLAUDE.md save-pipeline invariant 2 closes.
-  //
-  // A ref, not machine state, for the same reason mutation-busy is a ref
-  // (CLAUDE.md §"Mutation-busy is deliberately not machine state"): the latch
-  // must be readable BEFORE the first await, and reducer state is visible only
-  // after React commits.
-  const viewSwitchInFlightRef = useRef(false);
-
   const switchToView = useCallback(
     async (mode: ViewMode): Promise<boolean> => {
-      // Refuse a view switch while another one is mid-flush. Same copy as the
-      // two refusal branches below, so the click is answered rather than
-      // dropped.
-      if (viewSwitchInFlightRef.current) {
-        setActionInfo(STRINGS.editor.mutationBusy);
-        return false;
-      }
       // Refuse view switches while a useEditorMutation.run() is in-flight
       // (I2): switchToView's flushSave would abort the mutation's save
       // controller and the user could click away mid-replace, racing the
@@ -783,9 +766,42 @@ export function EditorPage() {
       // that fires AFTER the view switch, desyncing editor state from
       // the displayed view. Mirrors SnapshotPanel.onView and the three
       // mutation.run() callers.
-      // Latch AFTER the three refusal branches: a refused switch never started,
-      // so it must not block the next one. Cleared in the finally below.
-      viewSwitchInFlightRef.current = true;
+      // I7/I4 (review 2026-08-23): raise the SHARED busy ref for the whole
+      // flush window. switchToView used to set neither mutation.isBusy() nor
+      // actionBusyRef, so isActionBusy() read false for its entire duration —
+      // seconds, in the 2s/4s/8s save-backoff ladder — and that hole was
+      // two-directional.
+      //
+      // Switch vs switch (I7): two view switches could run concurrently. Key
+      // autorepeat produces that by construction (the Ctrl+Shift+P handler has
+      // no e.repeat check), and a double-click on the view nav does the same.
+      // Press 2 makes press 1's save token stale, so press 1's flushSave
+      // resolves false even when its PATCH committed, and the `if (!flushed)`
+      // arm shows a save-failed banner that is not true AND re-enables the
+      // editor while press 2's flush is still running.
+      //
+      // Switch vs sibling (I4): handleCreateChapter / handleDeleteChapter and
+      // the Ctrl+S flush all call cancelInFlightSave() at the top, severing the
+      // very PATCH this flush awaits — the writer then sees "your changes could
+      // not be saved" for a save their own click cancelled. Worse with Replace
+      // All: mutation.run() takes its own setEditable(false), and this
+      // function's `!flushed` arm re-enables the editor inside the mutation's
+      // committed window, which is the hole CLAUDE.md save-pipeline invariant 2
+      // exists to close.
+      //
+      // The shared ref closes both at once, and the isActionBusy() branch above
+      // is what refuses the second view switch — no separate latch needed. A
+      // ref, not machine state, for the same reason mutation-busy is a ref
+      // (CLAUDE.md §"Mutation-busy is deliberately not machine state"): it must
+      // be readable BEFORE the first await, and reducer state is visible only
+      // after React commits.
+      //
+      // Raised AFTER the refusal branches: a refused switch never started, so
+      // it must not block the next one. Cleared in the finally below. Nothing
+      // nests inside this window that itself consults isActionBusy(), and the
+      // two controllers that also write this ref refuse to start while it is
+      // raised, so the flag has exactly one owner at a time.
+      actionBusyRef.current = true;
       try {
         safeSetEditable(editorRef, false);
         let flushed: boolean;
@@ -836,7 +852,7 @@ export function EditorPage() {
         }
         return true;
       } finally {
-        viewSwitchInFlightRef.current = false;
+        actionBusyRef.current = false;
       }
     },
     [setTrashOpen, setActionError, setActionInfo, isActionBusy, editorMachine],
