@@ -555,7 +555,6 @@ describe("SqliteProjectStore", () => {
         "findProjectById",
         "findProjectByIdIncludingDeleted",
         "findProjectBySlug",
-        "findProjectBySlugIncludingDeleted",
         "findProjectByTitle",
         "listProjects",
         "updateProject",

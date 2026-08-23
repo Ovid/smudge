@@ -184,10 +184,27 @@ describe("projects.service", () => {
           }),
         });
 
+      // F-34 (architecture report 2026-08-22): the skip is no longer silent.
+      // The remove loop shares the add loop's guard, so a cross-project
+      // reference is refused observably from either direction — which is what
+      // this test has always been about. Asserted rather than merely
+      // suppressed: the log is now part of the contract described here.
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger);
+
       // Deleting project A must not touch project B's image ref count.
       expect(await deleteProject(projectA.project.slug)).toBe(true);
       const img = await t.db("images").where({ id: foreignImageId }).first();
       expect(img.reference_count).toBe(1);
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        {
+          image_id: foreignImageId,
+          project_id: projectA.project.id,
+          found_in_project: projectB.project.id,
+        },
+        "Referenced image missing or in different project; skipping reference-count update",
+      );
+      warnSpy.mockRestore();
     });
 
     it("skips chapters whose content is not valid JSON during delete", async () => {

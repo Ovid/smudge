@@ -39,7 +39,6 @@ export interface ProjectsStore {
   findProjectById(id: string): Promise<ProjectRow | null>;
   findProjectByIdIncludingDeleted(id: string): Promise<ProjectRow | null>;
   findProjectBySlug(slug: string): Promise<ProjectRow | null>;
-  findProjectBySlugIncludingDeleted(slug: string): Promise<ProjectRow | null>;
   findProjectByTitle(title: string, excludeId?: string): Promise<ProjectRow | null>;
   listProjects(): Promise<ProjectListRow[]>;
   updateProject(id: string, data: UpdateProjectData): Promise<ProjectRow>;

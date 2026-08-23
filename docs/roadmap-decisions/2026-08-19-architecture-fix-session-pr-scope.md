@@ -402,6 +402,113 @@ guard to a branch that may not be written is the more expensive choice.
 evidence that out-of-scope findings may be swept up by default. The ask was made
 explicitly, per tier, with the case against stated, and answered explicitly.
 
+## Recorded: the 2026-08-22 18:29 code-review response (branch `ovid/architecture` @ `b66c3f77`)
+
+Four items from that review are recorded here rather than fixed by rebase.
+Three are rule violations this branch committed; the fourth is an out-of-scope
+addition the maintainer chose to keep. No rule is being amended — see the
+Amendments section's warning about doing that under pressure from the branch
+being governed.
+
+**Rule 2, the placeholder-then-fill clause, violated four times — and this time
+the consequence landed (finding I5, and it is the *mechanism* behind finding
+I2).** All four fix commits on this branch — `81a87fd9`, `3d6a5bbc`,
+`ee186275`, `3b97f72c` — carry +4 lines of the architecture report alongside
+their production change, with the `Status commit` SHA supplied by
+`git commit --amend`. The reflog confirms the amend for all four: each pair is
+`commit:` followed by `commit (amend):` at the same timestamp. That is the
+third route, the one rule 2 exists to forbid, and it is the same shape already
+recorded against `97c5160e`.
+
+The consequence is not theoretical here either. Bundling the block forces the
+amend; the amend invalidates the SHA the block had just recorded. **All four**
+`Status commit` values shipped pointing at commits that do not exist —
+`git merge-base --is-ancestor` fails and `git branch -a --contains` returns
+nothing for every one. They resolved locally only because this clone's reflog
+held them. Corrected in `2a22941b`, without amending the fix commits again,
+since that is what caused it.
+
+The rules doc's own note against `97c5160e` — "The rule is corrected here so
+the next session does not repeat it" — has now failed twice. The distinction
+that keeps failing to transfer is small and worth stating flatly: **the SHA of
+a commit is not knowable inside that commit.** Write `**Status commit:**
+PENDING` in the fix commit and fill it in a following `docs(report): [F-NN]…`
+commit. Do not reach for `--amend`.
+
+**Rule 5, a second untagged commit (finding S1).** `f3896525` — subject "PAAD
+review", no body — files the 699-line architecture report at the base of the
+branch. Rule 5 allows exactly one untagged commit per session and the Safety
+Net `c5192d0c` is it. Rule 6's round-4 amendment already names the correct
+form: `964bae82 [report] file the 2026-08-20 agentic-review report`. **Not
+retagged** — it is the oldest commit on the branch, so the rebase would rewrite
+every commit after it, including all four whose SHAs the report now records
+correctly for the first time. That is the trade this file has declined five
+times already, resolved the same way.
+
+**Rule 6, a kind tag on a commit that answers to findings (finding S5).**
+`d77d49df` is tagged `[report]`, but it exists because the F-01 fix moved the
+line F-28's evidence cites — it answers to two findings, and rule 6's own
+deciding test ("decide the tag from what the commit **answers to**") gives it
+`[F-01][F-28]`. `git log --oneline main..HEAD` is the declared traceability
+surface for follow-ups, so a kind tag tells a later reader there is no finding
+behind a commit that has two. **Not retagged**, for the reason above: it sits
+before four commits whose SHAs are now recorded in the report.
+
+**Out-of-scope addition kept on request (`OOSA1`).** The `multerLimitError`
+helper in `images.routes.ts` landed inside `ee186275` alongside F-38's caps.
+F-38 asked only for the caps; the helper changed the endpoint's observable
+error contract, which nothing asked for — and `ee186275`'s own Status reason
+says so in plain words ("A second, unrelated defect surfaced while fixing this
+and is fixed with it").
+
+The trade-offs were put to the maintainer in prose — keep-and-record, split by
+rebase, or revert — with the argument against keep-and-record stated: this file
+has now recorded ten out-of-rule commits across its history, and a rule broken
+every time is better evidence that the rule is wrong than that the sessions are
+undisciplined. The answer was **keep and record**. The reasoning that decided
+it: the helper is load-bearing for the caps F-38 *did* ask for — without it a
+`fields: 0` breach surfaces as a 500, so shipping the caps alone would have made
+the endpoint worse — and the only clean alternative, splitting it out by
+rebase, rewrites `ee186275`, which is one of the four SHAs the same review round
+had just repaired.
+
+The helper was itself found incomplete by the same review (finding I1) and is
+rewritten in `cf79db33`; F-38's Status reason records that amendment per rule 6.
+
+**A fourth, committed by the response itself.** `cf79db33` — the `[I1]` code
+fix — also carries the 186-line code-review report it answers to, because the
+staging command that added its source files added the untracked report with
+them. That is the `3ac13bca` shape recorded above: a review report filed inside
+a commit whose subject names something else, so `git log --oneline main..HEAD`
+does not say the report was filed at all.
+
+**Not rebased**, but the reasoning differs from every other instance in this
+file and the difference is worth stating, because it is the first time the
+usual argument does not apply. Everywhere above, the rebase was declined
+because it would have staled a `Status commit` SHA recorded in the report. Here
+it would not: all four recorded SHAs — `81a87fd9`, `3d6a5bbc`, `3b97f72c`,
+`ee186275` — sit **before** `cf79db33`, and the review report's own filename
+cites `b66c3f77`, also before it. A rebase splitting the report into its own
+`[report]` commit would cost no traceability at all.
+
+It is declined on the letter of rule 6's deciding test instead — "retag when the
+commit is the branch tip and no `Status commit` line names it or anything after
+it; otherwise record and move on" — and `cf79db33` is not the tip. That is a
+weaker reason than the ones above, and a reader should treat it as one. The
+honest reading is that rule 6's test was written from a rationale (rebase cost)
+and then stated as a mechanical condition (tip-or-not), and this is the first
+case where the two come apart. If the next session wants to resolve that, the
+question is whether the test should read "when the rebase would stale no
+recorded SHA" — which is what every declined instance here was actually
+arguing.
+
+**What this does not license.** Same bound as the two sections above. Four
+recorded violations in one session is not evidence that the bound has moved;
+it is evidence for the reading the Amendments section already offers — that
+these rules describe a tidier practice than the one being run, and that the
+next session should treat that as a question about the rules rather than only
+about the commits.
+
 ## Honest argument against
 
 This is a carve-out written from inside the practice it legitimises, which is

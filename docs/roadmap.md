@@ -2841,7 +2841,13 @@ The bind/port/data-dir/security concerns this phase addresses are independent of
 
 #### 7g.1 Configurable Bind Address
 
-`packages/server/src/index.ts:53` currently calls `app.listen(PORT)` with no host argument; Node defaults to `0.0.0.0`, exposing the API to anything that can reach the host's interfaces. Introduce a `SMUDGE_BIND_ADDRESS` env var (default `0.0.0.0` for backwards-compatibility with the Docker deploy, set to `127.0.0.1` by the Electron main script) and pass it to `app.listen`. Document the two modes in `CONTRIBUTING.md`.
+**Amended 2026-08-22 (architecture report F-02).** The exposure this phase was going to fix has been fixed already, and the default it specified has been reversed.
+
+`index.ts` no longer calls `app.listen(PORT)` bare. It binds the host returned by `getBindHost()` in `packages/server/src/config/loopback.ts`, which is `127.0.0.1`, and `createApp()` rejects any request whose `Host` is not a loopback name. So the API is no longer reachable from other machines, and DNS rebinding no longer reaches it either.
+
+What is left for this phase is the *configurability*, not the safety: introduce `SMUDGE_BIND_ADDRESS`, read it inside `getBindHost()` (the seam exists for exactly this), and widen `isLoopbackHost` in step with it — the two are one decision seen from the two ends of a connection, and changing either alone is a bug.
+
+**Its default must not be `0.0.0.0`.** The original text chose that for Docker backwards-compatibility, which is the state F-02 exists to remove; and because Node reads both `undefined` and `""` as the unspecified address, `SMUDGE_BIND_ADDRESS=` — set but empty — would silently restore it. Whatever this phase decides, it decides deliberately and records it. A container reached at its own IP or service name needs both the bind address widened *and* that name accepted in `Host`; document the two modes in `CONTRIBUTING.md`.
 
 #### 7g.2 Dynamic Port Allocation
 

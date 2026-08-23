@@ -63,6 +63,25 @@ The Express app sets no security-related HTTP headers (no `helmet()`, CSP, X-Fra
 
 **What's needed:** Install and configure `helmet` middleware for standard security headers. Add CORS middleware restricting `Origin` to expected values (e.g., `localhost:5173` in dev, the served origin in production). Consider `Host` header validation to defend against DNS rebinding.
 
+**Partly resolved 2026-08-22 (architecture report F-02).** Three of the four parts are closed:
+
+- **Security headers** — `helmet()` has been mounted in `createApp()` since an earlier phase, with an explicit CSP. Pinned by `health.test.ts`.
+- **DNS rebinding** — closed by `Host` validation rather than by CORS, and the substitution is deliberate *for this attack*. In a rebinding attack the malicious page is same-origin with the target from the browser's point of view, so a `GET` carries **no `Origin` header at all**; only `Host` names the attacker's domain, because `Host` always comes from the URL. An `Origin` allowlist would inspect a header the attack does not send. See `packages/server/src/config/loopback.ts` and the middleware in `app.ts`.
+- **Network exposure** — the server binds `127.0.0.1` rather than every interface.
+
+**Still open: no cross-origin restriction.** This was previously recorded here as closed by the same `Host` validation. It is not, and the substitution argument does not reach it — the two are different attacks (code review 2026-08-22, finding I3):
+
+- In **DNS rebinding**, the attacker's own hostname lands in `Host`, which is why `isLoopbackHost` catches it.
+- In an **ordinary cross-origin request from a page the writer is browsing**, the browser puts the *genuine* `localhost:3456` in `Host`. `isLoopbackHost` returns `true` **by design** and the request is served. Nothing else stops it: there is no `cors` dependency, no `Origin` or `Sec-Fetch-Site` check anywhere in `packages/server/src`, and no auth.
+
+The severity bound is a write-side nuisance, not data theft. Responses are unreadable cross-origin, and JSON bodies and `DELETE` trigger a preflight that no CORS header answers, so those stay blocked. What is reachable is any mutation whose request shape is CORS-safelisted and whose parameters an attacker can guess:
+
+- `POST /api/projects/:slug/chapters` reads **no body at all** — an auto-submitting `<form method="POST">` is `application/x-www-form-urlencoded`, safelisted, no preflight — so a guessable slug creates a chapter.
+- `POST /api/chapters/:id/restore` likewise reads only its path parameter.
+- `POST /api/projects/:projectId/images` is `multipart/form-data`, also safelisted; its only protection is that `requireUuidParam` demands a project UUID an attacker cannot read cross-origin.
+
+**What's needed:** a decision, not a patch. The cheap control is requiring a custom request header on state-changing methods — `apiFetch` already controls its own headers, and a custom header forces a preflight even for multipart. The alternative previously recorded here, an `Origin` allowlist, would need to cover the dev, production and e2e origins in both `localhost` and `127.0.0.1` spellings — four-plus entries, each a way to break `make dev` on a port change. Either way it is a behaviour change with its own tests, so it belongs in a roadmap phase rather than in a fix session.
+
 ### Post-update corrupt check can misrepresent outcome to client
 
 **Severity:** Suggestion

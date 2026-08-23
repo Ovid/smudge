@@ -469,6 +469,61 @@ describe("GET /api/projects/:slug/trash", () => {
 
     expect(res.status).toBe(404);
   });
+
+  // Safety net (F-01, architecture report 2026-08-22): nothing pinned that a
+  // trash listing is scoped to the project the slug names. Every existing case
+  // above uses a single project, so a resolution that returned the WRONG
+  // project's chapters would pass all of them. This is the behaviour the slug
+  // -resolution fix must preserve.
+  it("scopes the trash listing to the project the slug names", async () => {
+    const aRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: `Trash Scope A ${Date.now()}`, mode: "fiction" });
+    const bRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: `Trash Scope B ${Date.now()}`, mode: "fiction" });
+
+    const aGet = await request(t.app).get(`/api/projects/${aRes.body.slug}`);
+    const aChapterId = aGet.body.chapters[0].id;
+    await request(t.app).delete(`/api/chapters/${aChapterId}`);
+
+    const aTrash = await request(t.app).get(`/api/projects/${aRes.body.slug}/trash`);
+    expect(aTrash.status).toBe(200);
+    expect(aTrash.body).toHaveLength(1);
+    expect(aTrash.body[0].id).toBe(aChapterId);
+
+    // B trashed nothing; A's trashed chapter must not leak into B's listing.
+    const bTrash = await request(t.app).get(`/api/projects/${bRes.body.slug}/trash`);
+    expect(bTrash.status).toBe(200);
+    expect(bTrash.body).toEqual([]);
+  });
+
+  // F-01 (architecture report 2026-08-22): migration 002's uniqueness index is
+  // `WHERE deleted_at IS NULL`, so trashing a project RELEASES its slug and the
+  // next project with the same title takes it over. getTrash resolved the slug
+  // through an unfiltered `.first()`, which table-scans in rowid order and
+  // returns the OLDER — soft-deleted — row, hiding the live project's own
+  // trashed chapters for the whole 30-day recovery window.
+  it("lists the live project's trashed chapters when a soft-deleted project holds the same slug", async () => {
+    const title = `Reclaimed Slug ${Date.now()}`;
+
+    const first = await request(t.app).post("/api/projects").send({ title, mode: "fiction" });
+    const slug = first.body.slug;
+    await request(t.app).delete(`/api/projects/${slug}`);
+
+    const second = await request(t.app).post("/api/projects").send({ title, mode: "fiction" });
+    // Precondition: the slug really is reclaimed, not suffixed. If this ever
+    // stops holding, the collision this test guards is no longer reachable.
+    expect(second.body.slug).toBe(slug);
+
+    const get = await request(t.app).get(`/api/projects/${slug}`);
+    const chapterId = get.body.chapters[0].id;
+    await request(t.app).delete(`/api/chapters/${chapterId}`);
+
+    const res = await request(t.app).get(`/api/projects/${slug}/trash`);
+    expect(res.status).toBe(200);
+    expect(res.body.map((c: { id: string }) => c.id)).toEqual([chapterId]);
+  });
 });
 
 describe("PATCH /api/projects/:slug — target fields", () => {

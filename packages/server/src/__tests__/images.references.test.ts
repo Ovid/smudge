@@ -403,6 +403,117 @@ describe("applyImageRefDiff()", () => {
     );
     warnSpy.mockRestore();
   });
+
+  // Safety net (F-34, architecture report 2026-08-22): the two branches above
+  // cover the ADD loop's skips. These two cover the REMOVE loop's matching
+  // skips, which had no test at all. They pin the outcome that must hold
+  // whatever the loop logs: a skipped decrement issues no ref-count write and
+  // does not throw. The logger.warn spy is suppression only — these tests
+  // deliberately assert nothing about logging, so the observability fix is
+  // free to add a warning here without touching them.
+  it("skips decrement (no ref-count write) when the removed image is gone", async () => {
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger);
+    const incrementCalls: Array<[string, number]> = [];
+    const missingId = "33333333-3333-3333-3333-333333333333";
+    const projectId = "11111111-1111-1111-1111-111111111111";
+
+    await applyImageRefDiff(
+      {
+        findImagesByIds: async () => [],
+        incrementImageReferenceCount: async (id, delta) => {
+          incrementCalls.push([id, delta]);
+        },
+      },
+      JSON.stringify({
+        type: "doc",
+        content: [{ type: "image", attrs: { src: `/api/images/${missingId}` } }],
+      }),
+      JSON.stringify({ type: "doc", content: [] }),
+      projectId,
+    );
+
+    expect(incrementCalls).toEqual([]);
+    warnSpy.mockRestore();
+  });
+
+  it("skips decrement (no ref-count write) when the removed image belongs to a different project", async () => {
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger);
+    const incrementCalls: Array<[string, number]> = [];
+    const imageId = "44444444-4444-4444-4444-444444444444";
+    const projectA = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    const projectB = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+
+    await applyImageRefDiff(
+      {
+        findImagesByIds: async () => [
+          {
+            id: imageId,
+            project_id: projectB,
+            reference_count: 1,
+          } as unknown as ImageRow,
+        ],
+        incrementImageReferenceCount: async (id, delta) => {
+          incrementCalls.push([id, delta]);
+        },
+      },
+      JSON.stringify({
+        type: "doc",
+        content: [{ type: "image", attrs: { src: `/api/images/${imageId}` } }],
+      }),
+      JSON.stringify({ type: "doc", content: [] }),
+      projectA,
+    );
+
+    expect(incrementCalls).toEqual([]);
+    warnSpy.mockRestore();
+  });
+
+  // F-34 (architecture report 2026-08-22): the remove loop restated the add
+  // loop's predicate and skipped SILENTLY, under a comment claiming it was "the
+  // same cross-project guard as the add path" — true of the predicate, false of
+  // the handling. The two loops now share one guard, so a skip is observable
+  // from either direction.
+  //
+  // Note the report corrected this finding's original consequence: no
+  // ref-count inflation is possible here. If there is no row there is nothing
+  // to decrement, and a cross-project image was never incremented by this code
+  // either. What was real is the missing log.
+  it.each([
+    ["is gone", null],
+    ["belongs to a different project", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"],
+  ])("warns when a removed image %s", async (_label, foundInProject) => {
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger);
+    const imageId = "55555555-5555-5555-5555-555555555555";
+    const projectId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+
+    await applyImageRefDiff(
+      {
+        findImagesByIds: async () =>
+          foundInProject === null
+            ? []
+            : [
+                {
+                  id: imageId,
+                  project_id: foundInProject,
+                  reference_count: 1,
+                } as unknown as ImageRow,
+              ],
+        incrementImageReferenceCount: async () => {},
+      },
+      JSON.stringify({
+        type: "doc",
+        content: [{ type: "image", attrs: { src: `/api/images/${imageId}` } }],
+      }),
+      JSON.stringify({ type: "doc", content: [] }),
+      projectId,
+    );
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      { image_id: imageId, project_id: projectId, found_in_project: foundInProject },
+      "Referenced image missing or in different project; skipping reference-count update",
+    );
+    warnSpy.mockRestore();
+  });
 });
 
 describe("scanImageReferences()", () => {
