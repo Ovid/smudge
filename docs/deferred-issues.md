@@ -59,7 +59,7 @@ Source: `paad/code-reviews/ovid-architecture-2026-03-31-13-11-39-5d46d5b.md`
 **Severity:** Important
 **Files:** `packages/server/src/app.ts`
 
-The Express app sets no security-related HTTP headers (no `helmet()`, CSP, X-Frame-Options, X-Content-Type-Options). There is also no CORS middleware. The app is exposed via Docker on port 3456. For a no-auth app on a network port, DNS rebinding can bypass same-origin policy, allowing a malicious page to read/modify/delete all data.
+The Express app sets no security-related HTTP headers (no `helmet()`, CSP, X-Frame-Options, X-Content-Type-Options). There is also no CORS middleware. The app is exposed via Docker on port 3456. *(2026-08-23: that last sentence was never true and is preserved only because this is a quoted historical finding — there is no `Dockerfile` in the repo and the server binds `127.0.0.1`. See the resolution note below.)* For a no-auth app on a network port, DNS rebinding can bypass same-origin policy, allowing a malicious page to read/modify/delete all data.
 
 **What's needed:** Install and configure `helmet` middleware for standard security headers. Add CORS middleware restricting `Origin` to expected values (e.g., `localhost:5173` in dev, the served origin in production). Consider `Host` header validation to defend against DNS rebinding.
 
