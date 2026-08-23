@@ -165,7 +165,13 @@ function baseProps(): ComponentProps<typeof EditorMainContent> {
     onSnapshotBeforeCreate: vi.fn(),
     onSnapshotsChange: vi.fn(),
     snapshotsTriggerRef: createRef<HTMLButtonElement>(),
-    findReplace: { isOpen: false } as any,
+    // The FindReplacePanel is stubbed to null above, so nothing reads this.
+    // Cast through the prop's own type rather than `any` so the field still
+    // has to EXIST on FindReplaceState — a rename there fails here, which is
+    // the whole point of S16 typing this fixture.
+    findReplace: { isOpen: false } as unknown as ComponentProps<
+      typeof EditorMainContent
+    >["findReplace"],
     onReplaceOne: vi.fn(),
     onReplaceAllInChapter: vi.fn(),
     onReplaceAllInManuscript: vi.fn(),
@@ -232,7 +238,9 @@ describe("EditorMainContent — lock banner renders above every view branch (8ff
       // catch) left all ten cases green. Two assertions pin it: the banner
       // precedes the view content in document order, and it is not a
       // descendant of it.
-      expect(banner.compareDocumentPosition(viewEl) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(
+        banner.compareDocumentPosition(viewEl) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
       expect(viewEl.contains(banner)).toBe(false);
       expect(container).toContainElement(banner);
     },

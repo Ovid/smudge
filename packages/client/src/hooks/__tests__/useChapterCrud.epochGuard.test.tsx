@@ -240,7 +240,9 @@ describe("handleCreateChapter recovery path — snapshot identity (S14, S5)", ()
   // holds the id we captured, which is true in exactly this case.
   it("does not install a snapshot belonging to a different project", async () => {
     const warn = expectConsole("warn");
-    armRecoveryReturning(makeProject("proj-other", "project-a", [makeChapter("ch-x", "proj-other")]));
+    armRecoveryReturning(
+      makeProject("proj-other", "project-a", [makeChapter("ch-x", "proj-other")]),
+    );
     const { result, setProject, replaceConfirmedStatusesFromProject } = setupOverProjectA();
 
     await act(async () => {
