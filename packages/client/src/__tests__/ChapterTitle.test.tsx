@@ -11,7 +11,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { EditorPage } from "../pages/EditorPage";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { api } from "../api/client";
+import { api, ApiRequestError } from "../api/client";
 import { STRINGS } from "../strings";
 import { pendingUntilAbort } from "./helpers/abortableMocks";
 import { flushSaveRetries } from "./helpers/saveRetries";
@@ -50,16 +50,8 @@ vi.mock("../components/Editor", () => ({
 }));
 
 // Mock the API module
-vi.mock("../api/client", () => ({
-  ApiRequestError: class ApiRequestError extends Error {
-    constructor(
-      message: string,
-      public readonly status: number,
-    ) {
-      super(message);
-      this.name = "ApiRequestError";
-    }
-  },
+vi.mock("../api/client", async (importOriginal) => ({
+  ApiRequestError: (await importOriginal<typeof import("../api/client")>()).ApiRequestError,
   api: {
     projects: {
       get: vi.fn(),
@@ -432,8 +424,18 @@ describe("EditorPage save status", () => {
     );
   });
 
-  it("shows error message on save failure", async () => {
-    vi.mocked(api.chapters.update).mockRejectedValue(new TypeError("Failed to fetch"));
+  // Backlog 5e6c7a92: this used to reject with a raw
+  // `TypeError("Failed to fetch")`, which production never delivers —
+  // `apiFetch` wraps it into `ApiRequestError("[dev] …", 0, "NETWORK")`
+  // first. The old mock bypassed the chapter.save scope's NETWORK
+  // mapping entirely and passed only because the scope fallback happens
+  // to equal `saveFailed`; it would have stayed green with that mapping
+  // deleted. Reject with what production actually produces and assert
+  // the network-specific copy.
+  it("shows the network-specific error message on save failure", async () => {
+    vi.mocked(api.chapters.update).mockRejectedValue(
+      new ApiRequestError("[dev] Failed to fetch", 0, "NETWORK"),
+    );
     renderEditorPage();
 
     await waitFor(() => {
@@ -456,7 +458,7 @@ describe("EditorPage save status", () => {
     }
 
     await waitFor(() => {
-      expect(screen.getByText(STRINGS.editor.saveFailed)).toBeInTheDocument();
+      expect(screen.getByText(STRINGS.editor.saveFailedNetwork)).toBeInTheDocument();
     });
   });
 

@@ -5,7 +5,15 @@ export NODE_OPTIONS := --disable-warning=DEP0040 ${NODE_OPTIONS}
 
 .PHONY: all test cover e2e e2e-clean lint lint-check format format-check typecheck dev build clean loc help ensure-native dep-cooldown backup auto-backup restore
 
-all: lint-check format-check typecheck cover e2e ## Full CI pass: lint-check, format-check, typecheck, test+coverage, e2e
+# Backlog b7e3d042: `ensure-native` leads. Make resolves prerequisites
+# left-to-right, so without it a contributor with a wrong-platform native
+# binding burned lint + format-check + typecheck before `cover` reached the
+# probe and surfaced the rebuild. Free here rather than a ~50ms tax: `cover`
+# and `e2e` already declare `ensure-native`, and Make runs a target at most
+# once per invocation — this reorders a probe that was always going to run.
+# Do NOT instead hang it off lint-check/format-check/typecheck; that one does
+# add a probe to every standalone lint run.
+all: ensure-native lint-check format-check typecheck cover e2e ## Full CI pass: ensure-native, lint-check, format-check, typecheck, test+coverage, e2e
 
 # better-sqlite3 ships a precompiled .node binary keyed on
 # {platform, arch, node-abi}. A dev machine that runs both natively (macOS)

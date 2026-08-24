@@ -23,7 +23,7 @@ npm install
 make dev
 ```
 
-The app runs at [http://localhost:3456](http://localhost:3456).
+The app runs at [http://localhost:5173](http://localhost:5173) — that is the Vite dev server, which serves the interface and proxies `/api` through to Express on 3456. Opening 3456 directly reaches Express, which has no route for `/`.
 
 For the full contributor guide — Node version rationale, PR rules, commit conventions — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -35,11 +35,16 @@ npx playwright install    # Chromium/Firefox/WebKit browser binaries (~265 MB)
 
 ### Docker
 
-```bash
-docker compose up
-```
+**Not available yet.** There is no `Dockerfile` and no `docker-compose.yml` in
+this repo. The intended shape — a single container on a single port (3456),
+SQLite persisted via a volume, nothing to configure — is planned for roadmap
+Phase 7g.1.
 
-Single container, single port (3456), SQLite database persisted via volume. Nothing to configure.
+It is not simply unwritten: the server binds `127.0.0.1`, which `docker run -p`
+cannot reach, and even if it could, the request would arrive with a forwarded
+`Host` header that the server's `Host` allowlist rejects. Both the bind and the
+allowlist have to widen together, and that is a decision 7g.1 has to record.
+Until then, run Smudge from a source checkout with `make dev`.
 
 ## What You Get
 

@@ -1,5 +1,6 @@
 import express from "express";
 import helmet from "helmet";
+import { INVALID_HOST_CODE } from "@smudge/shared";
 import { logger } from "./logger";
 import { getDb } from "./db/connection";
 import { projectsRouter } from "./projects/projects.routes";
@@ -70,7 +71,7 @@ export function createApp(): express.Express {
   app.use((req, _res, next) => {
     if (!isLoopbackHost(req.headers.host)) {
       req.log.warn({ host: String(req.headers.host).slice(0, 128) }, "Rejected non-loopback Host");
-      throw new BadRequestError("Request Host is not recognized.", "INVALID_HOST");
+      throw new BadRequestError("Request Host is not recognized.", INVALID_HOST_CODE);
     }
     next();
   });

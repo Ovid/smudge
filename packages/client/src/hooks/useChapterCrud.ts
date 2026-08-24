@@ -194,9 +194,77 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
         // in the sidebar and pointing subsequent edits at the wrong
         // project's chapter id.
         if (isStaleProject()) return;
+        // Backlog 8b34a209, residual. SIX writes take the OUTER guard only,
+        // not the inside-updater re-test. On the success path:
+        // `setActiveChapter` and `setChapterWordCount` immediately below, and
+        // the `confirmedStatusRef.current[newChapter.id]` seed after the
+        // setProject merge. In the recovery arm further down:
+        // `replaceConfirmedStatusesFromProject` plus its own
+        // `setActiveChapter`/`setChapterWordCount` pair.
+        //
+        // The count has now been wrong twice in opposite directions, which is
+        // why it is spelled out write by write. I6 (review 2026-08-23) found
+        // the original text saying "the confirmedStatusRef seed below",
+        // singular — it named the success-path seed and silently dropped the
+        // recovery arm's whole-map replacement, the more damaging of the two.
+        // S1 (same review, round 2) found the I6 rewrite had swapped one
+        // omission for the opposite one: it said "FOUR" over a five-item list
+        // and dropped the success-path seed the original HAD named. Per
+        // CLAUDE.md F-19 the enumeration IS the mitigation, so a residual
+        // missing from it has no mitigation at all.
+        //
+        // They are plain value sets with no updater body, so there is no
+        // drain-time hook where a `prev.id === projectId` re-test could
+        // live — the guarantee the setProject call below gets is simply
+        // not available to them. Note that adding a second statement-time
+        // identity re-check just before them, the way useTrashManager does,
+        // does NOT close this: `projectRef.current` is a render-body mirror
+        // (useProjectEditor.ts, `projectRef.current = project`), so during
+        // the drain window it still reads the OLD project and any re-check
+        // against it passes exactly when it needs to fail. useTrashManager's
+        // inner re-check earns its keep as defence against a future `await`
+        // being inserted above it, which is a different hazard.
+        //
+        // What would actually close it is making the status write ADDITIVE
+        // instead of a whole-map replacement, so a snapshot that loses the
+        // race can only add unread keys rather than evict the live project's
+        // baselines. That changes the shared helper's semantics for all
+        // three of its callers, so it is filed as backlog `9c2ad4e1` rather
+        // than done here.
+        //
+        // S6 (review 2026-08-23): this window may not be reachable today.
+        // `useProjectEditor`'s render body writes `projectSlugRef.current = slug`
+        // synchronously before the load effect dispatches, so on a real
+        // A-to-B navigation `makeStaleProjectGuard` check 2 fires first and the
+        // handler bails before any of this runs. Treat the guards as
+        // defence-in-depth against a future producer that advances the two refs
+        // in a different order, not as a fix for a defect anyone has observed.
+        // They cost one comparison; the failure they prevent is silent.
+        //
+        // The asymmetry is deliberate and bounded: in the queue-drain window
+        // the sidebar now stays correct (project B's list is untouched) while
+        // the editor may briefly hold A's chapter — confusing, and it clears
+        // on the next project load, where before the window left a phantom
+        // chapter wedged in B's list that reorder and delete would then
+        // operate on. The recovery arm's status-map replacement does NOT
+        // self-heal the same way; that is what `9c2ad4e1` covers.
         setActiveChapter(newChapter);
         setChapterWordCount(0);
-        setProject((prev) => (prev ? { ...prev, chapters: [...prev.chapters, newChapter] } : prev));
+        // Backlog 8b34a209: re-test identity INSIDE the updater. The
+        // isStaleProject() guard above is strictly stronger than an id
+        // compare — it also catches the pre-load window — but it is
+        // evaluated here, while this updater body runs later, when React
+        // drains the queue. A setProject(B) queued by a concurrent
+        // loadProject(B) in between drains first, and this updater would
+        // then append A's chapter onto B's list: a phantom chapter in
+        // project B's sidebar whose id points into project A. An outer
+        // guard cannot see inside the queue; only the updater can.
+        // Follows the S20 precedent in handleReorderChapters below.
+        setProject((prev) =>
+          prev && prev.id === projectId
+            ? { ...prev, chapters: [...prev.chapters, newChapter] }
+            : prev,
+        );
         // C2 (review 2026-04-25): seed the confirmed-status cache for the
         // newly-inserted row. Without this, a later status PATCH on this
         // chapter that fails (PATCH + recovery GET both failing) reads
@@ -330,8 +398,24 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
               // A's pairs, setActiveChapter pins A's new chapter, and any
               // keystroke in that window auto-saves against A's chapter id
               // while the user is on B's URL.
-              if (!isStaleProject()) {
-                setProject(refreshed);
+              // S14 (review 2026-08-23): `refreshed.id === projectId` is a
+              // SEPARATE question from the drift guard, and both are needed.
+              // isStaleProject() asks "is the user still on the project this
+              // create started in"; this asks "is the snapshot that came back
+              // actually that project". They can disagree, because the recovery
+              // GET addresses the project by SLUG and a slug is not a stable
+              // address: CLAUDE.md §"Slugs are mutable and reclaimable" records
+              // that renaming a project away from slug S releases S to the next
+              // project whose title generates it. So the GET can answer 200 with
+              // a different project's snapshot while every id-based drift check
+              // still passes. Checking it here means the arm below never
+              // installs a stranger's chapters.
+              if (!isStaleProject() && refreshed.id === projectId) {
+                // Backlog 8b34a209 (absorbing a65acf76): same queue-drain
+                // window as the success path above, and worse here —
+                // `refreshed` is A's WHOLE snapshot, so an unguarded
+                // merge replaces project B's state outright.
+                setProject((prev) => (prev && prev.id === projectId ? refreshed : prev));
                 // C2 (review 2026-04-25): re-seed the confirmed-status cache
                 // from the refreshed project. The recovery branch is a fresh
                 // server snapshot, so it carries the authoritative status
@@ -639,6 +723,24 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
             return { ...prev, chapters: prev.chapters.filter((c) => c.id !== chapter.id) };
           });
 
+          // OOSS2 (backlog 872b6760): the drift guard covers the SUCCESS path
+          // too, not just the two catch arms. Everything below writes
+          // active-chapter state, and after an A-to-B navigation those writes
+          // land on B.
+          //
+          // Placed HERE rather than at the entry's suggested spot (right after
+          // the DELETE's abort check): `clearCachedContent(chapter.id)` above
+          // must still run on drift, because the chapter really is deleted
+          // server-side and its cached draft is garbage either way. Bailing
+          // earlier would leak that cache entry. The `setProject` filter above
+          // is safe on drift by construction — filtering B's chapters by A's
+          // deleted id matches nothing — as the catch-path comment already
+          // notes.
+          //
+          // Returning TRUE, matching the two inner arms below: the delete
+          // succeeded on the server, so the caller should still refresh its
+          // trash list. Only the UI writes are being skipped.
+          if (isStaleProject()) return true;
           // If deleting the active chapter, switch to the first remaining
           if (activeChapterRef.current?.id === chapter.id) {
             const first = remaining[0];
@@ -658,6 +760,15 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
                 const ch = await api.chapters.get(first.id, s);
                 if (s.aborted) return true;
                 if (token.isStale()) return true;
+                // OOSS2: re-check AFTER the await. The guard above ran before
+                // this GET was issued; the navigation this defends against
+                // typically happens WHILE it is in flight, and because
+                // loadProject never calls selectChapterSeq.start(), the token
+                // check above cannot see a project switch — only a competing
+                // chapter selection. Without this line the GET resolves last
+                // and pins project A's chapter as active under project B's
+                // URL, and the next keystroke auto-saves into A's chapter id.
+                if (isStaleProject()) return true;
                 setActiveChapter(ch);
                 setChapterWordCount(countWords(ch.content));
               } catch (err) {

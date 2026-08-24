@@ -68,6 +68,14 @@ export const STRINGS = {
     loadProjectFailed: "Failed to load project",
     loadProjectFailedNetwork: "Failed to load project — check your connection and try again.",
     createFailed: "Failed to create project",
+    // I1 (review 2026-08-23): a bare 5xx used to fall through to
+    // createFailed, which names no recovery and reads like a click-again
+    // problem. project.create is a POST that mints a new row per call, so the
+    // insert may have committed — send the writer to a refresh, not to the
+    // button. Same treatment as the four sibling non-idempotent scopes; pinned
+    // by the non-idempotent-scope sweep in apiErrorMapper.test.ts.
+    createFailedServer:
+      "Failed to create project \u2014 the server is having trouble. The project may still have been created; refresh the project list before creating another.",
     projectTitleExists: "A project with this title already exists. Choose a different title.",
     // I12 (review 2026-04-24): network: overrides for mutation scopes
     // so NETWORK errors surface a "check your connection" hint instead
@@ -85,6 +93,20 @@ export const STRINGS = {
     restoreChapterFailedNetwork: "Failed to restore chapter — check your connection and try again.",
     settingsUpdateFailedNetwork: "Unable to save settings — check your connection and try again.",
     createChapterFailed: "Failed to create chapter",
+    // Backlog 3c4e8f72 asked for a sibling of editor.saveFailedServer, and
+    // review 2026-08-23 (I4) rejected half of that: a bare 500, or a
+    // reverse-proxy 502/503/504, is indeed the server's problem, but
+    // chapter.create is a POST that mints a NEW ROW per call while
+    // chapter.save is an idempotent PATCH of a known row. Any of those
+    // statuses can arrive with the insert already committed — a gateway
+    // times out after handing the request on; createChapter commits inside
+    // its transaction and then enriches the row outside it; a proxy strips
+    // the envelope off a coded READ_AFTER_CREATE_FAILURE. So this copy must
+    // never end in "Try again", the way its chapter.save sibling does:
+    // clicking again mints a duplicate chapter the sidebar does not show.
+    // Pinned by the non-idempotent-scope sweep in apiErrorMapper.test.ts.
+    createChapterFailedServer:
+      "Failed to create chapter \u2014 the server is having trouble. The chapter may still have been created; refresh the chapter list before adding another.",
     createChapterResponseUnreadable:
       "The chapter may have been created, but the server response was unreadable. Refresh to see the current chapter list.",
     createChapterReadAfterFailure:
@@ -96,6 +118,37 @@ export const STRINGS = {
     // away.
     createChapterProjectGone:
       "This project has been deleted. Navigate to Home to see the current project list.",
+    // Backlog c8c9f95b: the server's Host allowlist rejected the request.
+    // It sits ahead of every route, so this fires on every request at
+    // once — the writer sees a total, permanent failure of the app. Say
+    // the cause instead of inviting a retry that can never succeed.
+    // Review 2026-08-23 (I8): the trailing clause used to read "if it runs
+    // behind a proxy, that proxy must forward the original address" — advice
+    // that guarantees the failure it is attached to. isLoopbackHost accepts
+    // only localhost, localhost., [::1] and 127.0.0.0/8, so a proxy that
+    // PRESERVES the browser's Host (smudge.example.com) produces exactly the
+    // header this check rejects, on every request at once. An operator who
+    // followed it would see the app still fully broken and reach for one of the
+    // two moves that dismantle the control: widen isLoopbackHost, or trust
+    // X-Forwarded-Host (app.ts deliberately reads the raw, un-spoofable
+    // req.headers.host). Either re-opens architecture finding F-02. The only
+    // proxy configuration in the tree is the opposite one — Vite's
+    // changeOrigin: true, which REWRITES Host to the target's — so the clause
+    // was not describing anything that works here.
+    //
+    // S5 (review 2026-08-23 round 2): the copy used to close "normally
+    // http://localhost:3456 or http://127.0.0.1:3456". Port 3456 is Express,
+    // which mounts `/api/*` and nothing else — this same branch's README says
+    // so in as many words ("Opening 3456 directly reaches Express, which has no
+    // route for `/`"). So the copy sent a stranded writer to a blank page. The
+    // port is also not a constant of the deployment: SMUDGE_PORT overrides it,
+    // and in dev the page is served by Vite on a different port entirely.
+    //
+    // Name the HOST instead, which is the whole of what `isLoopbackHost`
+    // checks (`packages/server/src/config/loopback.ts`) and is true whatever
+    // the port and whatever serves the page.
+    invalidHost:
+      "Smudge does not recognise this web address, so nothing on this page can load or save. Smudge only answers to \u201clocalhost\u201d or \u201c127.0.0.1\u201d \u2014 reopen it at the address it was set up to use, keeping the same port.",
     loadChapterFailed: "Failed to load chapter",
     loadChapterFailedNetwork: "Failed to load chapter — check your connection and try again.",
     deleteChapterFailed: "Failed to delete chapter",
@@ -148,6 +201,10 @@ export const STRINGS = {
       "Unable to load settings — check your connection. Close and reopen the dialog to retry.",
     loadOuttakesFailed: "Failed to load outtakes",
     createOuttakeFailed: "Failed to save outtake",
+    // I1 (review 2026-08-23): see createFailedServer above — same rule, same
+    // sweep. Capture POSTs a new outtake row per call.
+    createOuttakeFailedServer:
+      "Failed to save outtake \u2014 the server is having trouble. The outtake may still have been saved; refresh the outtakes drawer before sending another.",
     createOuttakeTooLarge: "Outtake is too large to save. Capture a smaller selection.",
     // S3 (agentic-review 2026-08-05): the create endpoint's only 404 producer is
     // "Project not found." — the project was soft-deleted while the editor was
@@ -450,6 +507,12 @@ export const STRINGS = {
       "Failed to load references for this image — check your connection and try again.",
     retryButton: "Retry",
     uploadFailedGeneric: "Upload failed. Check your connection and try again.",
+    // I1 (review 2026-08-23): see error.createFailedServer — same rule, same
+    // sweep. This is the scope F-12 exists for: an upload writes a file AND a
+    // row outside a transaction, so a bare 5xx can leave both behind and a
+    // retry mints a duplicate of each.
+    uploadFailedServer:
+      "Upload failed \u2014 the server is having trouble. The image may still have been uploaded; refresh the image gallery before uploading again.",
     uploadInvalidFile:
       "We couldn't upload that file. Check that it's a supported image type (PNG, JPG, GIF, or WebP) and that the file isn't empty.",
     uploadProjectGone: "This project has been deleted. Uploads aren't available.",
@@ -544,6 +607,11 @@ export const STRINGS = {
     duplicateSkipped: "Content unchanged since last snapshot.",
     createFailed: "Unable to create snapshot. Save your unsaved changes and try again.",
     createFailedGeneric: "Unable to create snapshot. Try again.",
+    // I1 (review 2026-08-23): see error.createFailedServer — same rule, same
+    // sweep. createFailedGeneric's "Try again" is safe only for the definite
+    // failures it still covers; a 5xx is not one of them.
+    createFailedServerError:
+      "Unable to create snapshot \u2014 the server is having trouble. The snapshot may still have been created; refresh the snapshot list before creating another.",
     // F-34: without this, an over-cap label got createFailedGeneric — copy that
     // names no cause and invites a retry that reproduces the failure forever.
     // Phrasing follows updateOuttakeLabelRejected deliberately: an INCLUSIVE

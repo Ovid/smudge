@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import type { Chapter, ProjectWithChapters } from "@smudge/shared";
 import { STRINGS } from "../strings";
 import { NAV_ANNOUNCEMENT_DURATION_MS } from "../constants";
+import { clientWarn } from "../errors";
 export type ViewMode = "editor" | "preview" | "dashboard";
 
 interface KeyboardShortcutDeps {
@@ -89,6 +90,19 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
     // over a navigation that is genuinely in flight. Bump before, check after,
     // matching CLAUDE.md §Save-pipeline invariant 4.
     let navEpoch = 0;
+    // I3 (review 2026-08-23): how many Ctrl+Shift+Arrow presses are still
+    // unresolved. The epoch rule above rests on a premise the switchToView
+    // re-entrancy latch broke: it assumed press N+1 makes press N resolve
+    // FIRST (by aborting its GET), so the newest press is always the last word.
+    // The latch refuses press N+1 at the top of switchToView, before any await
+    // that could stale press N — so press N+1 resolves false immediately while
+    // press N is still parked on flushSave and goes on to navigate for real.
+    // Epoch alone then let the refusal speak and threw away the truth.
+    //
+    // A refusal is only the last word if nothing older is still running. When
+    // an older press is the last one standing it gets to speak, whatever the
+    // epoch says.
+    let navInFlight = 0;
 
     function handleKeyDown(e: KeyboardEvent) {
       const ctrl = e.ctrlKey || e.metaKey;
@@ -182,7 +196,19 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
       if (ctrl && e.shiftKey && e.code === "KeyP") {
         e.preventDefault();
         const target = viewModeRef.current === "preview" ? "editor" : "preview";
-        switchToViewRef.current(target).catch(() => {});
+        // Backlog c4571a83: not a bare swallow. switchToView answers
+        // every refusal it knows about with its own banner
+        // (mutationBusy, lockedRefusal, viewSwitchSaveFailed) and
+        // converts a flushSave throw into banner + `false`, so it has
+        // no rejecting path today. A rejection arriving here is
+        // therefore a defect in switchToView, not a condition to
+        // explain to the writer — the sibling arrow-key handler's
+        // live-region announcement would be inventing a user-facing
+        // story for something that cannot happen. Warn so the defect is
+        // visible; the void keeps it off the unhandled-rejection path.
+        void switchToViewRef.current(target).catch((err: unknown) => {
+          clientWarn("Ctrl+Shift+P view toggle failed:", err);
+        });
         return;
       }
 
@@ -218,8 +244,16 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
         if (navAnnouncementTimer !== null) clearTimeout(navAnnouncementTimer);
         deps.setNavAnnouncement(STRINGS.sidebar.navigatingToChapter(nextChapter.title));
         const myEpoch = ++navEpoch;
+        navInFlight++;
         const settle = (navigated: boolean) => {
-          if (unmounted || myEpoch !== navEpoch) return;
+          navInFlight--;
+          if (unmounted) return;
+          // Stale presses stay quiet, with one exception (I3): a press that
+          // actually navigated and outlived every newer press is the only
+          // truthful report left, so it speaks. A stale press that did NOT
+          // navigate never speaks — a newer press either already reported or
+          // still will, which is the S2 supersede case above.
+          if (myEpoch !== navEpoch && !(navigated && navInFlight === 0)) return;
           // I1: both outcomes SPEAK. The refusal arm used to clear to "", but a
           // polite live region announces content additions — emptying it says
           // nothing, so the pending string above stayed the last thing spoken

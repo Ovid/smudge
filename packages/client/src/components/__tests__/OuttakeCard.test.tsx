@@ -8,16 +8,8 @@ import { expectConsole } from "../../__tests__/expectConsole";
 import { LABEL_MAX_UNITS, OUTTAKE_ERROR_CODES } from "@smudge/shared";
 import type { OuttakeRow } from "@smudge/shared";
 
-vi.mock("../../api/client", () => {
-  class ApiRequestError extends Error {
-    status: number;
-    code?: string;
-    constructor(message: string, status: number, code?: string) {
-      super(message);
-      this.status = status;
-      this.code = code;
-    }
-  }
+vi.mock("../../api/client", async (importOriginal) => {
+  const { ApiRequestError } = await importOriginal<typeof import("../../api/client")>();
   return {
     api: {
       outtakes: {

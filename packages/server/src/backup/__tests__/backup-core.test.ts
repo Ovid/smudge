@@ -331,6 +331,188 @@ it("readCentralDirectorySizes throws DecompressionBombError (not RangeError) for
   expect(() => readCentralDirectorySizes(corrupted)).toThrow(DecompressionBombError);
 });
 
+// Backlog e8ba6c7b asked findEocdOffset to skip a 0x06054b50 that appears
+// inside the archive comment, by requiring the candidate's declared comment
+// length to reach exactly end-of-buffer. That guard shipped (fe7acdb7) and was
+// reverted the same day: it refused archives with trailing bytes (pinned by
+// "restores an archive that carries trailing bytes after the EOCD comment"
+// above) while rescuing none, because jszip mis-locates the same decoy.
+//
+// These tests pin the SECOND half of that finding, which is the half a future
+// author will not think to check: the fix is impossible at this layer. The
+// locator can be made to find the true record, and the archive is still
+// unrestorable, because a different parser does the extraction.
+describe("findEocdOffset — comment containing the EOCD signature (e8ba6c7b)", () => {
+  // The EOCD signature as bytes, then padding that pushes the decoy far enough
+  // from the end that the backward scan reaches it first.
+  const DECOY_COMMENT = `PK${String.fromCharCode(5, 6)}${"A".repeat(40)}`;
+
+  async function decoyArchive() {
+    const zip = new JSZip();
+    zip.file("a.txt", "hello");
+    zip.file("b.txt", "world");
+    return zip.generateAsync({ type: "nodebuffer", comment: DECOY_COMMENT });
+  }
+
+  it("jszip refuses the archive, so no locator change here can restore it", async () => {
+    const buf = await decoyArchive();
+    // The extraction parser (runRestore step 6) mis-locates the decoy exactly
+    // as this module's locator does, and gives up. THIS is why e8ba6c7b cannot
+    // be closed by editing findEocdOffset: fixing step 1 leaves step 6 failing.
+    await expect(JSZip.loadAsync(buf)).rejects.toThrow(/End of data reached/);
+  });
+
+  it("locates the decoy, matching jszip's choice rather than diverging from it", async () => {
+    const buf = await decoyArchive();
+    const offset = findEocdOffset(buf);
+    // Not the true record — and deliberately so. Agreeing with the extraction
+    // parser is worth more than being right alone: a locator that picked the
+    // true record here would have Smudge validate one central directory while
+    // jszip extracts from another.
+    expect(offset).toBeGreaterThan(-1);
+    expect(offset + 22 + buf.readUInt16LE(offset + 20)).not.toBe(buf.length);
+
+    // S7 (review 2026-08-23): the two assertions above are "a record was
+    // found" and "it is not the true record" — neither of which is the
+    // invariant this test is named for. Agreement with jszip is the whole
+    // justification for leaving the bare signature scan unguarded, and nothing
+    // in the suite pinned it: a locator that picked some THIRD offset passed
+    // both.
+    //
+    // jszip's rule is `lastIndexOfSignature(CENTRAL_DIRECTORY_END)` —
+    // ArrayReader.js, a backward scan from `length - 4` with `zero` still 0 at
+    // that point. Buffer.lastIndexOf is a different implementation of the same
+    // rule, so this is a genuine cross-check rather than a second copy of the
+    // loop under test. Pinned to jszip 3.10.x; a version that changes the
+    // locator turns this red, which is the signal we want.
+    const EOCD_SIGNATURE = Buffer.from([0x50, 0x4b, 0x05, 0x06]);
+    expect(offset).toBe(buf.lastIndexOf(EOCD_SIGNATURE));
+  });
+
+  it("reports -1 for a buffer that is not a zip at all", () => {
+    expect(findEocdOffset(Buffer.alloc(200, 0x41))).toBe(-1);
+  });
+
+  it("reports -1 for a buffer shorter than an EOCD record", () => {
+    expect(findEocdOffset(Buffer.alloc(21, 0x41))).toBe(-1);
+  });
+
+  it("still walks the central directory of an ordinary commented archive", async () => {
+    const zip = new JSZip();
+    zip.file("a.txt", "hello");
+    zip.file("b.txt", "world");
+    const buf = await zip.generateAsync({ type: "nodebuffer", comment: "an ordinary comment" });
+
+    const paths = [...walkCentralDirectory(buf)].map((e) => e.path).sort();
+    expect(paths).toEqual(["a.txt", "b.txt"]);
+  });
+});
+
+// Backlog `ebdb1c53` (agentic review 2026-08-23 round 2, OOSI2). The ratio arm
+// used `buf.length` as its denominator — the WHOLE FILE — rather than the sum
+// of the entries' own declared compressed sizes. Anything appended after the
+// end-of-central-directory record therefore lowered the computed ratio without
+// touching a single entry. That padding is free to add precisely because
+// trailing-byte tolerance is a pinned, required capability of this parser (see
+// the `findEocdOffset` doc comment and the trailing-bytes restore test above).
+//
+// The report that raised this described a 100 KB bomb padded to ~200 MiB.
+// MEASURED, the dilution is bounded well below that: `findEocdOffset` scans
+// backward at most 64 KiB, so padding past that puts the EOCD out of reach and
+// the archive is refused outright with "not a valid zip (no EOCD)". The second
+// test below pins that ceiling, so nobody re-derives the larger claim.
+//
+// 64 KiB is still plenty. The fixture is a genuine 28x archive — 200 KB of
+// zeroes that deflates to almost nothing, plus incompressible filler to hold
+// the compressed total up — and 64 KiB of padding drags it to 2.9x, under the
+// default `maxRatio: 10`.
+describe("decompression-bomb ratio resists trailing padding (ebdb1c53)", () => {
+  const FILLER_BYTES = 7000;
+  const BOMB_BYTES = 200_000;
+
+  async function bombArchive() {
+    const zip = new JSZip();
+    // Deterministic pseudo-random filler: incompressible, but not RNG-dependent.
+    const filler = Buffer.alloc(FILLER_BYTES);
+    for (let i = 0; i < FILLER_BYTES; i++) filler[i] = (i * 2654435761) % 251;
+    zip.file("filler.bin", filler);
+    zip.file("smudge.db", Buffer.alloc(BOMB_BYTES, 0));
+    return zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
+  }
+
+  function compressedTotalOf(buf: Buffer): number {
+    return readCentralDirectorySizes(buf).reduce((n, e) => n + e.compressedSize, 0);
+  }
+
+  it("rejects the bomb unpadded", async () => {
+    const buf = await bombArchive();
+    expect(() =>
+      checkDeclaredSizes(
+        readCentralDirectorySizes(buf),
+        compressedTotalOf(buf),
+        DEFAULT_BOMB_LIMITS,
+      ),
+    ).toThrow(DecompressionBombError);
+  });
+
+  it("still rejects it with the maximum padding the parser will accept", async () => {
+    const buf = await bombArchive();
+    // 64 KiB minus a margin: the largest padding that keeps the EOCD inside
+    // findEocdOffset's backward-scan window. Appended AFTER the EOCD, so both
+    // parsers still locate the same record and every entry is byte-identical.
+    const padded = Buffer.concat([buf, Buffer.alloc(0xff00, 0x41)]);
+    expect(findEocdOffset(padded)).toBe(findEocdOffset(buf));
+
+    // The old denominator would have read the whole padded file and let this
+    // through: 207000 declared over ~72000 bytes is 2.9x, under maxRatio 10.
+    expect(207_000 / padded.length).toBeLessThan(DEFAULT_BOMB_LIMITS.maxRatio);
+
+    // The entry-summed denominator does not move when padding is added.
+    expect(compressedTotalOf(padded)).toBe(compressedTotalOf(buf));
+    expect(() =>
+      checkDeclaredSizes(
+        readCentralDirectorySizes(padded),
+        compressedTotalOf(padded),
+        DEFAULT_BOMB_LIMITS,
+      ),
+    ).toThrow(DecompressionBombError);
+  });
+
+  // The two tests above pin `checkDeclaredSizes` given a correct denominator,
+  // which was never the broken part — the defect was at the CALL SITE, which
+  // passed `buf.length`. This one drives `runRestore` end to end so the wiring
+  // is what is under test. Without the fix it restores the padded bomb happily.
+  it("runRestore rejects the padded bomb rather than mis-measuring the ratio", async () => {
+    const { dataDir } = await makeFixture();
+    const zipDir = await mkdtemp(join(tmpdir(), "smudge-bomb-"));
+    tempDirs.push(zipDir);
+    const archive = join(zipDir, "smudge-bomb.zip");
+    const padded = Buffer.concat([await bombArchive(), Buffer.alloc(0xff00, 0x41)]);
+    await writeFile(archive, padded);
+
+    await expect(
+      runRestore({
+        archivePath: archive,
+        dataDir,
+        confirmToken: basename(archive),
+        probePort: async () => false,
+        freeBytes: async () => 10 * 1024 ** 3,
+        now: () => new Date(2026, 4, 26, 13, 0, 0),
+      }),
+    ).rejects.toThrow(DecompressionBombError);
+  });
+
+  it("refuses outright once the padding pushes the EOCD out of scan range", async () => {
+    // The ceiling on the whole technique, pinned so the "pad it to 200 MiB"
+    // reading does not come back: beyond 64 KiB this parser cannot find the
+    // record at all, and runRestore aborts at step 1 rather than mis-measuring.
+    const buf = await bombArchive();
+    const overPadded = Buffer.concat([buf, Buffer.alloc(1024 * 1024, 0x41)]);
+    expect(findEocdOffset(overPadded)).toBe(-1);
+    expect(() => readCentralDirectorySizes(overPadded)).toThrow(DecompressionBombError);
+  });
+});
+
 describe("checkDeclaredSizes", () => {
   it("refuses when total exceeds maxUncompressed", () => {
     expect(() =>
@@ -414,6 +596,39 @@ it("runRestore round-trips after wiping the data dir; old data is moved aside", 
   expect(movedAsideTo).toContain(".before-restore-");
   // movedAsideTo is a sibling of dataDir — afterEach handles cleanup via the
   // move-aside sibling scan registered against dataDir
+});
+
+// Review 2026-08-23 (I1): a backup that has picked up trailing bytes — block
+// padding from an archiving tool, a transfer that rounded up, a zip embedded at
+// the head of a larger file — must still restore. jszip locates the record and
+// loads such an archive without complaint, so a locator that refuses it makes
+// Smudge strictly less capable than the library it hands the bytes to, on the
+// one path an operator reaches for after losing data.
+//
+// This drives the WHOLE restore, not findEocdOffset in isolation: the parser
+// that validates and the parser that extracts are different code (backup-core
+// step 1 vs step 6), and a locator change can only be judged at the layer where
+// both run.
+it("restores an archive that carries trailing bytes after the EOCD comment", async () => {
+  const { dataDir } = await makeFixture();
+  const archive = await makeArchive(dataDir);
+  await writeFile(archive, Buffer.concat([await readFile(archive), Buffer.alloc(16, 0)]));
+
+  const db = new Database(join(dataDir, "smudge.db"));
+  db.prepare("INSERT INTO t (v) VALUES (?)").run("after-backup");
+  db.close();
+
+  await runRestore({
+    archivePath: archive,
+    dataDir,
+    confirmToken: basename(archive),
+    probePort: async () => false,
+    now: () => new Date(2026, 4, 26, 13, 0, 0),
+  });
+
+  const restored = new Database(join(dataDir, "smudge.db"), { readonly: true });
+  expect(restored.prepare("SELECT COUNT(*) c FROM t").get()).toEqual({ c: 1 });
+  restored.close();
 });
 
 it("refuses if the server is running (port probe true)", async () => {

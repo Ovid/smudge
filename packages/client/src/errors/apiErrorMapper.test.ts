@@ -493,6 +493,88 @@ describe("SCOPES — chapter.reorder", () => {
   });
 });
 
+describe("SCOPES — chapter.create", () => {
+  const scope = SCOPES["chapter.create"];
+  // Backlog 3c4e8f72: chapter.save maps 500/502/503/504 to a
+  // server-trouble copy (I3 + S7); chapter.create mapped neither, so a
+  // bare 500 or a reverse-proxy 502/503/504 fell through to the generic
+  // "Failed to create chapter" fallback, which invites a retry without
+  // saying the server is the problem. Same UX gap, sibling scope.
+  it.each([
+    [500, "INTERNAL_ERROR"],
+    [502, undefined],
+    [503, undefined],
+    [504, undefined],
+  ])("%i → createChapterFailedServer (byStatus)", (status, code) => {
+    const err = new ApiRequestError("boom", status as number, code as string | undefined);
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.createChapterFailedServer);
+  });
+  // Fallback path stays reachable for a 5xx the scope does not map.
+  it("599 with no code → createChapterFailed (fallback)", () => {
+    const err = new ApiRequestError("unknown 5xx", 599);
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.createChapterFailed);
+  });
+});
+
+// Review 2026-08-23 (I4). A scope whose request MINTS A NEW ROW PER CALL must
+// never answer a 5xx by telling the writer to try again. The status is
+// ambiguous by three independent routes:
+//
+//   1. A reverse-proxy 502/504 is ambiguous by definition — the gateway gave up
+//      after handing the request on, so it cannot know what happened next.
+//   2. `createChapter` commits its insert inside `store.transaction(...)` and
+//      then calls `enrichChapterWithLabel` OUTSIDE it, so a throw there yields a
+//      bare 500 with the row already committed.
+//   3. A proxy that strips the error envelope turns a coded
+//      READ_AFTER_CREATE_FAILURE 500 into a bare 500, so `byCode` misses and the
+//      `byStatus[500]` row is what the user sees.
+//
+// And the mapper's byStatus arm hard-codes `possiblyCommitted: false`, so the
+// recovery-GET branch in `handleCreateChapter` cannot fire to clean up after the
+// duplicate. `image.upload` — the other non-idempotent scope — already gets this
+// right by carrying no 5xx rows at all and routing its committed case through
+// `byCode` + `committedCodes`.
+//
+// Iterating the list rather than asserting one string is deliberate: the same
+// defect reached `chapter.create` by copying `chapter.save`'s block, and the next
+// non-idempotent scope will be added the same way.
+describe("I4 — non-idempotent scopes never invite a 5xx retry", () => {
+  // Scopes whose successful request creates a NEW server row each time it runs.
+  // A retry after an ambiguous outcome leaves a duplicate the UI does not show.
+  const NON_IDEMPOTENT: ApiErrorScope[] = [
+    "chapter.create",
+    "image.upload",
+    "project.create",
+    "snapshot.create",
+    "outtake.create",
+  ];
+
+  // I1 (review 2026-08-23): these two sweeps used to read `entry.byStatus`
+  // directly and `continue` below 500. Only chapter.create declared a 5xx row,
+  // so for the other four scopes the loop body never ran and both tests passed
+  // having asserted nothing — green on exactly the condition they were written
+  // to catch. A scope with no 5xx row does not escape the rule; it falls
+  // through to `scope.fallback`, which is where the retry-inviting copy
+  // actually lived. Resolve the error the way production does instead, so the
+  // arm under test is whichever arm the status really reaches.
+  const SERVER_STATUSES = [500, 502, 503, 504];
+  const CASES = NON_IDEMPOTENT.flatMap((scopeName) =>
+    SERVER_STATUSES.map((status) => [scopeName, status] as const),
+  );
+
+  it.each(CASES)("%s maps %d to copy that does not invite a retry", (scopeName, status) => {
+    const entry = SCOPES[scopeName] as ScopeEntry;
+    const { message } = resolveError(new ApiRequestError("boom", status), entry);
+    expect(message, `${scopeName} @ ${status} tells the user to retry`).not.toMatch(/try again/i);
+  });
+
+  it.each(CASES)("%s maps %d to copy that tells the user to refresh", (scopeName, status) => {
+    const entry = SCOPES[scopeName] as ScopeEntry;
+    const { message } = resolveError(new ApiRequestError("boom", status), entry);
+    expect(message, `${scopeName} @ ${status} gives no recovery instruction`).toMatch(/refresh/i);
+  });
+});
+
 describe("I4 — 2xx BAD_JSON on mutation scopes sets possiblyCommitted=true", () => {
   // Each mutation scope must surface the ambiguous-commit UX on 2xx
   // BAD_JSON. Missing this routes the user through the normal error
@@ -525,9 +607,12 @@ describe("SCOPES — project.create", () => {
     const err = new ApiRequestError("exists", 409, "PROJECT_TITLE_EXISTS");
     expect(resolveError(err, scope).message).toBe(STRINGS.error.projectTitleExists);
   });
-  it("500 → createFailed (fallback)", () => {
+  // I1 (review 2026-08-23): this asserted the FALLBACK on a 500. That was the
+  // defect, not the contract — project.create is a non-idempotent POST, so its
+  // 5xx copy must route the user to a refresh rather than back to the button.
+  it("500 → createFailedServer (non-idempotent 5xx row)", () => {
     const err = new ApiRequestError("boom", 500, "INTERNAL_ERROR");
-    expect(resolveError(err, scope).message).toBe(STRINGS.error.createFailed);
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.createFailedServer);
   });
 });
 
@@ -553,9 +638,12 @@ describe("SCOPES — image.upload", () => {
     const err = new ApiRequestError("big", 400, "PAYLOAD_TOO_LARGE");
     expect(resolveError(err, scope).message).toBe(STRINGS.imageGallery.fileTooLarge);
   });
-  it("500 → uploadFailedGeneric (fallback)", () => {
+  // I1 (review 2026-08-23): see project.create above. A bare 500 (no
+  // READ_AFTER_INSERT_FAILURE code) used to land on uploadFailedGeneric, whose
+  // "try again" mints the duplicate file + row F-12 exists to prevent.
+  it("500 → uploadFailedServer (non-idempotent 5xx row)", () => {
     const err = new ApiRequestError("boom", 500, "INTERNAL_ERROR");
-    expect(resolveError(err, scope).message).toBe(STRINGS.imageGallery.uploadFailedGeneric);
+    expect(resolveError(err, scope).message).toBe(STRINGS.imageGallery.uploadFailedServer);
   });
   // I1 (2026-04-24 review): server emits 400 VALIDATION_ERROR for missing
   // file, unsupported MIME, MIME/content mismatch, and empty file. Without
@@ -994,11 +1082,14 @@ describe("image.delete extrasFrom — drop-only-malformed (4b.3c.1 S8)", () => {
 describe("SCOPES — outtake.* scopes", () => {
   const cases: Array<[ApiErrorScope, string]> = [
     ["outtake.list", STRINGS.error.loadOuttakesFailed],
-    ["outtake.create", STRINGS.error.createOuttakeFailed],
+    // I1 (review 2026-08-23): outtake.create is the one non-idempotent scope in
+    // this group, so its 500 now resolves through a byStatus row rather than
+    // the fallback the other three still use.
+    ["outtake.create", STRINGS.error.createOuttakeFailedServer],
     ["outtake.update", STRINGS.error.updateOuttakeFailed],
     ["outtake.delete", STRINGS.error.deleteOuttakeFailed],
   ];
-  it.each(cases)("%s maps a 500 to its fallback string", (scope, fallback) => {
+  it.each(cases)("%s maps a 500 to its 5xx copy", (scope, fallback) => {
     const err = new ApiRequestError("boom", 500, "INTERNAL_ERROR");
     expect(mapApiError(err, scope).message).toBe(fallback);
   });
@@ -1392,6 +1483,30 @@ describe("mapApiErrorMessage", () => {
 });
 
 describe("cross-cutting rules apply to every scope", () => {
+  // Backlog c8c9f95b: the Host middleware sits ahead of every route, so
+  // when it fires it fires on every request the app makes at once. It
+  // reached no scope and no mapper arm, so every surface showed its
+  // own generic fallback — "Save failed. Try again.", "Failed to load
+  // project" — each inviting a retry that can never succeed and none
+  // naming the cause. (S4, review 2026-08-23: this said "all 37 surfaces"
+  // where the ApiErrorScope union has 38, contradicting the sibling comment
+  // in apiErrorMapper.ts. The number is not what the paragraph needs, and
+  // the next scope added would have staled it again.) Cross-cutting, not per-scope: the code does not
+  // vary in meaning by endpoint, which is the property the three
+  // existing arms are keyed on.
+  it.each(ALL_SCOPES)("INVALID_HOST names the cause for %s", (scope) => {
+    const err = new ApiRequestError("Request Host is not recognized.", 400, "INVALID_HOST");
+    expect(mapApiError(err, scope).message).toBe(STRINGS.error.invalidHost);
+  });
+  // A wrong Host never fixes itself, and nothing reached a route, so the
+  // write cannot have landed.
+  it.each(ALL_SCOPES)("INVALID_HOST is terminal, not transient, for %s", (scope) => {
+    const err = new ApiRequestError("Request Host is not recognized.", 400, "INVALID_HOST");
+    const mapped = mapApiError(err, scope);
+    expect(mapped.terminal).toBe(true);
+    expect(mapped.transient).toBe(false);
+    expect(mapped.possiblyCommitted).toBe(false);
+  });
   it.each(ALL_SCOPES)("ABORTED is silent for %s", (scope) => {
     expect(mapApiError(new ApiRequestError("aborted", 0, "ABORTED"), scope).message).toBeNull();
   });

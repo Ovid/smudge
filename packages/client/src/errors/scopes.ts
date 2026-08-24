@@ -134,6 +134,14 @@ export const SCOPES = {
     network: STRINGS.error.createFailedNetwork,
     committed: STRINGS.error.possiblyCommitted,
     byCode: { PROJECT_TITLE_EXISTS: STRINGS.error.projectTitleExists },
+    // I1 (review 2026-08-23): mirror chapter.create. A bare 5xx fell through to
+    // `createFailed`, which invites the click that mints a second project.
+    byStatus: {
+      500: STRINGS.error.createFailedServer,
+      502: STRINGS.error.createFailedServer,
+      503: STRINGS.error.createFailedServer,
+      504: STRINGS.error.createFailedServer,
+    },
   },
   "project.delete": {
     fallback: STRINGS.error.deleteFailed,
@@ -245,7 +253,31 @@ export const SCOPES = {
     // render and click. Sibling image.upload has the same 404 branch
     // (uploadProjectGone); chapter.create was missing it and surfaced
     // the generic "Failed to create chapter" that invites retry.
-    byStatus: { 404: STRINGS.error.createChapterProjectGone },
+    // Backlog 3c4e8f72: the 5xx set mirrors chapter.save's I3 (bare 500)
+    // and S7 (reverse-proxy 502/503/504). Without it those statuses fell
+    // through to the createChapterFailed fallback, which reads like a
+    // client-side problem the user can fix by clicking again.
+    //
+    // Review 2026-08-23 (I4): the copy these rows point at is NOT
+    // chapter.save's. That scope is an idempotent PATCH of a known row, so
+    // "Try again in a moment" is safe there; this one is a POST that mints a
+    // new row per call, and every status below can arrive with the insert
+    // already committed. The mapper's byStatus arm hard-codes
+    // possiblyCommitted: false, so handleCreateChapter's recovery GET cannot
+    // fire to reconcile a duplicate afterwards — the copy is the only guard,
+    // and it must send the user to a refresh rather than to the button.
+    // I1 (review 2026-08-23): this used to close "image.upload, the sibling
+    // non-idempotent scope, avoids the trap by carrying no 5xx rows at all."
+    // That was backwards, and the byCode comment in that scope says so:
+    // carrying no 5xx row is what routes a bare 500 to the retry-inviting
+    // FALLBACK. All five non-idempotent scopes now carry the same rows.
+    byStatus: {
+      404: STRINGS.error.createChapterProjectGone,
+      500: STRINGS.error.createChapterFailedServer,
+      502: STRINGS.error.createChapterFailedServer,
+      503: STRINGS.error.createChapterFailedServer,
+      504: STRINGS.error.createChapterFailedServer,
+    },
     // S8 (review 2026-04-24): the server inserted the row but could
     // not re-read it — treat as committed so consumers surface the
     // committed UX and avoid duplicate-create retries.
@@ -328,7 +360,16 @@ export const SCOPES = {
     // transactions and roll back, so their scopes deliberately omit this code.
     // See packages/server/src/errors/readAfterInsert.ts.
     committedCodes: ["READ_AFTER_INSERT_FAILURE"],
+    // I1 (review 2026-08-23): the 5xx rows mirror chapter.create. The byCode
+    // arm below only catches a 500 that CARRIES
+    // READ_AFTER_INSERT_FAILURE; a bare 5xx fell through to
+    // `uploadFailedGeneric` ("...try again"), which is the duplicate-minting
+    // retry F-12 exists to prevent.
     byStatus: {
+      500: STRINGS.imageGallery.uploadFailedServer,
+      502: STRINGS.imageGallery.uploadFailedServer,
+      503: STRINGS.imageGallery.uploadFailedServer,
+      504: STRINGS.imageGallery.uploadFailedServer,
       413: STRINGS.imageGallery.fileTooLarge,
       // I1 (2026-04-24 review): project was deleted between gallery-open
       // and upload request landing. The generic fallback blamed the
@@ -525,6 +566,15 @@ export const SCOPES = {
       [SNAPSHOT_ERROR_CODES.LABEL_TOO_LONG]:
         STRINGS.snapshots.createFailedLabelRejected(LABEL_MAX_UNITS),
     },
+    // I1 (review 2026-08-23): mirror chapter.create. A bare 5xx fell through to
+    // `createFailedGeneric` ("Unable to create snapshot. Try again."), which is
+    // the retry this non-idempotent POST must not invite.
+    byStatus: {
+      500: STRINGS.snapshots.createFailedServerError,
+      502: STRINGS.snapshots.createFailedServerError,
+      503: STRINGS.snapshots.createFailedServerError,
+      504: STRINGS.snapshots.createFailedServerError,
+    },
   },
   "snapshot.delete": {
     fallback: STRINGS.snapshots.deleteFailed,
@@ -552,9 +602,16 @@ export const SCOPES = {
     // soft-deleted while the editor was open), so a status-keyed arm is safe
     // here — unlike the 400 case that S8 had to move to byCode. The fallback
     // read as transient and invited a retry that 404s identically, forever.
+    // I1 (review 2026-08-23): the 5xx rows mirror chapter.create. Without them
+    // a bare 5xx fell through to `createOuttakeFailed`, which names no recovery
+    // at all on a POST that mints a new outtake row per call.
     byStatus: {
       404: STRINGS.error.createOuttakeProjectGone,
       413: STRINGS.error.createOuttakeTooLarge,
+      500: STRINGS.error.createOuttakeFailedServer,
+      502: STRINGS.error.createOuttakeFailedServer,
+      503: STRINGS.error.createOuttakeFailedServer,
+      504: STRINGS.error.createOuttakeFailedServer,
     },
   },
   "outtake.update": {

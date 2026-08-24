@@ -149,7 +149,7 @@ npm install                          # Install all workspace dependencies
 make test                            # Run full test suite (fast, no coverage)
 make lint                            # Lint with autofix
 make format                          # Format code
-make all                             # Full CI pass: lint + format + typecheck + coverage + e2e
+make all                             # Full CI pass: ensure-native + lint-check + format-check + typecheck + coverage + e2e
 make cover                           # Run tests with coverage enforcement
 make e2e                             # Run Playwright e2e tests (starts dev servers)
 make e2e-clean                       # Wipe the isolated e2e data dir (next `make e2e` starts fresh)
@@ -163,7 +163,10 @@ npx playwright test                  # E2e tests
 
 # Build & Deploy
 make build                           # Build client for production
-docker compose up                    # Full app on port 3456
+# docker compose up                  # NOT RUNNABLE — no Dockerfile/compose file
+#                                    # exists. Roadmap Phase 7g.1; see
+#                                    # §Tech Stack for why the 127.0.0.1 bind
+#                                    # and the Host allowlist must widen together.
 make backup                          # On-demand backup zip under backups/ (safe while running)
 make restore BACKUP=<file>           # Restore a backup zip (Smudge must be stopped; confirms by filename)
 
@@ -186,7 +189,7 @@ second line of defence.
 to rm, and the about-to-bind server then migrates against an empty DB.
 Wait for `make e2e` to finish (or kill it) before running cleanup.
 
-**`make ensure-native`** is a prerequisite of `make test/cover/e2e/dev`; you rarely invoke it directly. It probes whether better-sqlite3's `.node` binary loads under the active platform/Node ABI, and on failure rebuilds from source in place (no remote `.node` binary fetched). The rebuild path needs a working C++ toolchain — `build-essential` on Linux, Xcode Command Line Tools on macOS, plus `python3` for node-gyp. Common reason to need it: switching between host (macOS) and a Linux container/VM that share `node_modules` via a bind mount, leaving a wrong-platform binary in place. Direct `npm test` / `npm test -w packages/{shared,server,client}` / `npx playwright test` invocations bypass this check; prefer the `make` entry points after a host↔guest crossing.
+**`make ensure-native`** is a prerequisite of `make all/test/cover/e2e/dev`; you rarely invoke it directly. It is the **first** prerequisite of `make all` (backlog `b7e3d042`): Make resolves prerequisites left to right, so before the reorder a contributor with a wrong-platform binding burned lint, format-check and typecheck before `cover` reached the probe. It probes whether better-sqlite3's `.node` binary loads under the active platform/Node ABI, and on failure rebuilds from source in place (no remote `.node` binary fetched). The rebuild path needs a working C++ toolchain — `build-essential` on Linux, Xcode Command Line Tools on macOS, plus `python3` for node-gyp. Common reason to need it: switching between host (macOS) and a Linux container/VM that share `node_modules` via a bind mount, leaving a wrong-platform binary in place. Direct `npm test` / `npm test -w packages/{shared,server,client}` / `npx playwright test` invocations bypass this check; prefer the `make` entry points after a host↔guest crossing.
 
 **`make dev` auto-backs up.** Each `make dev` writes a rotated `backups/smudge-auto-<time>.zip` of the existing DB+images before starting (best-effort — never blocks the server). Keeps the newest `SMUDGE_BACKUP_KEEP` (default 10); `SMUDGE_SKIP_AUTO_BACKUP=1` skips it. Manual `make backup` archives are never auto-pruned. See `docs/backup.md`. These are operator tools run from a source checkout, an interim stopgap until Phase 8b.
 
@@ -336,7 +339,10 @@ comes up writable — reachable whenever a mutation is initiated from a surface
 with no editor mounted (snapshot view), because the reconcile effect cannot
 re-run when none of its deps changed. The prop is **not** a second owner of
 editability: `@tiptap/react` 2.27.2's per-render reconcile pins `editable:
-this.editor.isEditable` (`dist/index.js:977`), which is the load-bearing
+this.editor.isEditable` (`dist/index.js:977` — a line number is kept here, against
+the rule below, because this is third-party build output under `node_modules`
+with no stable symbol to name; it is pinned to the version and moves only on a
+dependency upgrade), which is the load-bearing
 third-party guarantee here — a TipTap upgrade that drops it hands editability
 back to the render path. The tripwire is `Editor.test.tsx`'s "keeps imperative
 setEditable(false) authoritative across a re-render", which holds the prop at
@@ -346,12 +352,19 @@ break. Do not "simplify away" the prop pass-through.
 **Unified API error mapping.** All client code that surfaces a user-visible
 message from an API error must route through `mapApiError(err, scope)` in
 `packages/client/src/errors/`. The mapper returns `MappedError<S> = { message,
-possiblyCommitted, transient, extras? }`; the `<S>` phantom parameter ties
-the `extras` shape to the scope, accessible via `ScopeExtras<S>`. The mapper
-is the single owner of code/status-to-string translation and of the cross-
-cutting rules (ABORTED is silent, 2xx BAD_JSON is `possiblyCommitted: true`
+possiblyCommitted, transient, terminal, extras? }`; the `<S>` phantom parameter
+ties the `extras` shape to the scope, accessible via `ScopeExtras<S>`. **`terminal`
+is not optional and is the field that changes behaviour most** (S10, review
+2026-08-23, which found it missing from this paragraph): it is what stops the
+save-retry ladder and locks the editor, sourced from the scope's
+`terminalCodes` / `terminalStatuses`, and `useProjectEditor.handleSave` reads
+`mapped.terminal` instead of hand-coding a status check. The mapper
+is the single owner of code/status-to-string translation and of the four cross-
+cutting rules: ABORTED is silent; 2xx BAD_JSON is `possiblyCommitted: true`
 when the scope declares `committed:` copy and `false` for read scopes that do
-not, NETWORK is `transient`). The `committedCodes` scope field extends
+not; NETWORK is `transient`; and a cross-cutting `INVALID_HOST` arm returns
+non-transient, non-committed, terminal copy because the `Host` allowlist sits
+ahead of every route, so nothing reached one. The `committedCodes` scope field extends
 `possiblyCommitted: true` beyond the 2xx-BAD_JSON case to specific server
 codes (e.g. `UPDATE_READ_FAILURE`, `READ_AFTER_CREATE_FAILURE`,
 `RESTORE_READ_FAILURE`) where the write may or may not have landed. Raw
@@ -518,14 +531,14 @@ REST endpoints under `/api/`. Error envelope: `{ "error": { "code": "MACHINE_REA
 - **409** is used for conflict cases where the request is well-formed but violates a constraint the client needs to resolve (e.g. attempting to delete an image still referenced by chapters — the `{ error: { code, message, chapters: [...] } }` shape carries the referencing chapter list so the UI can route the user to them).
 - **413** is emitted when a request body exceeds the size guard (e.g. a chapter PATCH whose content would break the per-row limit). Clients should present a "too large" message rather than a generic retry prompt.
 
-**Project sub-resources address the project by slug, except images and outtakes (F-24).** Five routers mount on `/api/projects` (`app.ts:41,45,46,50,52`). The decision on record is blanket — `docs/plans/2026-03-29-project-slugs-design.md:12`, "API uses slugs too. All project endpoints switch from `:id` to `:slug`", with exactly one carve-out (chapter endpoints stay UUID). Two later routers departed from it without recording why, and they are **not** the same case:
+**Project sub-resources address the project by slug, except images and outtakes (F-24).** Five routers mount on `/api/projects` in `createApp` (`app.ts`): `projectsRouter`, `exportRouter`, `imagesRouter`, `projectOuttakesRouter`, `searchRouter`. The decision on record is blanket — `docs/plans/2026-03-29-project-slugs-design.md`, "API uses slugs too. All project endpoints switch from `:id` to `:slug`", with exactly one carve-out (chapter endpoints stay UUID). Two later routers departed from it without recording why, and they are **not** the same case:
 
-- **Images (`images.routes.ts:39`, `:projectId`) has a hard technical driver.** The project id doubles as a filesystem directory name — `images.paths.ts:94-96`, `containedPath(getImagesDir(), projectId, ...)` — so a mutable slug there would orphan an entire image directory on every project rename, and the UUID validator is a path-traversal guard (`5c75077e`). This departure is correct and stays.
-- **Outtakes (`outtakes.routes.ts:14,44`, `:id`) has no driver.** It stores `project_id` as an ordinary FK like every other table, its design doc and decision log both state the route shape without justifying it, and it landed three months after images. Treat it as imitation, not precedent.
+- **Images (`imagesRouter`'s `/:projectId/images` mount, guarded by `requireUuidParam("projectId")`) has a hard technical driver.** The project id doubles as a filesystem directory name — `images.paths.ts`, where `containedPath(getImagesDir(), projectId, …)` builds the on-disk path — so a mutable slug there would orphan an entire image directory on every project rename, and the UUID validator is a path-traversal guard (`5c75077e`). This departure is correct and stays.
+- **Outtakes (`projectOuttakesRouter`'s `/:id/outtakes` routes) has no driver.** It stores `project_id` as an ordinary FK like every other table, its design doc and decision log both state the route shape without justifying it, and it landed three months after images. Treat it as imitation, not precedent.
 
-**Do not retro-fit a rule to this split.** An earlier reading had it as "slug where the client addresses a project from the URL, UUID where it addresses one from a held project object". That is false: find-and-replace passes a slug (`client.ts:605,619`) from a panel holding the same loaded project object the image gallery and outtakes drawer hold. Chronology does not explain it either — search (2026-04-16, slug) landed one day _after_ images (2026-04-15, UUID).
+**Do not retro-fit a rule to this split.** An earlier reading had it as "slug where the client addresses a project from the URL, UUID where it addresses one from a held project object". That is false: find-and-replace passes a slug (`api.search.find` / `api.search.replace` in `client.ts`) from a panel holding the same loaded project object the image gallery and outtakes drawer hold. Chronology does not explain it either — search (2026-04-16, slug) landed one day _after_ images (2026-04-15, UUID).
 
-**Slugs are mutable and reclaimable.** `projects.slug` is rewritten on project rename (`projects.service.ts:155`) and on parent-project restore inside `restoreChapter` (`chapters.service.ts`, the `if (parentProject.deleted_at)` branch of its transaction callback). `resolveUniqueSlug` only avoids collisions with live projects (both of its collision probes in `projects.repository.ts` add `.whereNull("deleted_at")`, matching migration 002's partial unique index `WHERE deleted_at IS NULL`), so renaming a project away from slug S **releases S** — and the next project whose title generates S takes it over. Verified by execution: an old `/projects/my-novel` URL then opens a _different_ project, silently, with no 404. The client updates every in-memory slug holder and the browser URL on both mutation paths (`useChapterMetadata.ts:103-118`, `useProjectTitleEditing.ts:29-33`, `useTrashManager.ts:194-207`), so this is unreachable through in-app state; it is reachable through a bookmark, a history entry, or a shared link.
+**Slugs are mutable and reclaimable.** `projects.slug` is rewritten on project rename (`updateProject`'s `resolveUniqueSlug` call) and on parent-project restore inside `restoreChapter` (`chapters.service.ts`, the `if (parentProject.deleted_at)` branch of its transaction callback). `resolveUniqueSlug` only avoids collisions with live projects (both of its collision probes in `projects.repository.ts` add `.whereNull("deleted_at")`, matching migration 002's partial unique index `WHERE deleted_at IS NULL`), so renaming a project away from slug S **releases S** — and the next project whose title generates S takes it over. Verified by execution: an old `/projects/my-novel` URL then opens a _different_ project, silently, with no 404. The client updates every in-memory slug holder and the browser URL on both mutation paths (`useChapterMetadata`'s `handleUpdateProjectTitle`, `useProjectTitleEditing`'s post-rename `navigate`, and `useTrashManager`'s `handleRestore` slug-change branch), so this is unreachable through in-app state; it is reachable through a bookmark, a history entry, or a shared link.
 
 **Whether the API should move off the slug entirely is open — Phase 4b.19.** Until it is settled, a new project sub-resource takes the **slug**, because that is the decision on record. If you think it should take the UUID, that is the 4b.19 conversation and it needs a decision log, not a route.
 
@@ -672,6 +685,19 @@ The `ovid/snapshots-find-and-replace` branch (merged 2026-04-19) bundled two fea
 Line count is not a hard limit — a 3,000-line migration can be fine, a 500-line cross-cutting refactor may not be. The shape of the change matters more than the size.
 
 **Exceptions to the one-feature rule require an explicit decision recorded in the phase's decision log; the rule defaults to enforcement.** Recorded precedents live in `docs/roadmap-decisions/` (the earliest, Phase 4b.3, is in `docs/plans/2026-04-25-4b3a-review-followups-design.md`) — consult them for precedent rather than re-deriving the policy.
+
+**Backlog-triage sessions are a standing recorded exception.** A branch that
+closes several unrelated `paad/code-reviews/backlog.md` entries has no
+architecture report and no roadmap phase, so it fits neither rule — and the
+architecture-session carve-out below does not reach it, because that one bounds
+a backlog fix to "a file the session already has open" and backlog entries are
+unrelated by construction. The license is recorded in
+`docs/roadmap-decisions/2026-08-23-backlog-triage-session-pr-scope.md`: one
+triage pass per branch, one entry per commit tagged `[backlog <id>]`, entries
+marked closed **in place** and never deleted, and a review-response round
+staying on the same branch. That document also resolves a contradiction between
+its sibling and `backlog.md` §Entry lifecycle — mark in place wins, because a
+deleted id makes every commit tag and code comment citing it unverifiable.
 
 **Architecture-report fix sessions are a standing recorded exception.** A `/paad:fix-architecture` branch closes several independent findings from one `paad/architecture-reviews/` report and has no roadmap phase, so it fits neither rule and has no phase decision log to record an exception in. The bounded carve-out is recorded in `docs/roadmap-decisions/2026-08-19-architecture-fix-session-pr-scope.md` and has **six** rules — read them there rather than from this summary. The shape: one report per branch, one finding per commit, a `Status:` block per finding, and no finding whose fix is itself a feature; plus the two a session most needs and this line used to omit — the mandatory Safety Net commit is an **allowed untagged commit** at the base of the branch (rule 5), and code-review follow-up commits are traced by a **report-qualified** tag (`[r3 S2]`) instead of a `Status:` block (rule 6). Two round-4 amendments widen rule 1 and rule 6: a **backlog fix is permitted in a file the session already has open** (tagged `[backlog <id>]`), and a **mechanical follow-up that answers to no finding** — lint fallout, typecheck fallout, a report filing — is tagged by kind (`[chore]`, `[lint]`, `[typecheck]`, `[report]`) so the log stays legible.
 

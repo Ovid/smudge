@@ -6,23 +6,14 @@ import { STRINGS } from "../strings";
 import type { SearchResult } from "@smudge/shared";
 import { pendingUntilAbort } from "./helpers/abortableMocks";
 
-vi.mock("../api/client", () => ({
+vi.mock("../api/client", async (importOriginal) => ({
   api: {
     search: {
       find: vi.fn(),
       replace: vi.fn(),
     },
   },
-  ApiRequestError: class ApiRequestError extends Error {
-    status: number;
-    code?: string;
-    constructor(message: string, status: number, code?: string) {
-      super(message);
-      this.name = "ApiRequestError";
-      this.status = status;
-      this.code = code;
-    }
-  },
+  ApiRequestError: (await importOriginal<typeof import("../api/client")>()).ApiRequestError,
 }));
 
 const mockFind = api.search.find as unknown as ReturnType<typeof vi.fn<typeof api.search.find>>;

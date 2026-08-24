@@ -19,6 +19,7 @@ import { useChapterTitleEditing } from "../hooks/useChapterTitleEditing";
 import { useProjectTitleEditing } from "../hooks/useProjectTitleEditing";
 import { useTrashManager } from "../hooks/useTrashManager";
 import { useOuttakeCapture } from "../hooks/useOuttakeCapture";
+import { makeStaleProjectGuard } from "../hooks/staleProjectGuard";
 import { useKeyboardShortcuts, type ViewMode } from "../hooks/useKeyboardShortcuts";
 import { api } from "../api/client";
 import {
@@ -266,6 +267,13 @@ export function EditorPage() {
   // setActionError could land alongside the first click's trailing
   // setActionInfo("Replaced N occurrences"), leaving a contradictory
   // success+failure banner pair pinned to one logical operation.
+  //
+  // I4 (review 2026-08-23): `switchToView` raises it too, for the duration of
+  // its flushSave await. It is therefore not "the find-replace and snapshot
+  // controllers' ref" any more — it means "an editor-content operation is in
+  // flight, including trailing UI work", which is what all its readers were
+  // already asking. Exactly one owner raises it at a time: each writer refuses
+  // to start while isActionBusy() is true.
   const actionBusyRef = useRef(false);
   // S2 (dedup review 2026-07-26): three sites in the settings-refresh flow used
   // to read `mutation.isBusy() || isActionBusy()`, which is `A || (A || B)`.
@@ -759,56 +767,121 @@ export function EditorPage() {
       // that fires AFTER the view switch, desyncing editor state from
       // the displayed view. Mirrors SnapshotPanel.onView and the three
       // mutation.run() callers.
-      safeSetEditable(editorRef, false);
-      let flushed: boolean;
+      // I7/I4 (review 2026-08-23): raise the SHARED busy ref for the whole
+      // flush window. switchToView used to set neither mutation.isBusy() nor
+      // actionBusyRef, so isActionBusy() read false for its entire duration —
+      // seconds, in the 2s/4s/8s save-backoff ladder — and that hole was
+      // two-directional.
+      //
+      // Switch vs switch (I7): two view switches could run concurrently. Key
+      // autorepeat produces that by construction (the Ctrl+Shift+P handler has
+      // no e.repeat check), and a double-click on the view nav does the same.
+      // Press 2 makes press 1's save token stale, so press 1's flushSave
+      // resolves false even when its PATCH committed, and the `if (!flushed)`
+      // arm shows a save-failed banner that is not true AND re-enables the
+      // editor while press 2's flush is still running.
+      //
+      // Switch vs sibling (I4): handleCreateChapter / handleDeleteChapter and
+      // the Ctrl+S flush all call cancelInFlightSave() at the top, severing the
+      // very PATCH this flush awaits — the writer then sees "your changes could
+      // not be saved" for a save their own click cancelled. Worse with Replace
+      // All: mutation.run() takes its own setEditable(false), and this
+      // function's `!flushed` arm re-enables the editor inside the mutation's
+      // committed window, which is the hole CLAUDE.md save-pipeline invariant 2
+      // exists to close.
+      //
+      // The shared ref closes both at once, and the isActionBusy() branch above
+      // is what refuses the second view switch — no separate latch needed. A
+      // ref, not machine state, for the same reason mutation-busy is a ref
+      // (CLAUDE.md §"Mutation-busy is deliberately not machine state"): it must
+      // be readable BEFORE the first await, and reducer state is visible only
+      // after React commits.
+      //
+      // Raised AFTER the refusal branches: a refused switch never started, so
+      // it must not block the next one. Cleared in the finally below. Nothing
+      // nests inside this window that itself consults isActionBusy(), and the
+      // two controllers that also write this ref refuse to start while it is
+      // raised, so the flag has exactly one owner at a time.
+      actionBusyRef.current = true;
+      // Backlog `e9b82917` (review 2026-08-23 round 2, OOSS2): capture the
+      // project BEFORE the flush await, the way nine sibling async handlers
+      // already do. The route is `/projects/:slug` with no React `key`, so an
+      // A-to-B navigation keeps EditorPage mounted and this call survives it —
+      // every write below the await would otherwise land on B. The worst of
+      // them is the save-failed arm: a data-loss warning naming B, for a save
+      // that belonged to A and that B never attempted.
+      const isStaleProject = makeStaleProjectGuard(projectRef, projectSlugRef);
       try {
-        flushed = (await editorRef.current?.flushSave()) ?? true;
-      } catch (err) {
-        // A flush throw must not leave the editor in an inconsistent state
-        // and must not surface as an unhandled rejection (C2): callers like
-        // handleSelectChapterWithFlush void this promise via the sidebar
-        // click handler and have no try/catch. Convert to a save-failed
-        // banner + false return — the same shape as a flushed:false reject.
-        //
-        // S2 (agentic-review 2026-05-26): the chapter.flushBeforeNavigate
-        // scope was added in this PR for this exact case (flush failure
-        // observed BEFORE navigation completes) but had been wired only
-        // to handleSelectChapterWithFlush's defensive outer catch, which
-        // is unreachable today (this catch already converts throws to a
-        // banner+false return). Route the mapping here so the scope has
-        // a real reachable site and the NETWORK case gets the scope's
-        // transient-specific `flushBeforeNavigateFailedNetwork` copy
-        // instead of the generic viewSwitchSaveFailed string.
-        safeSetEditable(editorRef, true);
-        clientWarn("switchToView: flushSave threw", err);
-        applyMappedError(mapApiError(err, "chapter.flushBeforeNavigate"), {
-          onMessage: setActionError,
-        });
-        return false;
+        safeSetEditable(editorRef, false);
+        let flushed: boolean;
+        try {
+          flushed = (await editorRef.current?.flushSave()) ?? true;
+        } catch (err) {
+          // A flush throw must not leave the editor in an inconsistent state
+          // and must not surface as an unhandled rejection (C2): callers like
+          // handleSelectChapterWithFlush void this promise via the sidebar
+          // click handler and have no try/catch. Convert to a save-failed
+          // banner + false return — the same shape as a flushed:false reject.
+          //
+          // S2 (agentic-review 2026-05-26): the chapter.flushBeforeNavigate
+          // scope was added in this PR for this exact case (flush failure
+          // observed BEFORE navigation completes) but had been wired only
+          // to handleSelectChapterWithFlush's defensive outer catch, which
+          // is unreachable today (this catch already converts throws to a
+          // banner+false return). Route the mapping here so the scope has
+          // a real reachable site and the NETWORK case gets the scope's
+          // transient-specific `flushBeforeNavigateFailedNetwork` copy
+          // instead of the generic viewSwitchSaveFailed string.
+          clientWarn("switchToView: flushSave threw", err);
+          // Drifted: the editor on screen belongs to another project, so
+          // neither the re-enable nor the banner is ours to write. The warn
+          // above stays — it is dev-facing and the throw really happened.
+          if (isStaleProject()) return false;
+          safeSetEditable(editorRef, true);
+          applyMappedError(mapApiError(err, "chapter.flushBeforeNavigate"), {
+            onMessage: setActionError,
+          });
+          return false;
+        }
+        if (!flushed) {
+          if (isStaleProject()) return false;
+          safeSetEditable(editorRef, true);
+          setActionError(STRINGS.editor.viewSwitchSaveFailed);
+          return false;
+        }
+        // Success is drift-sensitive too: setViewMode would flip the NEW
+        // project into preview for a click made on the old one, and
+        // setDashboardRefreshKey would refresh a dashboard nobody asked for.
+        if (isStaleProject()) return false;
+        setTrashOpen(false);
+        setViewMode(mode);
+        if (mode === "dashboard") {
+          setDashboardRefreshKey((k) => k + 1);
+        }
+        // View-switch succeeded; re-enable so the editor is writable when
+        // the user returns to editor mode. (Preview/Dashboard unmount the
+        // Editor, so this primarily covers the editor→editor no-op path
+        // and any transitional render between switch and remount.) Skipped
+        // when the lock is set (defensive — switchToView refuses above when
+        // locked, but a future refactor that loosens the gate must still
+        // honor the lock here).
+        if (!editorMachine.isLocked()) {
+          safeSetEditable(editorRef, true);
+        }
+        return true;
+      } finally {
+        actionBusyRef.current = false;
       }
-      if (!flushed) {
-        safeSetEditable(editorRef, true);
-        setActionError(STRINGS.editor.viewSwitchSaveFailed);
-        return false;
-      }
-      setTrashOpen(false);
-      setViewMode(mode);
-      if (mode === "dashboard") {
-        setDashboardRefreshKey((k) => k + 1);
-      }
-      // View-switch succeeded; re-enable so the editor is writable when
-      // the user returns to editor mode. (Preview/Dashboard unmount the
-      // Editor, so this primarily covers the editor→editor no-op path
-      // and any transitional render between switch and remount.) Skipped
-      // when the lock is set (defensive — switchToView refuses above when
-      // locked, but a future refactor that loosens the gate must still
-      // honor the lock here).
-      if (!editorMachine.isLocked()) {
-        safeSetEditable(editorRef, true);
-      }
-      return true;
     },
-    [setTrashOpen, setActionError, isActionBusy, editorMachine],
+    [
+      setTrashOpen,
+      setActionError,
+      setActionInfo,
+      isActionBusy,
+      editorMachine,
+      projectRef,
+      projectSlugRef,
+    ],
   );
 
   // mutation.isBusy() guards for entry points that either (a) bump the save

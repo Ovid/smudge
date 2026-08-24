@@ -200,7 +200,19 @@ export async function runRestore(
   // Hoist declaredTotal here so it's shared by the free-space check (#6) and the
   // post-extraction byte-budget assertion below.
   const declaredTotal = sizes.reduce((n, e) => n + e.uncompressedSize, 0);
-  checkDeclaredSizes(sizes, buf.length, limits);
+  // Backlog `ebdb1c53`: the ratio's denominator is the sum of the entries' own
+  // declared compressed sizes, not `buf.length`. With the file length, anything
+  // appended after the EOCD diluted the ratio without touching an entry.
+  // Clamped by `buf.length` so forged-LARGE compressed sizes cannot raise the
+  // denominator instead — the file cannot hold more compressed bytes than it
+  // has. (While `3d5f0a91` stands, these declarations come from a central
+  // directory jszip may not be reading; the clamp is what keeps this arm
+  // fail-closed regardless.)
+  const compressedTotal = Math.min(
+    sizes.reduce((n, e) => n + e.compressedSize, 0),
+    buf.length,
+  );
+  checkDeclaredSizes(sizes, compressedTotal, limits);
   // 3. running-server probe
   if (opts.probePort && (await opts.probePort())) {
     throw new RestorePreconditionError("Smudge is running — stop it and rerun restore.");

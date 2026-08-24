@@ -15,17 +15,8 @@ vi.mock("../hooks/useContentCache", () => ({
   clearAllCachedContent: vi.fn(),
 }));
 
-vi.mock("../api/client", () => ({
-  ApiRequestError: class ApiRequestError extends Error {
-    constructor(
-      message: string,
-      public readonly status: number,
-      public readonly code?: string,
-    ) {
-      super(message);
-      this.name = "ApiRequestError";
-    }
-  },
+vi.mock("../api/client", async (importOriginal) => ({
+  ApiRequestError: (await importOriginal<typeof import("../api/client")>()).ApiRequestError,
   api: {
     projects: {
       get: vi.fn(),
@@ -817,6 +808,56 @@ describe("EditorPage preview mode", () => {
     await waitFor(() => {
       expect(screen.queryByRole("navigation", { name: "Table of Contents" })).toBeNull();
     });
+  });
+
+  // Review 2026-08-23 (I7). switchToView had no re-entrancy guard of its own.
+  // Its only entry gate is isActionBusy() -- mutation.isBusy() ||
+  // actionBusyRef.current -- and it set NEITHER; actionBusyRef was written only
+  // by the find-replace and snapshot controllers. So two view switches could
+  // overlap. (I4, same review: switchToView now RAISES actionBusyRef for its
+  // flush window, so that same isActionBusy() branch is what refuses the second
+  // press -- and the hole is closed in the other direction too, where a sibling
+  // entry point used to cancel the flush this one is awaiting.)
+  //
+  // Overlapping is not exotic, it is what a held key does: the handler has no
+  // e.repeat check, and the two presses below run in ONE tick, which is
+  // precisely the shape autorepeat produces. Press 1 suspends at
+  // `await flushSave()` and press 2 then runs the whole guard chain while
+  // press 1 is still in flight.
+  //
+  // With a dirty editor that window is harmful in two ways: press 2 makes
+  // press 1's save token stale (including via token.isStale() on the line
+  // right after a SUCCESSFUL PATCH), so press 1's flushSave resolves false and
+  // takes the `if (!flushed)` arm -- telling the writer their changes could not
+  // be saved when the save was merely superseded, and re-enabling the editor
+  // for keystrokes while press 2's flush is still running, which is the exact
+  // window CLAUDE.md save-pipeline invariant 2 exists to close. Nothing clears
+  // actionError on the success path, so the false banner follows the writer
+  // into Preview.
+  //
+  // The sibling Ctrl+Shift+Arrow handler in the same file already defends
+  // itself with navEpoch and says autorepeat is why.
+  it("refuses a second view switch fired while the first is still in flight", async () => {
+    renderEditorPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+
+    // Two presses in ONE tick, no await between them: press 1 is parked on its
+    // flushSave await when press 2 arrives.
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+      fireEvent.keyDown(document, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+      await Promise.resolve();
+    });
+
+    // The second press is answered, not silently dropped and not run
+    // concurrently -- same refusal copy the busy and locked branches already
+    // use.
+    expect(await screen.findByText(STRINGS.editor.mutationBusy)).toBeInTheDocument();
+    // And the refusal must not masquerade as a failed save.
+    expect(screen.queryByText(STRINGS.editor.viewSwitchSaveFailed)).toBeNull();
   });
 
   it("navigates to chapter when clicking chapter heading in preview", async () => {

@@ -17,7 +17,7 @@ Smudge is a web-based writing application for long-form fiction and non-fiction,
 - **Backend:** Node.js 22 LTS (Jod), Express 4.x, better-sqlite3 (synchronous), Knex.js (migrations/queries), Zod (validation)
 - **Frontend:** React 18+, Vite, TipTap v2 (rich text editor, stores content as JSON not HTML), Tailwind CSS, @dnd-kit/sortable v10
 - **Testing:** Vitest (unit + integration with Supertest), Playwright (e2e + aXe-core a11y)
-- **Deployment:** Single Docker container, Express serves API + static frontend on port 3456, SQLite persisted via Docker volume
+- **Deployment (target — not yet implemented):** Single Docker container, Express serving the API + static frontend on port 3456, SQLite persisted via Docker volume. None of it exists today: there is no `Dockerfile`, and `createApp()` mounts `/api/*` plus `/api/health` only — no `express.static`, no SPA catch-all. It also cannot simply be built: the server binds `127.0.0.1`, which `docker run -p` cannot reach, and the forwarded request's `Host` would be rejected by the allowlist. Both halves are owned by roadmap Phase 7g.1 and must widen together. Run Smudge from a source checkout with `make dev`.
 
 ## Project Structure
 
@@ -49,7 +49,7 @@ npm install                          # Install all workspace dependencies
 make test                            # Run full test suite (fast, no coverage)
 make lint                            # Lint with autofix
 make format                          # Format code
-make all                             # Full CI pass: lint + format + typecheck + coverage + e2e
+make all                             # Full CI pass: ensure-native + lint-check + format-check + typecheck + coverage + e2e
 make cover                           # Run tests with coverage enforcement
 make e2e-clean                       # Wipe the isolated e2e data dir (next `make e2e` starts fresh)
 make ensure-native                   # Verify better-sqlite3 native binding; rebuild from source on dlopen failure
@@ -62,13 +62,14 @@ npx playwright test                  # E2e tests
 
 # Build & Deploy
 make build                           # Build client for production
-docker compose up                    # Full app on port 3456
+# docker compose up                  # NOT RUNNABLE — no Dockerfile/compose file
+#                                    # exists. Roadmap Phase 7g.1.
 
 # Help
 make help                            # Show all available make targets
 ```
 
-`make ensure-native` is a prerequisite of `dev`/`test`/`cover`/`e2e`. It probes whether better-sqlite3's `.node` binary loads under the active platform/Node ABI; on dlopen failure it rebuilds from source in place (no remote `.node` binary is fetched). The rebuild path needs a working C++ toolchain (`build-essential` on Linux, Xcode Command Line Tools on macOS) and `python3` for node-gyp. Common need: switching between a macOS host and a Linux container/VM that share `node_modules` via a bind mount.
+`make ensure-native` is a prerequisite of `all`/`dev`/`test`/`cover`/`e2e` — and it is the FIRST prerequisite of `all`, so a wrong-platform binding surfaces before lint/format/typecheck burn time. It probes whether better-sqlite3's `.node` binary loads under the active platform/Node ABI; on dlopen failure it rebuilds from source in place (no remote `.node` binary is fetched). The rebuild path needs a working C++ toolchain (`build-essential` on Linux, Xcode Command Line Tools on macOS) and `python3` for node-gyp. Common need: switching between a macOS host and a Linux container/VM that share `node_modules` via a bind mount.
 
 ## Key Architecture Decisions
 

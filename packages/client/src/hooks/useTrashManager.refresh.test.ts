@@ -7,16 +7,8 @@ import { refreshTrashList } from "./useTrashManager.refresh";
 // Mock api/client so the helper's `trashOp.run((s) => api.projects.trash(...))`
 // factory actually hits a vi.fn() we can assert on. Without this mock, the
 // `makeTrashOp` passthrough below would call the real api at test time.
-vi.mock("../api/client", () => {
-  class ApiRequestError extends Error {
-    status: number;
-    code?: string;
-    constructor(message: string, status: number, code?: string) {
-      super(message);
-      this.status = status;
-      this.code = code;
-    }
-  }
+vi.mock("../api/client", async (importOriginal) => {
+  const { ApiRequestError } = await importOriginal<typeof import("../api/client")>();
   return {
     api: {
       projects: {

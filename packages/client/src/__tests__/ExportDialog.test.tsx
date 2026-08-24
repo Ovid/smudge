@@ -5,7 +5,7 @@ import { ExportDialog } from "../components/ExportDialog";
 import { api, ApiRequestError } from "../api/client";
 import { expectConsole } from "./expectConsole";
 
-vi.mock("../api/client", () => ({
+vi.mock("../api/client", async (importOriginal) => ({
   api: {
     projects: {
       export: vi.fn(),
@@ -14,17 +14,7 @@ vi.mock("../api/client", () => ({
       list: vi.fn().mockResolvedValue([]),
     },
   },
-  ApiRequestError: class ApiRequestError extends Error {
-    constructor(
-      message: string,
-      public readonly status: number,
-      public readonly code?: string,
-      public readonly extras?: Record<string, unknown>,
-    ) {
-      super(message);
-      this.name = "ApiRequestError";
-    }
-  },
+  ApiRequestError: (await importOriginal<typeof import("../api/client")>()).ApiRequestError,
 }));
 
 const mockChapters = [
