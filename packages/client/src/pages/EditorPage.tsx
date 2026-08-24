@@ -19,6 +19,7 @@ import { useChapterTitleEditing } from "../hooks/useChapterTitleEditing";
 import { useProjectTitleEditing } from "../hooks/useProjectTitleEditing";
 import { useTrashManager } from "../hooks/useTrashManager";
 import { useOuttakeCapture } from "../hooks/useOuttakeCapture";
+import { makeStaleProjectGuard } from "../hooks/staleProjectGuard";
 import { useKeyboardShortcuts, type ViewMode } from "../hooks/useKeyboardShortcuts";
 import { api } from "../api/client";
 import {
@@ -802,6 +803,14 @@ export function EditorPage() {
       // two controllers that also write this ref refuse to start while it is
       // raised, so the flag has exactly one owner at a time.
       actionBusyRef.current = true;
+      // Backlog `e9b82917` (review 2026-08-23 round 2, OOSS2): capture the
+      // project BEFORE the flush await, the way nine sibling async handlers
+      // already do. The route is `/projects/:slug` with no React `key`, so an
+      // A-to-B navigation keeps EditorPage mounted and this call survives it —
+      // every write below the await would otherwise land on B. The worst of
+      // them is the save-failed arm: a data-loss warning naming B, for a save
+      // that belonged to A and that B never attempted.
+      const isStaleProject = makeStaleProjectGuard(projectRef, projectSlugRef);
       try {
         safeSetEditable(editorRef, false);
         let flushed: boolean;
@@ -823,18 +832,27 @@ export function EditorPage() {
           // a real reachable site and the NETWORK case gets the scope's
           // transient-specific `flushBeforeNavigateFailedNetwork` copy
           // instead of the generic viewSwitchSaveFailed string.
-          safeSetEditable(editorRef, true);
           clientWarn("switchToView: flushSave threw", err);
+          // Drifted: the editor on screen belongs to another project, so
+          // neither the re-enable nor the banner is ours to write. The warn
+          // above stays — it is dev-facing and the throw really happened.
+          if (isStaleProject()) return false;
+          safeSetEditable(editorRef, true);
           applyMappedError(mapApiError(err, "chapter.flushBeforeNavigate"), {
             onMessage: setActionError,
           });
           return false;
         }
         if (!flushed) {
+          if (isStaleProject()) return false;
           safeSetEditable(editorRef, true);
           setActionError(STRINGS.editor.viewSwitchSaveFailed);
           return false;
         }
+        // Success is drift-sensitive too: setViewMode would flip the NEW
+        // project into preview for a click made on the old one, and
+        // setDashboardRefreshKey would refresh a dashboard nobody asked for.
+        if (isStaleProject()) return false;
         setTrashOpen(false);
         setViewMode(mode);
         if (mode === "dashboard") {
@@ -855,7 +873,15 @@ export function EditorPage() {
         actionBusyRef.current = false;
       }
     },
-    [setTrashOpen, setActionError, setActionInfo, isActionBusy, editorMachine],
+    [
+      setTrashOpen,
+      setActionError,
+      setActionInfo,
+      isActionBusy,
+      editorMachine,
+      projectRef,
+      projectSlugRef,
+    ],
   );
 
   // mutation.isBusy() guards for entry points that either (a) bump the save

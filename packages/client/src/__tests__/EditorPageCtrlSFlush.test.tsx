@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, cleanup, act, fireEvent } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { EditorPage } from "../pages/EditorPage";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
@@ -138,6 +138,47 @@ const mockProject = {
   author_name: null,
   chapters: [mockChapter],
 };
+
+const OTHER_PROJECT = {
+  ...mockProject,
+  id: "proj-2",
+  slug: "other-book",
+  title: "Other Book",
+  chapters: [],
+};
+
+/**
+ * Same mount as `renderLoadedEditor`, plus an in-tree button that navigates to
+ * a SECOND slug on the same `/projects/:slug` route. Router reuses the
+ * EditorPage instance across that navigation, which is the whole premise of the
+ * OOSS2 drift case — a keyed route would remount and the bug could not exist.
+ */
+async function renderNavigableEditor() {
+  function GoOther() {
+    const navigate = useNavigate();
+    return (
+      <button
+        data-testid="go-other-project"
+        onClick={() => navigate(`/projects/${OTHER_PROJECT.slug}`)}
+      />
+    );
+  }
+  render(
+    <MemoryRouter initialEntries={["/projects/test-project"]}>
+      <GoOther />
+      <Routes>
+        <Route path="/projects/:slug" element={<EditorPage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+  await waitFor(
+    () => {
+      expect(screen.getByTestId("mock-editor")).toBeInTheDocument();
+      expect(mockControls.handlePublished).toBe(true);
+    },
+    { timeout: 3000 },
+  );
+}
 
 async function renderLoadedEditor() {
   render(
@@ -320,6 +361,58 @@ describe("EditorPage view-switch busy window", () => {
     await act(async () => {
       await Promise.resolve();
     });
+  });
+
+  // Backlog `e9b82917` (agentic review 2026-08-23 round 2, OOSS2). Every write
+  // AFTER `await flushSave()` is unconditional: `setActionError` on both
+  // failure arms, `safeSetEditable(true)` on three, and
+  // `setTrashOpen`/`setViewMode`/`setDashboardRefreshKey` on success. The route
+  // is `/projects/:slug` with no React `key`, so an A-to-B navigation keeps
+  // `EditorPage` MOUNTED and the old project's slow flush lands inside the page
+  // now showing the new project.
+  //
+  // Nine sibling async handlers build `makeStaleProjectGuard` at entry for
+  // exactly this; `switchToView` built none. The visible result is project A's
+  // "your changes could not be saved" banner sitting over project B — a
+  // data-loss warning attached to a book that never failed to save, at the one
+  // moment an accurate message matters most.
+  //
+  // The navigation here is a real one: both slugs match the same `/projects/:slug`
+  // route, so React Router reuses the EditorPage instance rather than
+  // remounting it, and `useProjectEditor`'s render body advances
+  // `projectSlugRef` synchronously. That is the pre-load window
+  // `makeStaleProjectGuard` check 2 exists for.
+  it("does not put a failed flush's banner on a project the user has moved to", async () => {
+    let releaseFlush: (v: boolean) => void = () => {};
+    mockControls.flushSave = () =>
+      new Promise<boolean>((resolve) => {
+        releaseFlush = resolve;
+      });
+    vi.mocked(api.projects.get).mockImplementation(async (slug: string) =>
+      slug === OTHER_PROJECT.slug ? OTHER_PROJECT : mockProject,
+    );
+
+    await renderNavigableEditor();
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+      await Promise.resolve();
+    });
+
+    // The writer opens a different book while the first one's flush retries.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("go-other-project"));
+      await Promise.resolve();
+    });
+
+    // Now the OLD project's flush finally gives up.
+    await act(async () => {
+      releaseFlush(false);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText(STRINGS.editor.viewSwitchSaveFailed)).toBeNull();
   });
 
   it("releases the busy window once the flush settles", async () => {
