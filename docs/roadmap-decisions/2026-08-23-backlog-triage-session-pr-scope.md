@@ -110,7 +110,14 @@ is not amended in place, per finding I11's instruction not to amend rule 1
 again, and because rewriting a decision log after the fact is the failure mode
 both documents exist to prevent.
 
-## Recorded rather than fixed: the untagged tip commit (finding S3)
+## Recorded rather than fixed: the two untagged commits (findings S3, round 1 and round 2)
+
+The branch has **two** untagged commits, not one. Round 1's S3 named the first
+and this section originally covered only that; round 2's S3 caught the omission,
+and the second commit is recorded below beside it. Neither is retagged, for the
+same reason.
+
+### `55edd3e1` — the untagged tip commit
 
 `55edd3e1 docs(backlog): mark the eleven entries closed this session` is
 untagged, answers to eleven entries, and names none of them in its subject.
@@ -138,6 +145,34 @@ The rule is stated here so the next session writes the tag the first time: a
 commit that records the closing of N entries **answers to those entries** and
 takes their ids, even though it touches nothing but markdown. Decide the tag
 from what the commit answers to, not from what it touched.
+
+### `029dc281` — the untagged mid-branch deletion
+
+`029dc281 Remove duplicated skills` deletes `.claude/skills/agentic-review/` —
+nine files, 738 lines, the largest single change on the branch. It closes no
+`backlog.md` entry, carries no tag of any kind, answers to no finding in either
+2026-08-23 review report, and sits mid-branch rather than at the base. Rule 2
+above wants one tagged entry per commit and rule 4 allows one untagged commit at
+the base; this is neither. The tag it should have carried is `[chore]`, under
+rule 4's mechanical-follow-up clause.
+
+**The deletion itself stands.** It was verified before this record was written:
+`grep -rn "skills/agentic-review"` finds the path only inside frozen historical
+review reports — no Makefile target, script, config or steering file reads it —
+and the agentic-review skill that actually runs comes from the plugin cache, not
+from the repository. Sibling skills were left in place.
+
+**It is not retagged,** by the same test applied to `55edd3e1` above and with
+more force. Twenty-one commits sit after it, so a retag means a rebase that
+rewrites all of them, and four `FIXED <date> by <sha>` lines in `backlog.md`
+cite SHAs from that range. Staling four traceability citations to buy one tag is
+the trade this document declines everywhere else.
+
+**Two recorded exceptions on one branch is one too many, and that is the point
+of writing it down.** Both were avoidable by typing a tag at commit time. The
+rule for the next session: decide the tag from what the commit answers to, and
+when the answer is "nothing" — a deletion, a lint pass, a report filing — that
+is what the kind-tags exist for.
 
 ## Consequences
 
