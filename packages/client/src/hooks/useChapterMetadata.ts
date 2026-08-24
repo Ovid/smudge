@@ -156,7 +156,21 @@ export function useChapterMetadata(deps: ChapterMetadataDeps) {
             //
             // This was the last surviving weak copy that WRITES BACK to
             // projectSlugRef, which is what makes it worse than the other nine.
-            if (!isStaleProject()) {
+            //
+            // Backlog `8fc27b79` (review 2026-08-23 round 2, OOSI1):
+            // `refreshed.id === projectId` is a SECOND, independent question,
+            // and the drift guard cannot answer it. This GET is issued against
+            // the ENTRY-CAPTURED slug — the slug this very rename may have just
+            // released — and CLAUDE.md §"Slugs are mutable and reclaimable"
+            // records that the next project whose title generates it takes it
+            // over. So the GET can answer 200 with a stranger's project while
+            // `isStaleProject()` correctly reports "the user is still on the
+            // project this rename started in". Without this conjunct the arm
+            // installs that stranger's snapshot AND rewrites projectSlugRef to
+            // its slug, and every slug-addressed write for the rest of the
+            // session goes there. Mirrors the sibling guard in
+            // `useChapterCrud.handleCreateChapter`'s recovery arm (S14).
+            if (!isStaleProject() && refreshed.id === projectId) {
               setProject(refreshed);
               projectSlugRef.current = refreshed.slug;
             }
@@ -186,6 +200,19 @@ export function useChapterMetadata(deps: ChapterMetadataDeps) {
               recoveryController.signal,
               recoveryErr,
             );
+            // Backlog `52330775` (review 2026-08-23 round 2, OOSS1): guard the
+            // lock the way the success arm above is guarded. This was the last
+            // unconditional arm in the function. `titleRecoveryAbortRef` is
+            // aborted on unmount and on the next rename, but NOT on project
+            // change, so a late 404 from project A's recovery GET can land
+            // while the writer is on project B. The banner it raises is
+            // persistent and non-dismissible, tells the writer to refresh, and
+            // short-circuits B's auto-save through `handleSaveLockGated` — all
+            // on a premise that is false on B, where `projectSlugRef` already
+            // holds B's live slug and no slug was lost. The `devWarn` above
+            // stays unguarded: it is dev-only and its signal check already
+            // silences aborts.
+            if (isStaleProject()) return undefined;
             if (isApiError(recoveryErr) && recoveryErr.status === 404) {
               onRequestEditorLockRef.current?.(STRINGS.error.updateTitleProjectSlugLost);
             }
