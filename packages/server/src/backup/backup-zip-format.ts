@@ -100,6 +100,10 @@ export function findEocdOffset(buf: Buffer): number {
 export interface CentralDirEntry {
   path: string;
   uncompressedSize: number;
+  /** Declared COMPRESSED size (CEN+20). Backlog `ebdb1c53`: the bomb ratio's
+   *  denominator must be the sum of these, not the file length — see
+   *  `checkDeclaredSizes`. */
+  compressedSize: number;
   /** Absolute byte offset of this entry's 4-byte uncompressed-size field (CEN+24). */
   sizeFieldOffset: number;
 }
@@ -121,11 +125,18 @@ export function* walkCentralDirectory(buf: Buffer): Generator<CentralDirEntry> {
         throw new DecompressionBombError("corrupt central directory");
       const uncompressed = buf.readUInt32LE(off + 24);
       if (uncompressed === ZIP64_SENTINEL) throw new DecompressionBombError("zip64 entry refused");
+      const compressed = buf.readUInt32LE(off + 20);
+      if (compressed === ZIP64_SENTINEL) throw new DecompressionBombError("zip64 entry refused");
       const nameLen = buf.readUInt16LE(off + 28);
       const extraLen = buf.readUInt16LE(off + 30);
       const commentLen = buf.readUInt16LE(off + 32);
       const path = buf.toString("utf8", off + 46, off + 46 + nameLen);
-      yield { path, uncompressedSize: uncompressed, sizeFieldOffset: off + 24 };
+      yield {
+        path,
+        uncompressedSize: uncompressed,
+        compressedSize: compressed,
+        sizeFieldOffset: off + 24,
+      };
       off += 46 + nameLen + extraLen + commentLen;
     } catch (e) {
       if (e instanceof DecompressionBombError) throw e;
@@ -137,10 +148,14 @@ export function* walkCentralDirectory(buf: Buffer): Generator<CentralDirEntry> {
 /** Parse declared uncompressed sizes from the central directory without decompressing. */
 export function readCentralDirectorySizes(
   buf: Buffer,
-): { path: string; uncompressedSize: number }[] {
-  const out: { path: string; uncompressedSize: number }[] = [];
+): { path: string; uncompressedSize: number; compressedSize: number }[] {
+  const out: { path: string; uncompressedSize: number; compressedSize: number }[] = [];
   for (const e of walkCentralDirectory(buf)) {
-    out.push({ path: e.path, uncompressedSize: e.uncompressedSize });
+    out.push({
+      path: e.path,
+      uncompressedSize: e.uncompressedSize,
+      compressedSize: e.compressedSize,
+    });
   }
   return out;
 }
@@ -150,6 +165,21 @@ export interface BombLimits {
   maxRatio: number;
 }
 
+/** Reject an archive whose DECLARED sizes already break the bomb limits, before
+ *  anything is inflated.
+ *
+ *  `compressedTotal` must be the sum of the entries' own declared compressed
+ *  sizes, NOT the file length (backlog `ebdb1c53`). Passing `buf.length` let
+ *  anything appended after the end-of-central-directory record dilute the
+ *  ratio without touching a single entry — and trailing-byte tolerance is a
+ *  pinned, required capability of `findEocdOffset`, which is what made the
+ *  padding free to add. The dilution is bounded, because padding past 64 KiB
+ *  puts the EOCD out of this parser's backward-scan reach and the archive is
+ *  refused outright — but 64 KiB is enough to drag a 28x archive down to 2.9x,
+ *  measured, so the ratio arm was passable by roughly `10 x 64 KiB` of extra
+ *  uncompressed bytes. Callers may still clamp with the file length as an upper
+ *  sanity bound; forged-large compressed sizes must not RAISE the denominator.
+ */
 export function checkDeclaredSizes(
   entries: { uncompressedSize: number }[],
   compressedTotal: number,

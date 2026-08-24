@@ -408,6 +408,111 @@ describe("findEocdOffset — comment containing the EOCD signature (e8ba6c7b)", 
   });
 });
 
+// Backlog `ebdb1c53` (agentic review 2026-08-23 round 2, OOSI2). The ratio arm
+// used `buf.length` as its denominator — the WHOLE FILE — rather than the sum
+// of the entries' own declared compressed sizes. Anything appended after the
+// end-of-central-directory record therefore lowered the computed ratio without
+// touching a single entry. That padding is free to add precisely because
+// trailing-byte tolerance is a pinned, required capability of this parser (see
+// the `findEocdOffset` doc comment and the trailing-bytes restore test above).
+//
+// The report that raised this described a 100 KB bomb padded to ~200 MiB.
+// MEASURED, the dilution is bounded well below that: `findEocdOffset` scans
+// backward at most 64 KiB, so padding past that puts the EOCD out of reach and
+// the archive is refused outright with "not a valid zip (no EOCD)". The second
+// test below pins that ceiling, so nobody re-derives the larger claim.
+//
+// 64 KiB is still plenty. The fixture is a genuine 28x archive — 200 KB of
+// zeroes that deflates to almost nothing, plus incompressible filler to hold
+// the compressed total up — and 64 KiB of padding drags it to 2.9x, under the
+// default `maxRatio: 10`.
+describe("decompression-bomb ratio resists trailing padding (ebdb1c53)", () => {
+  const FILLER_BYTES = 7000;
+  const BOMB_BYTES = 200_000;
+
+  async function bombArchive() {
+    const zip = new JSZip();
+    // Deterministic pseudo-random filler: incompressible, but not RNG-dependent.
+    const filler = Buffer.alloc(FILLER_BYTES);
+    for (let i = 0; i < FILLER_BYTES; i++) filler[i] = (i * 2654435761) % 251;
+    zip.file("filler.bin", filler);
+    zip.file("smudge.db", Buffer.alloc(BOMB_BYTES, 0));
+    return zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
+  }
+
+  function compressedTotalOf(buf: Buffer): number {
+    return readCentralDirectorySizes(buf).reduce((n, e) => n + e.compressedSize, 0);
+  }
+
+  it("rejects the bomb unpadded", async () => {
+    const buf = await bombArchive();
+    expect(() =>
+      checkDeclaredSizes(
+        readCentralDirectorySizes(buf),
+        compressedTotalOf(buf),
+        DEFAULT_BOMB_LIMITS,
+      ),
+    ).toThrow(DecompressionBombError);
+  });
+
+  it("still rejects it with the maximum padding the parser will accept", async () => {
+    const buf = await bombArchive();
+    // 64 KiB minus a margin: the largest padding that keeps the EOCD inside
+    // findEocdOffset's backward-scan window. Appended AFTER the EOCD, so both
+    // parsers still locate the same record and every entry is byte-identical.
+    const padded = Buffer.concat([buf, Buffer.alloc(0xff00, 0x41)]);
+    expect(findEocdOffset(padded)).toBe(findEocdOffset(buf));
+
+    // The old denominator would have read the whole padded file and let this
+    // through: 207000 declared over ~72000 bytes is 2.9x, under maxRatio 10.
+    expect(207_000 / padded.length).toBeLessThan(DEFAULT_BOMB_LIMITS.maxRatio);
+
+    // The entry-summed denominator does not move when padding is added.
+    expect(compressedTotalOf(padded)).toBe(compressedTotalOf(buf));
+    expect(() =>
+      checkDeclaredSizes(
+        readCentralDirectorySizes(padded),
+        compressedTotalOf(padded),
+        DEFAULT_BOMB_LIMITS,
+      ),
+    ).toThrow(DecompressionBombError);
+  });
+
+  // The two tests above pin `checkDeclaredSizes` given a correct denominator,
+  // which was never the broken part — the defect was at the CALL SITE, which
+  // passed `buf.length`. This one drives `runRestore` end to end so the wiring
+  // is what is under test. Without the fix it restores the padded bomb happily.
+  it("runRestore rejects the padded bomb rather than mis-measuring the ratio", async () => {
+    const { dataDir } = await makeFixture();
+    const zipDir = await mkdtemp(join(tmpdir(), "smudge-bomb-"));
+    tempDirs.push(zipDir);
+    const archive = join(zipDir, "smudge-bomb.zip");
+    const padded = Buffer.concat([await bombArchive(), Buffer.alloc(0xff00, 0x41)]);
+    await writeFile(archive, padded);
+
+    await expect(
+      runRestore({
+        archivePath: archive,
+        dataDir,
+        confirmToken: basename(archive),
+        probePort: async () => false,
+        freeBytes: async () => 10 * 1024 ** 3,
+        now: () => new Date(2026, 4, 26, 13, 0, 0),
+      }),
+    ).rejects.toThrow(DecompressionBombError);
+  });
+
+  it("refuses outright once the padding pushes the EOCD out of scan range", async () => {
+    // The ceiling on the whole technique, pinned so the "pad it to 200 MiB"
+    // reading does not come back: beyond 64 KiB this parser cannot find the
+    // record at all, and runRestore aborts at step 1 rather than mis-measuring.
+    const buf = await bombArchive();
+    const overPadded = Buffer.concat([buf, Buffer.alloc(1024 * 1024, 0x41)]);
+    expect(findEocdOffset(overPadded)).toBe(-1);
+    expect(() => readCentralDirectorySizes(overPadded)).toThrow(DecompressionBombError);
+  });
+});
+
 describe("checkDeclaredSizes", () => {
   it("refuses when total exceeds maxUncompressed", () => {
     expect(() =>
