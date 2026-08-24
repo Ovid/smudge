@@ -9,17 +9,8 @@ import { flushSaveRetries } from "./helpers/saveRetries";
 import { pendingUntilAbort } from "./helpers/abortableMocks";
 import { expectConsole } from "./expectConsole";
 
-vi.mock("../api/client", () => ({
-  ApiRequestError: class ApiRequestError extends Error {
-    constructor(
-      message: string,
-      public readonly status: number,
-      public readonly code?: string,
-    ) {
-      super(message);
-      this.name = "ApiRequestError";
-    }
-  },
+vi.mock("../api/client", async (importOriginal) => ({
+  ApiRequestError: (await importOriginal<typeof import("../api/client")>()).ApiRequestError,
   api: {
     projects: {
       get: vi.fn(),

@@ -8,16 +8,8 @@ import { STRINGS } from "../strings";
 import { LABEL_MAX_UNITS, type SnapshotListItem } from "@smudge/shared";
 import { pendingUntilAbort } from "./helpers/abortableMocks";
 
-vi.mock("../api/client", () => {
-  class ApiRequestError extends Error {
-    status: number;
-    code?: string;
-    constructor(message: string, status: number, code?: string) {
-      super(message);
-      this.status = status;
-      this.code = code;
-    }
-  }
+vi.mock("../api/client", async (importOriginal) => {
+  const { ApiRequestError } = await importOriginal<typeof import("../api/client")>();
   return {
     api: {
       snapshots: {

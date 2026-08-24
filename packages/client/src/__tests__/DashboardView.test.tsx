@@ -7,20 +7,11 @@ import type { ChapterStatusRow } from "@smudge/shared";
 import { pendingUntilAbort } from "./helpers/abortableMocks";
 import { expectConsole } from "./expectConsole";
 
-vi.mock("../api/client", () => ({
+vi.mock("../api/client", async (importOriginal) => ({
   // Needed by errors/apiErrorMapper — `err instanceof ApiRequestError`
   // checks reach through this mock. Without the class export, the unified
   // mapper throws during tests that trigger the catch path.
-  ApiRequestError: class ApiRequestError extends Error {
-    constructor(
-      message: string,
-      public readonly status: number,
-      public readonly code?: string,
-    ) {
-      super(message);
-      this.name = "ApiRequestError";
-    }
-  },
+  ApiRequestError: (await importOriginal<typeof import("../api/client")>()).ApiRequestError,
   api: {
     projects: {
       dashboard: vi.fn(),

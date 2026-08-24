@@ -23,17 +23,8 @@ import { expectConsole } from "../../__tests__/expectConsole";
 // belonging to a different project — exactly the state React would hand
 // it after a concurrent switch drained first.
 
-vi.mock("../../api/client", () => ({
-  ApiRequestError: class ApiRequestError extends Error {
-    constructor(
-      message: string,
-      public readonly status: number,
-      public readonly code?: string,
-    ) {
-      super(message);
-      this.name = "ApiRequestError";
-    }
-  },
+vi.mock("../../api/client", async (importOriginal) => ({
+  ApiRequestError: (await importOriginal<typeof import("../../api/client")>()).ApiRequestError,
   api: {
     chapters: { create: vi.fn() },
     projects: { get: vi.fn() },

@@ -50,20 +50,8 @@ vi.mock("../components/Editor", () => ({
 }));
 
 // Mock the API module
-vi.mock("../api/client", () => ({
-  ApiRequestError: class ApiRequestError extends Error {
-    constructor(
-      message: string,
-      public readonly status: number,
-      // Backlog 5e6c7a92: `code` is what the mapper's cross-cutting
-      // NETWORK arm keys on. Without it on the stub, a test could only
-      // reach a scope's fallback, never its network: copy.
-      public readonly code?: string,
-    ) {
-      super(message);
-      this.name = "ApiRequestError";
-    }
-  },
+vi.mock("../api/client", async (importOriginal) => ({
+  ApiRequestError: (await importOriginal<typeof import("../api/client")>()).ApiRequestError,
   api: {
     projects: {
       get: vi.fn(),
