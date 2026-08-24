@@ -540,6 +540,21 @@
 
 ---
 
+## `1f0a37c6` — `byStatus` has a `terminalStatuses` twin but no `committedStatuses`, so a 5xx on a non-idempotent POST can never reach its recovery path
+- **File (at first sighting):** `packages/client/src/errors/apiErrorMapper.ts` (`_resolveErrorInternal`, the `byStatus` arm), `packages/client/src/errors/scopes.ts` (`ScopeEntry`), `packages/client/src/hooks/useChapterCrud.ts` (`handleCreateChapter`'s recovery arm)
+- **Symbol:** `_resolveErrorInternal`, `ScopeEntry`
+- **Bug class:** Contract
+- **Description:** `_resolveErrorInternal`'s `byStatus` arm hard-codes `possiblyCommitted: false`. The `byCode` arm has `committedCodes` and both arms have `terminalCodes`/`terminalStatuses`, but there is no `committedStatuses` twin. Consequence: the five non-idempotent scopes now carry 5xx `byStatus` rows (`chapter.create` from `3c4e8f72` and review I4; `project.create`, `snapshot.create`, `image.upload` and `outtake.create` from review round 2's I1), and every one of them resolves `possiblyCommitted: false`. `handleCreateChapter`'s committed-recovery GET — which re-fetches the project and reconciles a duplicate row into the sidebar — is therefore unreachable on exactly the statuses those rows were added for. The `chapter.create` comment says as much in its own words: "the copy is the only guard."
+- **Suggested fix:** Add `committedStatuses?: number[]` to `ScopeEntry` and read it in the `byStatus` arm, exactly parallel to `terminalStatuses` one line below. Then opt the five non-idempotent scopes in. Cheap in lines; the reason it is filed rather than done is blast radius — `possiblyCommitted` is a shared flag every mutation consumer branches on, so flipping it true for 5xx changes behaviour at `handleCreateChapter`, `ImageGallery`, `SnapshotPanel` and the outtakes drawer at once, and each needs its own check that firing the recovery path on a genuine (uncommitted) 5xx is harmless there. That is a focused PR with its own tests, not a line in a triage branch.
+- **Confidence:** Medium
+- **Found by:** review 2026-08-23 round 2 (S6), Error Handling & Logic lenses (`claude-opus-5[1m]`)
+- **Deferred from the 2026-08-23 backlog-triage branch** under the receiving-code-review escape hatch: a fix that changes the semantics of shared state used across multiple flows goes to a focused PR rather than expanding the current one. Behaviour is unchanged from before that branch, so this is an unrealised improvement, not a regression.
+- **First seen:** 2026-08-23 on branch `ovid/backlog` at `b74354de`
+- **Last seen:** 2026-08-23 on branch `ovid/backlog` at `b74354de`
+- **Severity:** Suggestion
+
+---
+
 ## `88502499` — hand-copied `ApiRequestError` test stubs have drifted from the real 4-arg class
 - **File (at first sighting):** `packages/client/src/__tests__/App.test.tsx` (and `KeyboardShortcuts.test.tsx`, `StatusBar.test.tsx`; 19 files declare their own stub)
 - **Symbol:** `<file-scope>`
